@@ -189,9 +189,15 @@ function minSpreadDays(subject: string, hours: number): number {
   return Math.min(hours, 3);
 }
 
+function hasThreeConsecutive(idxs: number[]): boolean {
+  const set = new Set(idxs);
+  for (const i of set) if (set.has(i + 1) && set.has(i + 2)) return true;
+  return false;
+}
+
 function pedagogyOk(
   places: Place[],
-  item: { classId: string; teacherId: string; subject: string },
+  item: { classId: string; teacherId: string; subject: string; day?: DayOfWeek; periodId?: string },
   day: DayOfWeek,
   periodId: string,
   data: PersistedData,
@@ -200,25 +206,40 @@ function pedagogyOk(
 ): boolean {
   const rest = places.filter((p) => p !== item);
   const w = weekly.get(pairKey(item.classId, item.teacherId, item.subject)) ?? 1;
+  const already = places.filter(
+    (p) => p.teacherId === item.teacherId && p.classId === item.classId && p.day === day,
+  );
   const sameTeacher = rest.filter(
     (p) => p.teacherId === item.teacherId && p.classId === item.classId && p.day === day,
   );
   const maxSame = teacher?.otherPlesso ? 3 : 2;
-  if (sameTeacher.length >= maxSame) return false;
+  const newCount = sameTeacher.length + 1;
+  if (newCount > maxSame && newCount > already.length) return false;
 
+  const alreadySub = places.filter(
+    (p) =>
+      p.classId === item.classId &&
+      p.teacherId === item.teacherId &&
+      p.subject === item.subject &&
+      p.day === day,
+  ).length;
   const sameSub = rest.filter((p) => p.classId === item.classId && p.subject === item.subject && p.day === day);
-  if (w <= 2 && sameSub.length >= 1) return false;
-  if (sameSub.length >= 2) return false;
+  const newSub = sameSub.length + 1;
+  if (w <= 2 && newSub > 1 && newSub > alreadySub) return false;
+  if (newSub > 2 && newSub > alreadySub) return false;
 
   const idx = periodIndex(data, periodId);
   const idxs = sameTeacher.map((p) => periodIndex(data, p.periodId));
   const subIdxs = sameSub.map((p) => periodIndex(data, p.periodId));
-  if (w <= 2 && subIdxs.some((i) => Math.abs(i - idx) === 1)) return false;
+  if (w <= 2 && newSub > alreadySub && subIdxs.some((i) => Math.abs(i - idx) === 1)) return false;
   if (!teacher?.otherPlesso) {
-    const set = new Set([...idxs, idx]);
-    if (set.has(idx - 1) && set.has(idx - 2)) return false;
-    if (set.has(idx + 1) && set.has(idx + 2)) return false;
-    if (set.has(idx - 1) && set.has(idx + 1)) return false;
+    const oldIdxs = already.map((p) => periodIndex(data, p.periodId));
+    const newIdxs = [...idxs, idx];
+    if (hasThreeConsecutive(newIdxs) && !hasThreeConsecutive(oldIdxs)) return false;
+    const set = new Set(newIdxs);
+    if (set.has(idx - 1) && set.has(idx + 1) && !(new Set(oldIdxs).has(idx - 1) && new Set(oldIdxs).has(idx + 1))) {
+      return false;
+    }
   }
   return true;
 }
