@@ -204,7 +204,6 @@ function pedagogyOk(
     (p) => p.teacherId === item.teacherId && p.classId === item.classId && p.day === day,
   );
   const maxSame = teacher?.otherPlesso ? 3 : 2;
-  if (w <= 2 && sameTeacher.length >= 1) return false;
   if (sameTeacher.length >= maxSame) return false;
 
   const sameSub = rest.filter((p) => p.classId === item.classId && p.subject === item.subject && p.day === day);
@@ -213,7 +212,8 @@ function pedagogyOk(
 
   const idx = periodIndex(data, periodId);
   const idxs = sameTeacher.map((p) => periodIndex(data, p.periodId));
-  if (w <= 2 && idxs.some((i) => Math.abs(i - idx) === 1)) return false;
+  const subIdxs = sameSub.map((p) => periodIndex(data, p.periodId));
+  if (w <= 2 && subIdxs.some((i) => Math.abs(i - idx) === 1)) return false;
   if (!teacher?.otherPlesso) {
     const set = new Set([...idxs, idx]);
     if (set.has(idx - 1) && set.has(idx - 2)) return false;
