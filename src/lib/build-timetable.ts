@@ -286,6 +286,28 @@ function holeStreak(places: Place[], data: PersistedData, teacherId: string): nu
   return mx;
 }
 
+function pairGapState(places: Place[], data: PersistedData, a: string, b: string) {
+  const ga = gapsFor(places, data, a);
+  const gb = gapsFor(places, data, b);
+  return {
+    tot: ga + gb,
+    mx: Math.max(ga, gb),
+    st: Math.max(holeStreak(places, data, a), holeStreak(places, data, b)),
+  };
+}
+
+/** Meno buche in tutto, oppure stesso totale ma più equo (il peggiore ne ha meno). */
+function fairerGaps(
+  before: { tot: number; mx: number; st: number },
+  after: { tot: number; mx: number; st: number },
+): boolean {
+  if (after.tot < before.tot) return true;
+  if (after.tot > before.tot) return false;
+  if (after.mx < before.mx) return true;
+  if (after.mx > before.mx) return false;
+  return after.st < before.st;
+}
+
 function hoursOnDay(places: Place[], teacherId: string, day: DayOfWeek): number {
   return places.filter((p) => p.teacherId === teacherId && p.day === day).length;
 }
@@ -810,10 +832,6 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
   }
 
   if (opts.avoidGaps) {
-    const teacherIds = () => [...new Set(places.map((p) => p.teacherId))];
-    const sumGaps = () => teacherIds().reduce((n, id) => n + gapsFor(places, data, id), 0);
-    const sumStreak = () => teacherIds().reduce((n, id) => n + holeStreak(places, data, id), 0);
-
     for (let guard = 0; guard < 80; guard++) {
       let improved = false;
       for (const tid of load.keys()) {
@@ -854,12 +872,9 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
               const i = places.indexOf(place);
               const j = places.indexOf(other);
               if (i < 0 || j < 0) continue;
-              const g0 = sumGaps();
-              const s0 = sumStreak();
+              const prev = pairGapState(places, data, tid, other.teacherId);
               if (!swap(i, j)) continue;
-              const g1 = sumGaps();
-              const s1 = sumStreak();
-              if (g1 < g0 || (g1 === g0 && s1 < s0)) {
+              if (fairerGaps(prev, pairGapState(places, data, tid, other.teacherId))) {
                 improved = true;
                 break;
               }
@@ -888,12 +903,9 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
               const i = places.indexOf(pa);
               const j = places.indexOf(pb);
               if (i < 0 || j < 0) continue;
-              const g0 = sumGaps();
-              const s0 = sumStreak();
+              const prev = pairGapState(places, data, pa.teacherId, pb.teacherId);
               if (!swap(i, j)) continue;
-              const g1 = sumGaps();
-              const s1 = sumStreak();
-              if (g1 < g0 || (g1 === g0 && s1 < s0)) {
+              if (fairerGaps(prev, pairGapState(places, data, pa.teacherId, pb.teacherId))) {
                 improved = true;
                 break outer;
               }

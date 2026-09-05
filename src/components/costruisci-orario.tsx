@@ -123,7 +123,7 @@ export function CostruisciOrario() {
             checked={opts.avoidGaps}
             onChange={(v) => setOpts({ ...opts, avoidGaps: v })}
             label="Pochi buchi"
-            hint="Qualche buco è normale; evita giornate spezzate. Se resta 1ª–2ª e poi 6ª, prova a scambiare due ore nella stessa classe."
+            hint="Qualche buco è normale. Se uno ne ha due e l’altro zero, prova a invertire due ore nella stessa classe."
           />
           <Toggle
             checked={opts.avoidFiveHours}
