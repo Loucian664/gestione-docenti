@@ -50,6 +50,7 @@ export type AbsenceReason =
   | "permesso"
   | "l104"
   | "formazione"
+  | "assemblea_sindacale"
   | "visita"
   | "permesso_breve"
   | "altro";
@@ -128,6 +129,7 @@ export const ABSENCE_REASONS: { value: AbsenceReason; label: string }[] = [
   { value: "permesso", label: "Permesso personale" },
   { value: "l104", label: "Permesso L. 104" },
   { value: "formazione", label: "Formazione / aggiornamento" },
+  { value: "assemblea_sindacale", label: "Assemblea sindacale" },
   { value: "visita", label: "Visita medica" },
   { value: "permesso_breve", label: "Permesso breve (ore)" },
   { value: "altro", label: "Altro" },
