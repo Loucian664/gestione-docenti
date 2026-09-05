@@ -7,13 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAppStore, snapshot } from "@/lib/store";
 import { loadByTeacher, absencesByReason, teacherShort } from "@/lib/coverage";
-import { monthRange, schoolYearLabel, schoolYearRange, shiftSchoolYearRange } from "@/lib/dates";
+import { monthRange, schoolYearRange } from "@/lib/dates";
 import { reportXlsx } from "@/lib/export";
 import { shareOrSaveFile, shareJpeg, sharePdfBlob, toastSave } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
 import { reportJpeg } from "@/lib/sheet-image";
 import { ABSENCE_REASONS } from "@/lib/types";
-import { ChevronLeft, ChevronRight, Download, Image as ImageIcon, FileText } from "lucide-react";
+import { Download, Image as ImageIcon, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/report")({ component: ReportPage });
@@ -24,9 +24,6 @@ function ReportPage() {
   const initial = monthRange(data.selectedDate);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
-  const defaultYear = schoolYearRange(data.settings.schoolYear, data.selectedDate);
-  const [yearRange, setYearRange] = useState(defaultYear);
-  const yearLabel = schoolYearLabel(yearRange);
 
   const loads = useMemo(() => loadByTeacher(data, from, to), [data, from, to]);
   const absenceRows = useMemo(
@@ -63,6 +60,10 @@ function ReportPage() {
       return acc;
     },
     { days: 0, assemblea: 0 },
+  );
+  const yearRange = useMemo(
+    () => schoolYearRange(data.settings.schoolYear, data.selectedDate),
+    [data.settings.schoolYear, data.selectedDate],
   );
   const yearAbsenceRows = useMemo(
     () => absencesByReason(data, yearRange.from, yearRange.to).filter((r) => r.total > 0),
@@ -145,37 +146,15 @@ function ReportPage() {
           <Label htmlFor="to">Al</Label>
           <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label>Anno scolastico</Label>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Anno precedente"
-              onClick={() => setYearRange((r) => shiftSchoolYearRange(r, -1))}
-            >
-              <ChevronLeft />
-            </Button>
-            <span className="min-w-24 px-2 text-center text-sm font-medium tabular-nums">{yearLabel}</span>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Anno successivo"
-              onClick={() => setYearRange((r) => shiftSchoolYearRange(r, 1))}
-            >
-              <ChevronRight />
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setFrom(yearRange.from);
-                setTo(yearRange.to);
-              }}
-            >
-              Usa nel periodo
-            </Button>
-          </div>
-        </div>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setFrom(yearRange.from);
+            setTo(yearRange.to);
+          }}
+        >
+          Anno {data.settings.schoolYear || "scolastico"}
+        </Button>
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -290,7 +269,7 @@ function ReportPage() {
         )}
       </div>
 
-      <h2 className="mt-8 mb-1 font-display text-lg">Anno scolastico {yearLabel}</h2>
+      <h2 className="mt-8 mb-1 font-display text-lg">Anno scolastico {data.settings.schoolYear}</h2>
       <p className="mb-3 text-sm text-muted-foreground">
         Dal {yearRange.from} al {yearRange.to}. Non dipende dal periodo sopra.
       </p>

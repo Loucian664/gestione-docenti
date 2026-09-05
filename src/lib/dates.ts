@@ -130,12 +130,3 @@ export function schoolYearRange(label: string, fallbackIso = todayIso()): { from
   const start = month >= 9 ? y : y - 1;
   return { from: `${start}-09-01`, to: `${start + 1}-08-31` };
 }
-
-export function schoolYearLabel(range: { from: string; to: string }): string {
-  return `${range.from.slice(0, 4)}/${range.to.slice(0, 4)}`;
-}
-
-export function shiftSchoolYearRange(range: { from: string; to: string }, dir: number): { from: string; to: string } {
-  const start = Number(range.from.slice(0, 4)) + dir;
-  return { from: `${start}-09-01`, to: `${start + 1}-08-31` };
-}
