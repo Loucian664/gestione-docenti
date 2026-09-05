@@ -22,7 +22,7 @@ import { Download, Image as ImageIcon, FileText } from "lucide-react";
 import { timetableXlsx } from "@/lib/export";
 import { shareJpeg, sharePdfBlob, shareOrSaveFile, toastSave } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
-import { orarioClassJpeg, orarioQuadroJpeg, orarioTeacherJpeg, orarioWeekJpeg, weekCellLines } from "@/lib/sheet-image";
+import { orarioClassJpeg, orarioQuadroJpeg, orarioTeacherJpeg, orarioWeekJpeg, orarioScuolaJpeg, weekCellLines } from "@/lib/sheet-image";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CostruisciOrario } from "@/components/costruisci-orario";
@@ -276,8 +276,44 @@ function OrarioPage() {
       {view === "settimana" && (
         <div>
           <p className="mb-3 text-sm text-muted-foreground">
-            Un solo foglio, tutta la settimana. Foto o PDF lo salvano da appendere in sala docenti.
+            Questo quadro è il foglio di lavoro. Foto e PDF in alto lo salvano così, con i docenti.
           </p>
+          <div className="mb-3 flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const jpeg = await orarioScuolaJpeg(data, false);
+                    const pdf = await jpegBlobToPdf(jpeg);
+                    toastSave(await sharePdfBlob("orario-scuola.pdf", pdf), "pdf");
+                  } catch {
+                    toast.error("Non sono riuscito a creare il foglio scuola.");
+                  }
+                })();
+              }}
+            >
+              <FileText />
+              Foglio scuola
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const jpeg = await orarioScuolaJpeg(data, true);
+                    const pdf = await jpegBlobToPdf(jpeg);
+                    toastSave(await sharePdfBlob("orario-scuola-docenti.pdf", pdf), "pdf");
+                  } catch {
+                    toast.error("Non sono riuscito a creare il foglio scuola.");
+                  }
+                })();
+              }}
+            >
+              <FileText />
+              Foglio scuola + docenti
+            </Button>
+          </div>
           <div className="paper-panel overflow-x-auto rounded-xl">
             <table className="w-full min-w-[720px] border-collapse text-[12px]">
               <thead>

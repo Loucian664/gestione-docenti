@@ -447,3 +447,179 @@ export async function orarioWeekJpeg(data: PersistedData): Promise<Blob> {
   });
   return canvasToJpeg(canvas);
 }
+
+const DAY_SCHOOL: Record<DayOfWeek, string> = {
+  1: "LUNEDI'",
+  2: "MARTEDI'",
+  3: "MERCOLEDI'",
+  4: "GIOVEDI'",
+  5: "VENERDI'",
+  6: "SABATO",
+};
+
+const SCHOOL_SUBJECT: Record<string, string> = {
+  Italiano: "ITALIANO",
+  Storia: "STORIA",
+  Geografia: "GEOGRAFIA",
+  Matematica: "MATEMATICA",
+  Scienze: "SCIENZE",
+  Inglese: "INGLESE",
+  Francese: "FRANCESE",
+  Spagnolo: "SPAGNOLO",
+  Tecnologia: "TECNOLOGIA",
+  "Arte e Immagine": "ARTE",
+  Musica: "MUSICA",
+  "Scienze Motorie": "SC. MOT",
+  Religione: "RELIGIONE",
+  "Educazione civica": "CIVICA",
+};
+
+function schoolSubjectLabel(subject: string): string {
+  return SCHOOL_SUBJECT[subject] ?? subject.toUpperCase();
+}
+
+function classHeader(c: { name: string; grade: number; section: string }): string {
+  return `${c.grade}${c.section}`;
+}
+
+function periodIndexOf(data: PersistedData, periodId: string): number {
+  return data.settings.periods.find((p) => p.id === periodId)?.index ?? 0;
+}
+
+/** Docenti in buca (tra prima e ultima ora del giorno), da mettere in «Ore a disposizione». */
+export function disposizioneNames(data: PersistedData, day: DayOfWeek, periodId: string): string[] {
+  const idx = periodIndexOf(data, periodId);
+  const names: string[] = [];
+  for (const t of data.teachers) {
+    if (t.role === "sostegno" || t.role === "potenziamento") continue;
+    const hours = data.slots
+      .filter((s) => s.teacherId === t.id && s.day === day)
+      .map((s) => periodIndexOf(data, s.periodId));
+    if (hours.length < 2) continue;
+    const min = Math.min(...hours);
+    const max = Math.max(...hours);
+    if (idx <= min || idx >= max) continue;
+    if (hours.includes(idx)) continue;
+    names.push(t.lastName.toUpperCase());
+  }
+  return names.sort((a, b) => a.localeCompare(b, "it"));
+}
+
+/** Foglio ufficiale da appendere: giorni in colonna, classi in riga. Non sostituisce orarioWeekJpeg. */
+export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolean): Promise<Blob> {
+  await document.fonts.ready.catch(() => undefined);
+  const classes = classOrder(data);
+  const days = data.settings.days;
+  const periods = data.settings.periods;
+  const dpr = 2;
+  const pad = 22;
+  const titleH = 72;
+  const hourW = 36;
+  const dispW = withTeachers ? 118 : 128;
+  const colW = Math.max(78, Math.min(102, Math.floor((720 - hourW - dispW) / Math.max(1, classes.length))));
+  const rowH = withTeachers ? 36 : 26;
+  const dayHeadH = 22;
+  const tableW = hourW + classes.length * colW + dispW;
+  const width = pad * 2 + tableW;
+  const height = pad + titleH + 8 + dayHeadH + days.length * (dayHeadH + periods.length * rowH) + pad;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas");
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = "#111";
+  ctx.textAlign = "center";
+  ctx.font = "600 13px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillText(data.settings.schoolName || "Scuola secondaria", width / 2, pad + 16);
+  ctx.font = "700 16px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillText("ORARIO SETTIMANALE DELLE LEZIONI", width / 2, pad + 38);
+  ctx.font = "500 11px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillStyle = "#444";
+  ctx.fillText(data.settings.schoolYear || "", width / 2, pad + 56);
+  ctx.textAlign = "left";
+
+  let y = pad + titleH;
+  const x0 = pad;
+
+  function strokeRect(x: number, yy: number, w: number, h: number) {
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(x, yy, w, h);
+  }
+
+  ctx.font = "700 11px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillStyle = "#111";
+  strokeRect(x0, y, hourW, dayHeadH);
+  classes.forEach((c, i) => {
+    const x = x0 + hourW + i * colW;
+    strokeRect(x, y, colW, dayHeadH);
+    ctx.textAlign = "center";
+    ctx.fillText(classHeader(c), x + colW / 2, y + 15);
+  });
+  strokeRect(x0 + hourW + classes.length * colW, y, dispW, dayHeadH);
+  ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillText("Ore a disposizione", x0 + hourW + classes.length * colW + dispW / 2, y + 15);
+  ctx.textAlign = "left";
+  y += dayHeadH;
+
+  days.forEach((day) => {
+    strokeRect(x0, y, tableW, dayHeadH);
+    ctx.fillStyle = "#f3f3f3";
+    ctx.fillRect(x0 + 0.5, y + 0.5, tableW - 1, dayHeadH - 1);
+    ctx.fillStyle = "#111";
+    ctx.font = "700 12px 'Source Sans 3', system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(DAY_SCHOOL[day] ?? "", x0 + tableW / 2, y + 16);
+    ctx.textAlign = "left";
+    y += dayHeadH;
+
+    periods.forEach((p) => {
+      strokeRect(x0, y, hourW, rowH);
+      ctx.fillStyle = "#111";
+      ctx.font = "700 12px 'Source Sans 3', system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(String(p.index), x0 + hourW / 2, y + (withTeachers ? 22 : 17));
+      ctx.textAlign = "left";
+
+      classes.forEach((c, i) => {
+        const x = x0 + hourW + i * colW;
+        strokeRect(x, y, colW, rowH);
+        const occupants = cellSlots(data, c.id, day, p.id);
+        if (!occupants.length) return;
+        const primary = occupants[0]!;
+        const t = data.teachers.find((x) => x.id === primary.teacherId);
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#111";
+        if (withTeachers) {
+          ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+          ctx.fillText(t ? teacherShort(t, data.teachers) : "", x + colW / 2, y + 14);
+          ctx.font = "500 10px 'Source Sans 3', system-ui, sans-serif";
+          ctx.fillText(subjectAbbr(primary.subject), x + colW / 2, y + 28);
+        } else {
+          ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+          ctx.fillText(schoolSubjectLabel(primary.subject), x + colW / 2, y + 17);
+        }
+        ctx.textAlign = "left";
+      });
+
+      const dx = x0 + hourW + classes.length * colW;
+      strokeRect(dx, y, dispW, rowH);
+      const disp = disposizioneNames(data, day, p.id);
+      if (disp.length) {
+        ctx.fillStyle = "#111";
+        ctx.font = "500 8px 'Source Sans 3', system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(disp.slice(0, 3).join("  "), dx + dispW / 2, y + (withTeachers ? 22 : 17));
+        ctx.textAlign = "left";
+      }
+      y += rowH;
+    });
+  });
+
+  return canvasToJpeg(canvas, 0.92);
+}
