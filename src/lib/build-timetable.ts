@@ -345,16 +345,34 @@ function pairGapState(places: Place[], data: PersistedData, a: string, b: string
     tot: ga + gb,
     mx: Math.max(ga, gb),
     st: Math.max(holeStreak(places, data, a), holeStreak(places, data, b)),
+    long: longPresenceDays(places, data, a) + longPresenceDays(places, data, b),
   };
 }
 
-/** Meno buche in tutto, oppure stesso totale ma più equo (il peggiore ne ha meno). */
+/** Giornate in cui si resta dalla 1ª alla 6ª con almeno due buche (4 lezioni, 6 ore a scuola). */
+function longPresenceDays(places: Place[], data: PersistedData, teacherId: string): number {
+  let n = 0;
+  for (const day of data.settings.days) {
+    const idxs = places
+      .filter((p) => p.teacherId === teacherId && p.day === day)
+      .map((p) => periodIndex(data, p.periodId))
+      .sort((a, b) => a - b);
+    if (idxs.length < 2) continue;
+    const span = idxs[idxs.length - 1]! - idxs[0]! + 1;
+    if (span >= 6 && span - idxs.length >= 2) n += 1;
+  }
+  return n;
+}
+
+/** Meno buche in tutto, oppure stesso totale ma niente giornate-lunghe / più equo. */
 function fairerGaps(
-  before: { tot: number; mx: number; st: number },
-  after: { tot: number; mx: number; st: number },
+  before: { tot: number; mx: number; st: number; long: number },
+  after: { tot: number; mx: number; st: number; long: number },
 ): boolean {
   if (after.tot < before.tot) return true;
   if (after.tot > before.tot) return false;
+  if (after.long < before.long) return true;
+  if (after.long > before.long) return false;
   if (after.mx < before.mx) return true;
   if (after.mx > before.mx) return false;
   return after.st < before.st;
@@ -416,6 +434,7 @@ function evaluatePlaces(
   for (const id of new Set(places.map((p) => p.teacherId))) {
     if (opts.avoidGaps) cost += gapsFor(places, data, id) * 55;
     if (opts.avoidGaps) cost += holeStreak(places, data, id) * 35;
+    if (opts.avoidGaps) cost += longPresenceDays(places, data, id) * 260;
     lastCounts.set(id, places.filter((p) => p.teacherId === id && p.periodId === last?.id).length);
     const t = teachers.get(id);
     if (opts.avoidFiveHours) {
@@ -955,11 +974,8 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
           const holes: number[] = [];
           for (let i = first; i <= lastIdx; i++) if (!occupied.has(i)) holes.push(i);
           if (holes.length === 0) continue;
-          const wings = mine.filter((p) => {
-            const i = periodIndex(data, p.periodId);
-            return i === first || i === lastIdx;
-          });
-          for (const place of wings) {
+          const cands = mine;
+          for (const place of cands) {
             for (const h of holes) {
               const per = data.settings.periods.find((p) => p.index === h);
               if (!per) continue;
@@ -1024,6 +1040,48 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       }
       if (!improved) break;
     }
+
+    // 1ª–6ª con due buche: sposta un’ala su un altro giorno (sotto 4 ore).
+    for (let guard = 0; guard < 30; guard++) {
+      let improved = false;
+      outerLong: for (const tid of load.keys()) {
+        if (longPresenceDays(places, data, tid) === 0) continue;
+        for (const day of data.settings.days) {
+          const mine = places.filter((p) => p.teacherId === tid && p.day === day);
+          if (mine.length < 2) continue;
+          const idxs = mine.map((p) => periodIndex(data, p.periodId)).sort((a, b) => a - b);
+          const span = idxs[idxs.length - 1]! - idxs[0]! + 1;
+          if (span < 6 || span - idxs.length < 2) continue;
+          const first = idxs[0]!;
+          const lastI = idxs[idxs.length - 1]!;
+          const wings = mine.filter((p) => {
+            const i = periodIndex(data, p.periodId);
+            return i === first || i === lastI;
+          });
+          const dests = data.settings.days.filter((d) => d !== day && hoursOnDay(places, tid, d) < 4);
+          for (const place of wings) {
+            const fd = place.day;
+            const fp = place.periodId;
+            const beforeLong = longPresenceDays(places, data, tid);
+            const beforeGaps = gapsFor(places, data, tid);
+            for (const dest of dests) {
+              for (const period of data.settings.periods) {
+                if (!movePlace(place, dest, period.id)) continue;
+                if (
+                  longPresenceDays(places, data, tid) < beforeLong ||
+                  gapsFor(places, data, tid) < beforeGaps
+                ) {
+                  improved = true;
+                  break outerLong;
+                }
+                movePlace(place, fd, fp);
+              }
+            }
+          }
+        }
+      }
+      if (!improved) break;
+    }
   }
 
   const slots: TimetableSlot[] = places.map((p) => ({
@@ -1065,6 +1123,17 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
   const notes: string[] = [];
   if (leftover.length) notes.push(`${leftover.length} ore non piazzate: manca uno slot libero senza scontri.`);
   if (opts.avoidGaps) notes.push(gaps === 0 ? "Nessun buco in orario." : `${gaps} buchi in tutto (qualcuno è normale).`);
+  if (opts.avoidGaps) {
+    const longNames: string[] = [];
+    for (const t of data.teachers.filter(isTimetableTeacher)) {
+      if (longPresenceDays(places, data, t.id) > 0) longNames.push(teacherName(t));
+    }
+    if (longNames.length) {
+      notes.push(
+        `Giornata 1ª–6ª con due buche (si resta 6 ore): ${longNames.slice(0, 4).join(", ")}.`,
+      );
+    }
+  }
   if (opts.avoidFiveHours) {
     const heavy: string[] = [];
     for (const t of data.teachers.filter(isTimetableTeacher)) {
