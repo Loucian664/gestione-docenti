@@ -482,29 +482,6 @@ function classHeader(c: { name: string; grade: number; section: string }): strin
   return `${c.grade}${c.section}`;
 }
 
-function periodIndexOf(data: PersistedData, periodId: string): number {
-  return data.settings.periods.find((p) => p.id === periodId)?.index ?? 0;
-}
-
-/** Docenti in buca (tra prima e ultima ora del giorno), da mettere in «Ore a disposizione». */
-export function disposizioneNames(data: PersistedData, day: DayOfWeek, periodId: string): string[] {
-  const idx = periodIndexOf(data, periodId);
-  const names: string[] = [];
-  for (const t of data.teachers) {
-    if (t.role === "sostegno" || t.role === "potenziamento") continue;
-    const hours = data.slots
-      .filter((s) => s.teacherId === t.id && s.day === day)
-      .map((s) => periodIndexOf(data, s.periodId));
-    if (hours.length < 2) continue;
-    const min = Math.min(...hours);
-    const max = Math.max(...hours);
-    if (idx <= min || idx >= max) continue;
-    if (hours.includes(idx)) continue;
-    names.push(t.lastName.toUpperCase());
-  }
-  return names.sort((a, b) => a.localeCompare(b, "it"));
-}
-
 /** Foglio ufficiale da appendere: giorni in colonna, classi in riga. Non sostituisce orarioWeekJpeg. */
 export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolean): Promise<Blob> {
   await document.fonts.ready.catch(() => undefined);
@@ -609,14 +586,6 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
 
       const dx = x0 + hourW + classes.length * colW;
       strokeRect(dx, y, dispW, rowH);
-      const disp = disposizioneNames(data, day, p.id);
-      if (disp.length) {
-        ctx.fillStyle = "#111";
-        ctx.font = "500 8px 'Source Sans 3', system-ui, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(disp.slice(0, 3).join("  "), dx + dispW / 2, y + (withTeachers ? 22 : 17));
-        ctx.textAlign = "left";
-      }
       y += rowH;
     });
   });
