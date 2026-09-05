@@ -248,7 +248,7 @@ function pedagogyOk(
 
 function feasible(
   data: PersistedData,
-  item: { teacherId: string; classId: string; subject: string },
+  item: { teacherId: string; classId: string; subject: string; day?: DayOfWeek },
   day: DayOfWeek,
   periodId: string,
   teacherBusy: Set<string>,
@@ -257,6 +257,7 @@ function feasible(
   teachers: Map<string, Teacher>,
   places: Place[],
   weekly: Map<string, number>,
+  relaxFive = false,
 ): boolean {
   if (teacherBusy.has(busyKey(day, periodId, item.teacherId))) return false;
   if (classBusy.has(busyKey(day, periodId, item.classId))) return false;
@@ -272,6 +273,11 @@ function feasible(
     }
   }
   if (opts.variety && !pedagogyOk(places, item, day, periodId, data, weekly, t, opts.allowThreeConsecutive)) return false;
+  if (opts.avoidFiveHours && !relaxFive) {
+    const already = hoursOnDay(places, item.teacherId, day);
+    const without = item.day === day ? Math.max(0, already - 1) : already;
+    if (without >= 4) return false;
+  }
   return true;
 }
 
@@ -415,7 +421,7 @@ function evaluatePlaces(
     if (opts.avoidFiveHours) {
       for (const day of data.settings.days) {
         const h = hoursOnDay(places, id, day);
-        if (h >= 5) cost += (h - 4) * 220;
+        if (h >= 5) cost += (h - 4) * 520;
       }
     }
     if (opts.noFreeDay && (load.get(id) ?? 0) >= nDays && !t?.otherPlesso) {
@@ -590,7 +596,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       else if (idx === hi + 1 || idx === first - 1) s += 28;
       else s += 4 - Math.min(Math.abs(idx - first), Math.abs(idx - hi));
     }
-    if (opts.avoidFiveHours && hours.length >= 4) s -= 90;
+    if (opts.avoidFiveHours && hours.length >= 4) s -= 220;
     if (opts.balanceLastHour && last && periodId === last.id) s -= 10 + lastCount(item.teacherId) * 14;
     if (opts.variety) {
       const w = weekly.get(pairKey(item.classId, item.teacherId, item.subject)) ?? 1;
@@ -654,7 +660,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     }
   }
 
-  function packLeftover() {
+  function packLeftover(relaxFive = false) {
     for (let guard = 0; guard < 5; guard++) {
       let moved = false;
       for (let i = leftover.length - 1; i >= 0; i--) {
@@ -662,7 +668,22 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
         let best: { day: DayOfWeek; periodId: string; score: number } | null = null;
         for (const day of data.settings.days) {
           for (const period of data.settings.periods) {
-            if (!feasible(data, item, day, period.id, teacherBusy, classBusy, opts, teachers, places, weekly)) continue;
+            if (
+              !feasible(
+                data,
+                item,
+                day,
+                period.id,
+                teacherBusy,
+                classBusy,
+                opts,
+                teachers,
+                places,
+                weekly,
+                relaxFive,
+              )
+            )
+              continue;
             const score = slotScore(item, day, period.id);
             if (!best || score > best.score) best = { day, periodId: period.id, score };
           }
@@ -682,7 +703,19 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
           teacherBusy.delete(busyKey(od, op, occ.teacherId));
           classBusy.delete(busyKey(od, op, occ.classId));
           places.splice(occIdx, 1);
-          const itemFits = feasible(data, item, od, op, teacherBusy, classBusy, opts, teachers, places, weekly);
+          const itemFits = feasible(
+            data,
+            item,
+            od,
+            op,
+            teacherBusy,
+            classBusy,
+            opts,
+            teachers,
+            places,
+            weekly,
+            relaxFive,
+          );
           let dest: { day: DayOfWeek; periodId: string } | null = null;
           if (itemFits) {
             for (const day of data.settings.days) {
@@ -717,6 +750,11 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     }
   }
 
+  function packAll() {
+    packLeftover(false);
+    if (leftover.length) packLeftover(true);
+  }
+
   let bestPlaces: Place[] = [];
   let bestLeft: typeof units = units.slice();
   let bestTB = new Set<string>();
@@ -735,7 +773,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     classBusy = new Set();
     places = [];
     greedyFill(order);
-    packLeftover();
+    packAll();
     const dualDays = [...load.keys()].reduce((n, tid) => {
       if (!teachers.get(tid)?.otherPlesso) return n;
       return n + data.settings.days.filter((d) => hoursOnDay(places, tid, d) > 0).length;
@@ -821,7 +859,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     }
   }
 
-  packLeftover();
+  packAll();
 
   function movePlace(place: Place, day: DayOfWeek, periodId: string): boolean {
     teacherBusy.delete(busyKey(place.day, place.periodId, place.teacherId));
@@ -874,6 +912,30 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
           }
         }
       }
+    }
+  }
+
+  if (opts.avoidFiveHours) {
+    for (let guard = 0; guard < 40; guard++) {
+      let improved = false;
+      outer: for (const tid of load.keys()) {
+        for (const day of data.settings.days) {
+          if (hoursOnDay(places, tid, day) < 5) continue;
+          const mine = places.filter((p) => p.teacherId === tid && p.day === day);
+          const lighter = data.settings.days.filter((d) => d !== day && hoursOnDay(places, tid, d) < 4);
+          for (const place of mine) {
+            for (const dest of lighter) {
+              for (const period of data.settings.periods) {
+                if (movePlace(place, dest, period.id)) {
+                  improved = true;
+                  break outer;
+                }
+              }
+            }
+          }
+        }
+      }
+      if (!improved) break;
     }
   }
 

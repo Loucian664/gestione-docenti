@@ -136,7 +136,7 @@ export function CostruisciOrario() {
             checked={opts.avoidFiveHours}
             onChange={(v) => setOpts({ ...opts, avoidFiveHours: v })}
             label="Max 4 ore di lezione al giorno"
-            hint="Le buche non contano. Meglio 4+3+3 che 5+4+2. Se non si chiude, qualche 5 può restare."
+            hint="Le buche non contano. La 5ª ora di lezione nello stesso giorno solo se altrimenti resterebbe fuori."
           />
           <Toggle
             checked={opts.balanceLastHour}
