@@ -276,9 +276,17 @@ function feasible(
 }
 
 function gapsFor(places: Place[], data: PersistedData, teacherId: string): number {
+  return gapsOf(data, places, teacherId);
+}
+
+export function gapsOf(
+  data: PersistedData,
+  slots: { teacherId: string; day: DayOfWeek; periodId: string }[],
+  teacherId: string,
+): number {
   let g = 0;
   for (const day of data.settings.days) {
-    const idxs = places
+    const idxs = slots
       .filter((p) => p.teacherId === teacherId && p.day === day)
       .map((p) => periodIndex(data, p.periodId))
       .sort((a, b) => a - b);
@@ -286,6 +294,21 @@ function gapsFor(places: Place[], data: PersistedData, teacherId: string): numbe
     g += idxs[idxs.length - 1]! - idxs[0]! + 1 - idxs.length;
   }
   return g;
+}
+
+export function gapsRanking(
+  data: PersistedData,
+  slots: { teacherId: string; day: DayOfWeek; periodId: string }[] = data.slots,
+): { id: string; name: string; gaps: number }[] {
+  return data.teachers
+    .filter(isTimetableTeacher)
+    .map((t) => ({
+      id: t.id,
+      name: teacherName(t),
+      gaps: gapsOf(data, slots, t.id),
+    }))
+    .filter((x) => slots.some((s) => s.teacherId === x.id))
+    .sort((a, b) => b.gaps - a.gaps || a.name.localeCompare(b.name, "it"));
 }
 
 /** Buche consecutive più lunghe (es. 1ª–2ª poi 6ª → tre di fila). */

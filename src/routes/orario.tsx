@@ -26,6 +26,8 @@ import { orarioClassJpeg, orarioQuadroJpeg, orarioTeacherJpeg, orarioWeekJpeg, o
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CostruisciOrario } from "@/components/costruisci-orario";
+import { BucheList } from "@/components/buche-list";
+import { gapsOf, gapsRanking, isTimetableTeacher } from "@/lib/build-timetable";
 
 type OrarioSearch = { docente?: string };
 
@@ -69,6 +71,9 @@ function OrarioPage() {
   );
   const currentTeacher = data.teachers.find((t) => t.id === teacherId);
   const teacherHours = data.slots.filter((s) => s.teacherId === teacherId).length;
+  const teacherGaps =
+    currentTeacher && isTimetableTeacher(currentTeacher) ? gapsOf(data, data.slots, teacherId) : 0;
+  const weekGaps = useMemo(() => gapsRanking(data), [data]);
   const className = data.classes.find((c) => c.id === classId)?.name ?? "classe";
 
   async function currentOrarioJpeg(): Promise<{ blob: Blob; base: string }> {
@@ -199,6 +204,11 @@ function OrarioPage() {
             </NativeSelect>
             <p className="text-[12px] text-muted-foreground">
               {teacherHours === 1 ? "1 ora in orario" : `${teacherHours} ore in orario`}
+              {currentTeacher && isTimetableTeacher(currentTeacher)
+                ? teacherGaps === 1
+                  ? " · 1 buca"
+                  : ` · ${teacherGaps} buche`
+                : ""}
               {currentTeacher ? ` · ${ROLE_LABELS_HINT[currentTeacher.role]}` : ""}. Clicca una cella per
               inserirla, anche in compresenza.
             </p>
@@ -358,6 +368,7 @@ function OrarioPage() {
               </tbody>
             </table>
           </div>
+          <BucheList className="paper-panel mt-3 rounded-xl p-5" rows={weekGaps} />
         </div>
       )}
 

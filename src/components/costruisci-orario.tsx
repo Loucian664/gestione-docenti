@@ -16,9 +16,11 @@ import {
   timetableDemand,
   resolveCattedre,
   MONTE_ORE,
+  gapsRanking,
   type BuildOptions,
   type BuildReport,
 } from "@/lib/build-timetable";
+import { BucheList } from "@/components/buche-list";
 import { teacherName, teacherShort } from "@/lib/coverage";
 import { weekCellLines } from "@/lib/sheet-image";
 import {
@@ -82,6 +84,10 @@ export function CostruisciOrario() {
     if (!previewSlots) return null;
     return { ...data, slots: previewSlots };
   }, [data, previewSlots]);
+  const previewBuche = useMemo(
+    () => (previewData ? gapsRanking(previewData) : []),
+    [previewData],
+  );
 
   function propose() {
     const alreadyOpen = pendingSlots != null;
@@ -460,6 +466,7 @@ export function CostruisciOrario() {
                   <li key={n}>{n}</li>
                 ))}
               </ul>
+              <BucheList className="mt-4 border-t border-border pt-4" rows={previewBuche} />
             </div>
           )}
 
