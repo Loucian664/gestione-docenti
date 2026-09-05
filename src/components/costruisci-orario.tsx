@@ -44,6 +44,7 @@ export function CostruisciOrario() {
     noAdjacentPlessi: true,
     noFreeDay: true,
     variety: true,
+    avoidFiveHours: true,
   });
   const [report, setReport] = useState<BuildReport | null>(null);
   const [pendingSlots, setPendingSlots] = useState<TimetableSlot[] | null>(null);
@@ -122,7 +123,13 @@ export function CostruisciOrario() {
             checked={opts.avoidGaps}
             onChange={(v) => setOpts({ ...opts, avoidGaps: v })}
             label="Pochi buchi"
-            hint="Qualche buco è normale; evita giornate spezzate."
+            hint="Qualche buco è normale; evita giornate spezzate. Se resta 1ª–2ª e poi 6ª, prova a scambiare due ore nella stessa classe."
+          />
+          <Toggle
+            checked={opts.avoidFiveHours}
+            onChange={(v) => setOpts({ ...opts, avoidFiveHours: v })}
+            label="Max 4 ore di lezione al giorno"
+            hint="Le buche non contano. Meglio 4+3+3 che 5+4+2. Se non si chiude, qualche 5 può restare."
           />
           <Toggle
             checked={opts.balanceLastHour}

@@ -15,6 +15,7 @@ export type BuildOptions = {
   noAdjacentPlessi: boolean;
   noFreeDay: boolean;
   variety: boolean;
+  avoidFiveHours: boolean;
 };
 
 export type BuildReport = {
@@ -264,6 +265,27 @@ function gapsFor(places: Place[], data: PersistedData, teacherId: string): numbe
   return g;
 }
 
+/** Buche consecutive più lunghe (es. 1ª–2ª poi 6ª → tre di fila). */
+function holeStreak(places: Place[], data: PersistedData, teacherId: string): number {
+  let mx = 0;
+  for (const day of data.settings.days) {
+    const idxs = places
+      .filter((p) => p.teacherId === teacherId && p.day === day)
+      .map((p) => periodIndex(data, p.periodId))
+      .sort((a, b) => a - b);
+    if (idxs.length < 2) continue;
+    const occ = new Set(idxs);
+    let cur = 0;
+    for (let i = idxs[0]!; i <= idxs[idxs.length - 1]!; i++) {
+      if (!occ.has(i)) {
+        cur += 1;
+        if (cur > mx) mx = cur;
+      } else cur = 0;
+    }
+  }
+  return mx;
+}
+
 function hoursOnDay(places: Place[], teacherId: string, day: DayOfWeek): number {
   return places.filter((p) => p.teacherId === teacherId && p.day === day).length;
 }
@@ -319,8 +341,15 @@ function evaluatePlaces(
 
   for (const id of new Set(places.map((p) => p.teacherId))) {
     if (opts.avoidGaps) cost += gapsFor(places, data, id) * 55;
+    if (opts.avoidGaps) cost += holeStreak(places, data, id) * 35;
     lastCounts.set(id, places.filter((p) => p.teacherId === id && p.periodId === last?.id).length);
     const t = teachers.get(id);
+    if (opts.avoidFiveHours) {
+      for (const day of data.settings.days) {
+        const h = hoursOnDay(places, id, day);
+        if (h >= 5) cost += (h - 4) * 220;
+      }
+    }
     if (opts.noFreeDay && (load.get(id) ?? 0) >= nDays && !t?.otherPlesso) {
       cost += freeDaysOf(places, data.settings.days, id).length * 900;
     }
@@ -493,6 +522,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       else if (idx === hi + 1 || idx === first - 1) s += 28;
       else s += 4 - Math.min(Math.abs(idx - first), Math.abs(idx - hi));
     }
+    if (opts.avoidFiveHours && hours.length >= 4) s -= 90;
     if (opts.balanceLastHour && last && periodId === last.id) s -= 10 + lastCount(item.teacherId) * 14;
     if (opts.variety) {
       const w = weekly.get(pairKey(item.classId, item.teacherId, item.subject)) ?? 1;
@@ -780,7 +810,11 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
   }
 
   if (opts.avoidGaps) {
-    for (let guard = 0; guard < 60; guard++) {
+    const teacherIds = () => [...new Set(places.map((p) => p.teacherId))];
+    const sumGaps = () => teacherIds().reduce((n, id) => n + gapsFor(places, data, id), 0);
+    const sumStreak = () => teacherIds().reduce((n, id) => n + holeStreak(places, data, id), 0);
+
+    for (let guard = 0; guard < 80; guard++) {
       let improved = false;
       for (const tid of load.keys()) {
         const before = gapsFor(places, data, tid);
@@ -820,12 +854,12 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
               const i = places.indexOf(place);
               const j = places.indexOf(other);
               if (i < 0 || j < 0) continue;
-              const gTid0 = gapsFor(places, data, tid);
-              const gOth0 = gapsFor(places, data, other.teacherId);
+              const g0 = sumGaps();
+              const s0 = sumStreak();
               if (!swap(i, j)) continue;
-              const gTid1 = gapsFor(places, data, tid);
-              const gOth1 = gapsFor(places, data, other.teacherId);
-              if (gTid1 < gTid0 && gTid1 + gOth1 <= gTid0 + gOth0) {
+              const g1 = sumGaps();
+              const s1 = sumStreak();
+              if (g1 < g0 || (g1 === g0 && s1 < s0)) {
                 improved = true;
                 break;
               }
@@ -836,6 +870,37 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
           if (improved) break;
         }
         if (improved) break;
+      }
+      if (!improved) break;
+    }
+
+    // Qualsiasi docente: scambio di due ore nella stessa classe e giorno.
+    for (let guard = 0; guard < 50; guard++) {
+      let improved = false;
+      outer: for (const cls of data.classes) {
+        for (const day of data.settings.days) {
+          const row = places.filter((p) => p.classId === cls.id && p.day === day);
+          for (let a = 0; a < row.length; a++) {
+            for (let b = a + 1; b < row.length; b++) {
+              const pa = row[a]!;
+              const pb = row[b]!;
+              if (pa.teacherId === pb.teacherId) continue;
+              const i = places.indexOf(pa);
+              const j = places.indexOf(pb);
+              if (i < 0 || j < 0) continue;
+              const g0 = sumGaps();
+              const s0 = sumStreak();
+              if (!swap(i, j)) continue;
+              const g1 = sumGaps();
+              const s1 = sumStreak();
+              if (g1 < g0 || (g1 === g0 && s1 < s0)) {
+                improved = true;
+                break outer;
+              }
+              swap(i, j);
+            }
+          }
+        }
       }
       if (!improved) break;
     }
@@ -880,6 +945,22 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
   const notes: string[] = [];
   if (leftover.length) notes.push(`${leftover.length} ore non piazzate: manca uno slot libero senza scontri.`);
   if (opts.avoidGaps) notes.push(gaps === 0 ? "Nessun buco in orario." : `${gaps} buchi in tutto (qualcuno è normale).`);
+  if (opts.avoidFiveHours) {
+    const heavy: string[] = [];
+    for (const t of data.teachers.filter(isTimetableTeacher)) {
+      for (const day of data.settings.days) {
+        if (hoursOnDay(places, t.id, day) >= 5) {
+          heavy.push(teacherName(t));
+          break;
+        }
+      }
+    }
+    notes.push(
+      heavy.length === 0
+        ? "Nessuno oltre 4 ore di lezione in un giorno."
+        : `Ancora 5+ ore di lezione nello stesso giorno: ${[...new Set(heavy)].slice(0, 4).join(", ")}.`,
+    );
+  }
   if (opts.balanceLastHour && lastHourByTeacher.length) {
     const mx = lastHourByTeacher[0]!.count;
     const names = lastHourByTeacher
