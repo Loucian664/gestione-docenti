@@ -120,3 +120,13 @@ export function sameMonth(a: string, b: string): boolean {
 export function todayIso(): string {
   return isoDate(new Date());
 }
+
+/** Anno scolastico italiano: 1 settembre → 31 agosto. Accetta "2026/2027". */
+export function schoolYearRange(label: string, fallbackIso = todayIso()): { from: string; to: string } {
+  const m = label.match(/(20\d{2})\s*[/\-–]\s*(20\d{2})/);
+  if (m) return { from: `${m[1]}-09-01`, to: `${m[2]}-08-31` };
+  const y = Number(fallbackIso.slice(0, 4));
+  const month = Number(fallbackIso.slice(5, 7));
+  const start = month >= 9 ? y : y - 1;
+  return { from: `${start}-09-01`, to: `${start + 1}-08-31` };
+}

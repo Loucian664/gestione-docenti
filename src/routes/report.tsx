@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAppStore, snapshot } from "@/lib/store";
 import { loadByTeacher, absencesByReason, teacherShort } from "@/lib/coverage";
-import { monthRange } from "@/lib/dates";
+import { monthRange, schoolYearRange } from "@/lib/dates";
 import { reportXlsx } from "@/lib/export";
 import { shareOrSaveFile, shareJpeg, sharePdfBlob, toastSave } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
@@ -61,12 +61,32 @@ function ReportPage() {
     },
     { days: 0, assemblea: 0 },
   );
+  const yearRange = useMemo(
+    () => schoolYearRange(data.settings.schoolYear, data.selectedDate),
+    [data.settings.schoolYear, data.selectedDate],
+  );
+  const yearAbsenceRows = useMemo(
+    () => absencesByReason(data, yearRange.from, yearRange.to).filter((r) => r.total > 0),
+    [data, yearRange],
+  );
+  const yearLoads = useMemo(() => loadByTeacher(data, yearRange.from, yearRange.to), [data, yearRange]);
+  const yearAbsenceTotals = yearAbsenceRows.reduce(
+    (acc, r) => {
+      acc.days += r.total;
+      acc.assemblea += r.byReason.assemblea_sindacale;
+      acc.breve += r.byReason.permesso_breve;
+      acc.malattia += r.byReason.malattia;
+      return acc;
+    },
+    { days: 0, assemblea: 0, breve: 0, malattia: 0 },
+  );
+  const yearEccedenti = yearLoads.reduce((n, r) => n + r.eccedente, 0);
 
   return (
     <div>
       <PageHeader
         title="Equità e monte ore"
-        description="Coperture per tipo e giorni di assenza per motivo, nel periodo che scegli."
+        description="Coperture e assenze nel periodo. In fondo, lo storico di tutto l’anno scolastico."
         actions={
           <>
             <Button
@@ -126,6 +146,9 @@ function ReportPage() {
           <Label htmlFor="to">Al</Label>
           <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
+        <Button variant="outline" onClick={() => { setFrom(yearRange.from); setTo(yearRange.to); }}>
+          Anno {data.settings.schoolYear || "scolastico"}
+        </Button>
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -221,6 +244,53 @@ function ReportPage() {
             </thead>
             <tbody>
               {absenceRows.map((row) => {
+                const t = data.teachers.find((x) => x.id === row.teacherId);
+                if (!t) return null;
+                return (
+                  <tr key={row.teacherId} className="border-b border-border last:border-0">
+                    <td className="px-4 py-2.5 font-medium">
+                      {t.lastName} {t.firstName}
+                    </td>
+                    {ABSENCE_REASONS.map((r) => (
+                      <Cell key={r.value} n={row.byReason[r.value]} />
+                    ))}
+                    <td className="px-3 py-2.5 tabular-nums font-medium">{row.total}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <h2 className="mt-8 mb-1 font-display text-lg">Anno scolastico {data.settings.schoolYear}</h2>
+      <p className="mb-3 text-sm text-muted-foreground">
+        Dal {yearRange.from} al {yearRange.to}. Non dipende dal periodo sopra.
+      </p>
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <MiniStat label="Assemblee" value={yearAbsenceTotals.assemblea} />
+        <MiniStat label="Permessi brevi" value={yearAbsenceTotals.breve} />
+        <MiniStat label="Malattia" value={yearAbsenceTotals.malattia} />
+        <MiniStat label="Ore eccedenti" value={yearEccedenti} />
+      </div>
+      <div className="paper-panel overflow-x-auto rounded-xl">
+        {yearAbsenceRows.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted-foreground">Nessuna assenza registrata in questo anno.</p>
+        ) : (
+          <table className="w-full min-w-[860px] text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
+                <th className="px-4 py-2 font-medium">Docente</th>
+                {ABSENCE_REASONS.map((r) => (
+                  <th key={r.value} className="px-3 py-2 font-medium">
+                    {REASON_COL[r.value] ?? r.label}
+                  </th>
+                ))}
+                <th className="px-3 py-2 font-medium">Totale</th>
+              </tr>
+            </thead>
+            <tbody>
+              {yearAbsenceRows.map((row) => {
                 const t = data.teachers.find((x) => x.id === row.teacherId);
                 if (!t) return null;
                 return (

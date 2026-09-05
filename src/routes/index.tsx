@@ -247,6 +247,56 @@ function OggiPage() {
         <Stat label="Scoperte" value={uncovered} tone={uncovered ? "warn" : "ok"} />
       </div>
 
+      {uncovered > 0 && (
+        <div className="mb-5 rounded-xl border border-destructive/25 bg-danger-soft px-4 py-3">
+          <p className="font-display text-lg text-destructive">
+            {uncovered === 1 ? "Manca ancora chi copre 1 ora" : `Mancano ancora ${uncovered} coperture`}
+          </p>
+          <p className="mt-1 text-sm text-destructive/90">
+            La bacheca non è chiusa. Tocca una riga per assegnare, oppure Auto-assegna.
+          </p>
+          <ul className="mt-2 flex flex-col gap-1">
+            {needs
+              .filter((n) => !isCovered(n))
+              .slice(0, 8)
+              .map((n) => {
+                const cls = data.classes.find((c) => c.id === n.slot.classId);
+                const per = data.settings.periods.find((p) => p.id === n.slot.periodId);
+                const absent = data.teachers.find((t) => t.id === n.absence.teacherId);
+                return (
+                  <li key={n.key}>
+                    <button
+                      type="button"
+                      onClick={() => setAssignNeed(n)}
+                      className="min-h-11 w-full rounded-md px-1 text-left text-sm font-medium text-destructive underline-offset-2 hover:underline"
+                    >
+                      {per?.label ?? "Ora"} · {cls?.name ?? "classe"} · assente{" "}
+                      {absent ? teacherShort(absent, data.teachers) : "—"}
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+          {uncovered > 8 && (
+            <p className="mt-1 text-sm text-destructive/80">e altre {uncovered - 8} più in basso.</p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              onClick={() => {
+                const first = needs.find((n) => !isCovered(n));
+                if (first) setAssignNeed(first);
+              }}
+            >
+              Assegna
+            </Button>
+            <Button variant="outline" onClick={autoFill}>
+              <ListChecks />
+              Auto-assegna
+            </Button>
+          </div>
+        </div>
+      )}
+
       {weekend && (
         <p className="mb-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">
           Giorno non previsto in orario. Scegli un giorno di lezione oppure aggiungi il sabato nelle impostazioni.
@@ -316,7 +366,10 @@ function OggiPage() {
                     <button
                       type="button"
                       onClick={() => setAssignNeed(n)}
-                      className="paper-panel flex min-h-[7.5rem] w-full flex-col items-start rounded-xl p-4 text-left transition-[box-shadow] duration-150 hover:shadow-border-hover"
+                      className={cn(
+                        "paper-panel flex min-h-[7.5rem] w-full flex-col items-start rounded-xl p-4 text-left transition-[box-shadow] duration-150 hover:shadow-border-hover",
+                        !ok && "border border-destructive/30 bg-danger-soft",
+                      )}
                     >
                       <div className="flex w-full items-center justify-between gap-2">
                         <span className="font-display text-lg">{cls?.name}</span>
@@ -333,7 +386,7 @@ function OggiPage() {
                           ? "classe divisa"
                           : sub
                             ? teacherShort(sub, data.teachers)
-                            : "da assegnare"}
+                            : "Tocca per assegnare"}
                       </p>
                     </button>
                   </li>
