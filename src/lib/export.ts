@@ -1,5 +1,5 @@
 import { eachIsoInRange, formatDayName, formatLong, isWeekend } from "./dates";
-import { coverageNeeds, isCovered, teacherName, teacherShort, type CoverageNeed } from "./coverage";
+import { coverageNeeds, isCovered, teacherName, teacherShort, absencesByReason, type CoverageNeed } from "./coverage";
 import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, DAY_SHORT, SUBSTITUTION_TYPES } from "./types";
 import { xlsxFile } from "./xlsx";
@@ -162,6 +162,17 @@ export function reportXlsx(
       row.eccedente,
       row.sostegno,
       row.altro,
+      row.total,
+    ]);
+  }
+  rows.push([]);
+  rows.push(["Assenze per motivo (giorni scolastici)"]);
+  rows.push(["Docente", ...ABSENCE_REASONS.map((r) => r.label), "Totale"]);
+  for (const row of absencesByReason(data, from, to).filter((r) => r.total > 0)) {
+    const t = findTeacher(data, row.teacherId);
+    rows.push([
+      t ? teacherName(t) : row.teacherId,
+      ...ABSENCE_REASONS.map((r) => row.byReason[r.value]),
       row.total,
     ]);
   }

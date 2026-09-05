@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAppStore, snapshot } from "@/lib/store";
-import { loadByTeacher, teacherShort } from "@/lib/coverage";
+import { loadByTeacher, absencesByReason, teacherShort } from "@/lib/coverage";
 import { monthRange } from "@/lib/dates";
 import { reportXlsx } from "@/lib/export";
 import { shareOrSaveFile, shareJpeg, sharePdfBlob, toastSave } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
 import { reportJpeg } from "@/lib/sheet-image";
+import { ABSENCE_REASONS } from "@/lib/types";
 import { Download, Image as ImageIcon, FileText } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,6 +26,10 @@ function ReportPage() {
   const [to, setTo] = useState(initial.to);
 
   const loads = useMemo(() => loadByTeacher(data, from, to), [data, from, to]);
+  const absenceRows = useMemo(
+    () => absencesByReason(data, from, to).filter((r) => r.total > 0),
+    [data, from, to],
+  );
   const withName = loads
     .map((row) => {
       const t = data.teachers.find((x) => x.id === row.teacherId);
@@ -48,12 +53,20 @@ function ReportPage() {
     }),
     { disposizione: 0, eccedente: 0, total: 0 },
   );
+  const absenceTotals = absenceRows.reduce(
+    (acc, r) => {
+      acc.days += r.total;
+      acc.assemblea += r.byReason.assemblea_sindacale;
+      return acc;
+    },
+    { days: 0, assemblea: 0 },
+  );
 
   return (
     <div>
       <PageHeader
         title="Equità e monte ore"
-        description="Quante coperture ha fatto ciascuno, distinte per tipo. Utile per il DSGA e per non caricare sempre gli stessi."
+        description="Coperture per tipo e giorni di assenza per motivo, nel periodo che scegli."
         actions={
           <>
             <Button
@@ -115,10 +128,11 @@ function ReportPage() {
         </div>
       </div>
 
-      <div className="mb-5 grid grid-cols-3 gap-3">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MiniStat label="Ore coperte" value={totals.total} />
         <MiniStat label="A disposizione" value={totals.disposizione} />
         <MiniStat label="Eccedenti" value={totals.eccedente} />
+        <MiniStat label="Assemblee sindacali" value={absenceTotals.assemblea} />
       </div>
 
       {chartData.length > 0 && (
@@ -184,9 +198,61 @@ function ReportPage() {
           </tbody>
         </table>
       </div>
+
+      <h2 className="mt-8 mb-3 font-display text-lg">Assenze per motivo</h2>
+      <p className="mb-3 text-sm text-muted-foreground">
+        Giorni scolastici nel periodo. Permesso breve conta i giorni in cui è stato preso, non le ore.
+      </p>
+      <div className="paper-panel overflow-x-auto rounded-xl">
+        {absenceRows.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted-foreground">Nessuna assenza in questo periodo.</p>
+        ) : (
+          <table className="w-full min-w-[860px] text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
+                <th className="px-4 py-2 font-medium">Docente</th>
+                {ABSENCE_REASONS.map((r) => (
+                  <th key={r.value} className="px-3 py-2 font-medium">
+                    {REASON_COL[r.value] ?? r.label}
+                  </th>
+                ))}
+                <th className="px-3 py-2 font-medium">Totale</th>
+              </tr>
+            </thead>
+            <tbody>
+              {absenceRows.map((row) => {
+                const t = data.teachers.find((x) => x.id === row.teacherId);
+                if (!t) return null;
+                return (
+                  <tr key={row.teacherId} className="border-b border-border last:border-0">
+                    <td className="px-4 py-2.5 font-medium">
+                      {t.lastName} {t.firstName}
+                    </td>
+                    {ABSENCE_REASONS.map((r) => (
+                      <Cell key={r.value} n={row.byReason[r.value]} />
+                    ))}
+                    <td className="px-3 py-2.5 tabular-nums font-medium">{row.total}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
+
+const REASON_COL: Record<string, string> = {
+  malattia: "Malattia",
+  permesso: "Perm. pers.",
+  l104: "L.104",
+  formazione: "Formaz.",
+  assemblea_sindacale: "Assemblea",
+  visita: "Visita",
+  permesso_breve: "P. breve",
+  altro: "Altro",
+};
 
 function Cell({ n, warn }: { n: number; warn?: boolean }) {
   return (

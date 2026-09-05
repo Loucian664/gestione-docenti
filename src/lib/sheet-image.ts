@@ -3,12 +3,13 @@ import {
   coverageNeeds,
   isCovered,
   loadByTeacher,
+  absencesByReason,
   teacherName,
   teacherShort,
   teacherSlotAt,
 } from "./coverage";
 import { formatLong } from "./dates";
-import { DAY_SHORT, type DayOfWeek, type PersistedData } from "./types";
+import { ABSENCE_REASONS, DAY_SHORT, type DayOfWeek, type PersistedData } from "./types";
 
 const PAPER = "#F3EFE6";
 const INK = "#1C1915";
@@ -46,6 +47,26 @@ function canvasToJpeg(canvas: HTMLCanvasElement, quality = 0.88): Promise<Blob> 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("jpeg"))), "image/jpeg", quality);
   });
+}
+
+async function stackJpegBlobs(blobs: Blob[]): Promise<Blob> {
+  const images = await Promise.all(blobs.map((b) => createImageBitmap(b)));
+  const width = Math.max(...images.map((im) => im.width));
+  const gap = 24;
+  const height = images.reduce((n, im) => n + im.height, 0) + gap * (images.length - 1);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas");
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(0, 0, width, height);
+  let y = 0;
+  for (const im of images) {
+    ctx.drawImage(im, 0, y);
+    y += im.height + gap;
+  }
+  return canvasToJpeg(canvas);
 }
 
 async function paintTable(spec: {
@@ -291,7 +312,7 @@ export async function bachecaJpeg(data: PersistedData, date: string): Promise<Bl
   return canvasToJpeg(canvas);
 }
 
-export function reportJpeg(data: PersistedData, from: string, to: string): Promise<Blob> {
+export async function reportJpeg(data: PersistedData, from: string, to: string): Promise<Blob> {
   const loads = loadByTeacher(data, from, to).filter((r) => r.total > 0);
   const rows: Row[] = loads.map((r) => {
     const t = data.teachers.find((x) => x.id === r.teacherId);
@@ -308,7 +329,7 @@ export function reportJpeg(data: PersistedData, from: string, to: string): Promi
       ],
     };
   });
-  return paintTable({
+  const subBlob = await paintTable({
     kicker: `${data.settings.schoolName} · ${from} → ${to}`,
     title: "Monte ore sostituzioni",
     corner: "Docente",
@@ -323,7 +344,36 @@ export function reportJpeg(data: PersistedData, from: string, to: string): Promi
     ],
     rows: rows.length ? rows : [{ title: "—", cells: ["0", "0", "0", "0", "0", "0", "0"] }],
   });
+
+  const abs = absencesByReason(data, from, to).filter((r) => r.total > 0);
+  if (abs.length === 0) return subBlob;
+  const absRows: Row[] = abs.map((r) => {
+    const t = data.teachers.find((x) => x.id === r.teacherId);
+    return {
+      title: t ? teacherShort(t, data.teachers) : r.teacherId,
+      cells: [...ABSENCE_REASONS.map((x) => String(r.byReason[x.value])), String(r.total)],
+    };
+  });
+  const absBlob = await paintTable({
+    kicker: `${data.settings.schoolName} · ${from} → ${to}`,
+    title: "Assenze per motivo",
+    corner: "Docente",
+    columns: [...ABSENCE_REASONS.map((x) => ({ title: REASON_SHORT[x.value] ?? x.label })), { title: "Tot." }],
+    rows: absRows,
+  });
+  return stackJpegBlobs([subBlob, absBlob]);
 }
+
+const REASON_SHORT: Record<string, string> = {
+  malattia: "Malattia",
+  permesso: "Perm. pers.",
+  l104: "L.104",
+  formazione: "Formaz.",
+  assemblea_sindacale: "Assemblea",
+  visita: "Visita",
+  permesso_breve: "P. breve",
+  altro: "Altro",
+};
 
 const SUBJECT_ABBR: Record<string, string> = {
   Italiano: "ITA",

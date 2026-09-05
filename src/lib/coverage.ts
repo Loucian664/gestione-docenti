@@ -1,5 +1,6 @@
 import type {
   Absence,
+  AbsenceReason,
   DayOfWeek,
   PersistedData,
   Substitution,
@@ -7,7 +8,8 @@ import type {
   Teacher,
   TimetableSlot,
 } from "./types";
-import { dateInRange, monthRange, toSchoolDay } from "./dates";
+import { ABSENCE_REASONS } from "./types";
+import { dateInRange, eachIsoInRange, isWeekend, monthRange, toSchoolDay } from "./dates";
 
 export type CoverageNeed = {
   key: string;
@@ -537,6 +539,41 @@ export function loadByTeacher(data: PersistedData, from: string, to: string): Te
     else if (s.type === "eccedente") row.eccedente += 1;
     else if (s.type === "sostegno") row.sostegno += 1;
     else row.altro += 1;
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total);
+}
+
+export type AbsenceReasonRow = {
+  teacherId: string;
+  byReason: Record<AbsenceReason, number>;
+  total: number;
+};
+
+function emptyReasons(): Record<AbsenceReason, number> {
+  return Object.fromEntries(ABSENCE_REASONS.map((r) => [r.value, 0])) as Record<AbsenceReason, number>;
+}
+
+/** Giorni scolastici di assenza nel periodo, per docente e motivo. */
+export function absencesByReason(data: PersistedData, from: string, to: string): AbsenceReasonRow[] {
+  const map = new Map<string, AbsenceReasonRow>();
+  for (const t of data.teachers) {
+    map.set(t.id, { teacherId: t.id, byReason: emptyReasons(), total: 0 });
+  }
+  const schoolDays = data.settings.days;
+  for (const a of data.absences) {
+    const row = map.get(a.teacherId);
+    if (!row) continue;
+    const start = a.dateFrom > from ? a.dateFrom : from;
+    const end = a.dateTo < to ? a.dateTo : to;
+    if (start > end) continue;
+    let n = 0;
+    for (const iso of eachIsoInRange(start, end)) {
+      if (!isWeekend(iso, schoolDays)) n += 1;
+    }
+    if (n === 0) continue;
+    const key = ABSENCE_REASONS.some((r) => r.value === a.reason) ? a.reason : "altro";
+    row.byReason[key] += n;
+    row.total += n;
   }
   return [...map.values()].sort((a, b) => b.total - a.total);
 }
