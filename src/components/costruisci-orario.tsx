@@ -45,6 +45,7 @@ export function CostruisciOrario() {
     noFreeDay: true,
     variety: true,
     avoidFiveHours: true,
+    allowThreeConsecutive: true,
   });
   const [report, setReport] = useState<BuildReport | null>(null);
   const [pendingSlots, setPendingSlots] = useState<TimetableSlot[] | null>(null);
@@ -141,7 +142,13 @@ export function CostruisciOrario() {
             checked={opts.variety}
             onChange={(v) => setOpts({ ...opts, variety: v })}
             label="Varietà in classe"
-            hint="Max 2 ore dello stesso docente nella stessa classe al giorno. Le materie da 2 ore settimanali non stanno attaccate né nello stesso giorno. Italiano e matematica possono fare il blocco da 2 ore."
+            hint="Le materie da 2 ore settimanali non stanno attaccate né nello stesso giorno. Italiano e matematica possono fare il blocco da 2 ore."
+          />
+          <Toggle
+            checked={opts.allowThreeConsecutive}
+            onChange={(v) => setOpts({ ...opts, allowThreeConsecutive: v })}
+            label="Fino a 3 ore di fila nella stessa classe"
+            hint="Meglio 3 ore compatte che due buche in mezzo (restare 5 ore per farne 3). 4 o 5 nella stessa classe restano vietate."
           />
           <Toggle
             checked={opts.noFreeDay}

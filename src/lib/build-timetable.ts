@@ -16,6 +16,7 @@ export type BuildOptions = {
   noFreeDay: boolean;
   variety: boolean;
   avoidFiveHours: boolean;
+  allowThreeConsecutive: boolean;
 };
 
 export type BuildReport = {
@@ -202,7 +203,8 @@ function pedagogyOk(
   periodId: string,
   data: PersistedData,
   weekly: Map<string, number>,
-  teacher?: Teacher,
+  teacher: Teacher | undefined,
+  allowThree: boolean,
 ): boolean {
   const rest = places.filter((p) => p !== item);
   const w = weekly.get(pairKey(item.classId, item.teacherId, item.subject)) ?? 1;
@@ -212,7 +214,7 @@ function pedagogyOk(
   const sameTeacher = rest.filter(
     (p) => p.teacherId === item.teacherId && p.classId === item.classId && p.day === day,
   );
-  const maxSame = teacher?.otherPlesso ? 3 : 2;
+  const maxSame = teacher?.otherPlesso || allowThree ? 3 : 2;
   const newCount = sameTeacher.length + 1;
   if (newCount > maxSame && newCount > already.length) return false;
 
@@ -232,7 +234,7 @@ function pedagogyOk(
   const idxs = sameTeacher.map((p) => periodIndex(data, p.periodId));
   const subIdxs = sameSub.map((p) => periodIndex(data, p.periodId));
   if (w <= 2 && newSub > alreadySub && subIdxs.some((i) => Math.abs(i - idx) === 1)) return false;
-  if (!teacher?.otherPlesso) {
+  if (!teacher?.otherPlesso && !allowThree) {
     const oldIdxs = already.map((p) => periodIndex(data, p.periodId));
     const newIdxs = [...idxs, idx];
     if (hasThreeConsecutive(newIdxs) && !hasThreeConsecutive(oldIdxs)) return false;
@@ -269,7 +271,7 @@ function feasible(
       if (away.has(busyKey(day, p.id, t.id))) return false;
     }
   }
-  if (opts.variety && !pedagogyOk(places, item, day, periodId, data, weekly, t)) return false;
+  if (opts.variety && !pedagogyOk(places, item, day, periodId, data, weekly, t, opts.allowThreeConsecutive)) return false;
   return true;
 }
 
@@ -449,7 +451,7 @@ function evaluatePlaces(
         byTeacher.set(p.teacherId, (byTeacher.get(p.teacherId) ?? 0) + 1);
       }
       for (const [tid, n] of byTeacher) {
-        const max = teachers.get(tid)?.otherPlesso ? 3 : 2;
+        const max = teachers.get(tid)?.otherPlesso || opts.allowThreeConsecutive ? 3 : 2;
         if (n > max) cost += (n - max) * 220;
       }
       for (let i = 0; i < row.length - 2; i++) {
@@ -1036,7 +1038,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
         for (const p of places) {
           if (p.classId === cls.id && p.day === day) byT.set(p.teacherId, (byT.get(p.teacherId) ?? 0) + 1);
         }
-        for (const n of byT.values()) if (n > 2) pile += 1;
+        for (const n of byT.values()) if (n > (opts.allowThreeConsecutive ? 3 : 2)) pile += 1;
       }
     }
     for (const [key, hours] of weekly) {
@@ -1051,7 +1053,11 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       for (const n of byDay.values()) if (n >= 2) twoBlock += 1;
     }
     if (pile === 0 && twoBlock === 0) {
-      notes.push("Varietà: niente giornate con lo stesso docente per 3+ ore, e le materie da 2 ore sono su giorni distinti.");
+      notes.push(
+        opts.allowThreeConsecutive
+          ? "Varietà: al massimo 3 ore dello stesso docente in una classe; le materie da 2 ore su giorni distinti."
+          : "Varietà: niente giornate con lo stesso docente per 3+ ore, e le materie da 2 ore sono su giorni distinti.",
+      );
     } else {
       if (pile) notes.push(`${pile} giornate ancora con lo stesso docente troppe ore in una classe.`);
       if (twoBlock) notes.push(`${twoBlock} blocchi da 2 ore (materie con solo 2 ore settimanali) da spezzare.`);
