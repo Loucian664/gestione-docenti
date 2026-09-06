@@ -129,8 +129,7 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Salvataggio</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Il registro resta su questo dispositivo. iPad e computer sono copie separate: per passarlo da uno
-          all’altro usa il backup .json, non il file Excel.
+          Il registro resta su questo dispositivo. iPhone, iPad e Mac hanno ciascuno la propria copia: per passarlo usa il backup .json, non Excel.
         </p>
         {store.savedAt ? (
           <p className="mt-2 text-[13px] text-foreground">
@@ -141,8 +140,7 @@ function ImpostazioniPage() {
           <p className="mt-2 text-[13px] text-warning">Ancora nessun salvataggio su questo dispositivo.</p>
         )}
         <p className="mt-2 text-sm text-muted-foreground">
-          Su iPhone e iPad, Esporta apre Condividi: salva in File o invialo per mail. Poi Importa backup e
-          scegli quel file .json.
+          Esporta: su iPhone e iPad passa da Condividi (File o Mail); sul Mac il file va in Download. Poi Importa backup e scegli quel .json.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
@@ -179,8 +177,7 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Copia su GitHub</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Scarica il programma (non i tuoi dati). Sul Mac scompatta lo zip e carica i file su GitHub, come
-          nella guida.
+          Scarica il programma (non i tuoi dati). Sul Mac scompatta lo zip e carica i file su GitHub.
         </p>
         <div className="mt-4">
           <Button
