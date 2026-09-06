@@ -38,3 +38,5 @@ Le modifiche pubblicate su `main` aggiornano automaticamente il sito (GitHub Pag
 ## Nota
 
 Uso interno scolastico. Non sostituisce il registro ufficiale.
+
+Fatto da Grok Build (beta)
