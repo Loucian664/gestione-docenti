@@ -146,15 +146,6 @@ function ReportPage() {
           <Label htmlFor="to">Al</Label>
           <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setFrom(yearRange.from);
-            setTo(yearRange.to);
-          }}
-        >
-          Anno {data.settings.schoolYear || "scolastico"}
-        </Button>
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
