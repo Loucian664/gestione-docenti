@@ -17,6 +17,7 @@ export type BuildOptions = {
   variety: boolean;
   avoidFiveHours: boolean;
   allowThreeConsecutive: boolean;
+  maxFiveAtSchool: boolean;
 };
 
 export type BuildReport = {
@@ -248,7 +249,7 @@ function pedagogyOk(
 
 function feasible(
   data: PersistedData,
-  item: { teacherId: string; classId: string; subject: string; day?: DayOfWeek },
+  item: { teacherId: string; classId: string; subject: string; day?: DayOfWeek; periodId?: string },
   day: DayOfWeek,
   periodId: string,
   teacherBusy: Set<string>,
@@ -278,7 +279,42 @@ function feasible(
     const without = item.day === day ? Math.max(0, already - 1) : already;
     if (without >= 4) return false;
   }
+  if (opts.maxFiveAtSchool) {
+    const exclude =
+      item.day === day && item.periodId ? periodIndex(data, item.periodId) : null;
+    if (spanIfPlaced(places, data, item.teacherId, day, periodId, exclude) > 5) return false;
+  }
   return true;
+}
+
+function spanIfPlaced(
+  places: Place[],
+  data: PersistedData,
+  teacherId: string,
+  day: DayOfWeek,
+  periodId: string,
+  excludeIdx: number | null,
+): number {
+  const idxs = places
+    .filter((p) => p.teacherId === teacherId && p.day === day)
+    .map((p) => periodIndex(data, p.periodId))
+    .filter((i) => excludeIdx === null || i !== excludeIdx);
+  idxs.push(periodIndex(data, periodId));
+  if (idxs.length <= 1) return 1;
+  return Math.max(...idxs) - Math.min(...idxs) + 1;
+}
+
+function schoolSpanDays(places: Place[], data: PersistedData, teacherId: string): number {
+  let n = 0;
+  for (const day of data.settings.days) {
+    const idxs = places
+      .filter((p) => p.teacherId === teacherId && p.day === day)
+      .map((p) => periodIndex(data, p.periodId))
+      .sort((a, b) => a - b);
+    if (idxs.length < 2) continue;
+    if (idxs[idxs.length - 1]! - idxs[0]! + 1 > 5) n += 1;
+  }
+  return n;
 }
 
 function gapsFor(places: Place[], data: PersistedData, teacherId: string): number {
@@ -435,6 +471,7 @@ function evaluatePlaces(
     if (opts.avoidGaps) cost += gapsFor(places, data, id) * 55;
     if (opts.avoidGaps) cost += holeStreak(places, data, id) * 35;
     if (opts.avoidGaps) cost += longPresenceDays(places, data, id) * 260;
+    if (opts.maxFiveAtSchool) cost += schoolSpanDays(places, data, id) * 420;
     lastCounts.set(id, places.filter((p) => p.teacherId === id && p.periodId === last?.id).length);
     const t = teachers.get(id);
     if (opts.avoidFiveHours) {
@@ -1148,6 +1185,17 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       heavy.length === 0
         ? "Nessuno oltre 4 ore di lezione in un giorno."
         : `Ancora 5+ ore di lezione nello stesso giorno: ${[...new Set(heavy)].slice(0, 4).join(", ")}.`,
+    );
+  }
+  if (opts.maxFiveAtSchool) {
+    const long: string[] = [];
+    for (const t of data.teachers.filter(isTimetableTeacher)) {
+      if (schoolSpanDays(places, data, t.id) > 0) long.push(teacherName(t));
+    }
+    notes.push(
+      long.length === 0
+        ? "Nessuno a scuola più di 5 ore (lezione + buche)."
+        : `Ancora 6 ore a scuola (1ª e 6ª): ${long.slice(0, 4).join(", ")}.`,
     );
   }
   if (opts.balanceLastHour && lastHourByTeacher.length) {

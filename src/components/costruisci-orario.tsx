@@ -48,6 +48,7 @@ export function CostruisciOrario() {
     variety: true,
     avoidFiveHours: true,
     allowThreeConsecutive: true,
+    maxFiveAtSchool: false,
   });
   const [report, setReport] = useState<BuildReport | null>(null);
   const [pendingSlots, setPendingSlots] = useState<TimetableSlot[] | null>(null);
@@ -137,6 +138,12 @@ export function CostruisciOrario() {
             onChange={(v) => setOpts({ ...opts, avoidFiveHours: v })}
             label="Max 4 ore di lezione al giorno"
             hint="Le buche non contano. La 5ª ora di lezione nello stesso giorno solo se altrimenti resterebbe fuori."
+          />
+          <Toggle
+            checked={opts.maxFiveAtSchool}
+            onChange={(v) => setOpts({ ...opts, maxFiveAtSchool: v })}
+            label="Max 5 ore a scuola"
+            hint="Lezione + buche, dalla prima all’ultima. Mai 1ª e 6ª nello stesso giorno. Se serve una 5ª ora di lezione, deve essere di fila (1ª–5ª o 2ª–6ª)."
           />
           <Toggle
             checked={opts.balanceLastHour}
