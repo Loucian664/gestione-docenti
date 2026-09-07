@@ -120,7 +120,7 @@ export function CostruisciOrario() {
   return (
     <div>
       <p className="max-w-3xl text-sm text-muted-foreground">
-        Prova un orario più equilibrato. Non tocca sostegno, potenziamento né strumento (chitarra, flauto,
+        Prova un orario più equilibrato. Non tocca sostegno, potenziamento e strumento (chitarra, flauto,
         oboe, pianoforte). Criteri e plessi in alto, poi le cattedre, poi Proponi e l’anteprima.
       </p>
 
@@ -155,7 +155,7 @@ export function CostruisciOrario() {
             checked={opts.variety}
             onChange={(v) => setOpts({ ...opts, variety: v })}
             label="Varietà in classe"
-            hint="Le materie da 2 ore settimanali non stanno attaccate né nello stesso giorno. Italiano e matematica possono fare il blocco da 2 ore."
+            hint="Le materie da 2 ore settimanali non stanno attaccate e non stanno nello stesso giorno. Italiano e matematica possono fare il blocco da 2 ore."
           />
           <Toggle
             checked={opts.allowThreeConsecutive}
@@ -504,8 +504,7 @@ export function CostruisciOrario() {
             <DialogTitle>Sostituire l’orario di cattedra?</DialogTitle>
             <DialogDescription>
               Le lezioni di sostegno, potenziamento e strumento (chitarra, flauto, oboe, pianoforte) restano.
-              Poi puoi spostare le celle nel quadro. L’operazione non si può annullare, se non riproponendo o
-              correggendo a mano.
+              Poi puoi spostare le celle nel quadro. Se non va, Annulla ultima proposta.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
