@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAppStore, snapshot } from "@/lib/store";
 import { monthSubCounts, teacherName } from "@/lib/coverage";
+import { applyTeacherCattedre, cattedreOfTeacher } from "@/lib/build-timetable";
 import { ROLE_LABELS, SUBJECTS, type Teacher, type TeacherRole } from "@/lib/types";
 import { Plus, Search, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
@@ -38,7 +39,7 @@ function DocentiPage() {
     <div>
       <PageHeader
         title="Docenti"
-        description="Anagrafica del plesso. Per potenziamento, sostegno e strumento: dopo aver creato il docente, apri il suo orario e inserisci le ore (anche in compresenza)."
+        description="Anagrafica e classi. Le ore di organico sono il monte del contratto; le classi le assegni qui (o in Orario → Costruisci)."
         actions={
           <Button onClick={() => setEditing("new")}>
             <Plus />
@@ -57,6 +58,7 @@ function DocentiPage() {
               <th className="px-4 py-2 font-medium">Docente</th>
               <th className="px-4 py-2 font-medium">Materie</th>
               <th className="px-4 py-2 font-medium">Ruolo</th>
+              <th className="px-4 py-2 font-medium">Classi</th>
               <th className="px-4 py-2 font-medium">Cattedra</th>
               <th className="px-4 py-2 font-medium">Coperture mese</th>
               <th className="px-4 py-2 font-medium">Orario</th>
@@ -78,6 +80,9 @@ function DocentiPage() {
                 <td className="px-4 py-3 text-muted-foreground">{t.subjects.join(", ")}</td>
                 <td className="px-4 py-3">
                   <Badge variant="outline">{ROLE_LABELS[t.role]}</Badge>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {classLabels(data, t.id) || "—"}
                 </td>
                 <td className="px-4 py-3 tabular-nums">{t.weeklyHours} h</td>
                 <td className="px-4 py-3 tabular-nums">{counts[t.id] ?? 0}</td>
@@ -110,6 +115,15 @@ function DocentiPage() {
   );
 }
 
+function classLabels(data: ReturnType<typeof snapshot>, teacherId: string): string {
+  const names = [
+    ...new Set(
+      cattedreOfTeacher(data, teacherId).map((c) => data.classes.find((x) => x.id === c.classId)?.name ?? ""),
+    ),
+  ].filter(Boolean);
+  return names.join(", ");
+}
+
 function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: () => void }) {
   const store = useAppStore();
   const isNew = value === "new";
@@ -121,6 +135,16 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
   const [role, setRole] = useState<TeacherRole>(current?.role ?? "cattedra");
   const [notes, setNotes] = useState(current?.notes ?? "");
   const [color, setColor] = useState(current?.color ?? "#3d5a4c");
+  const data = snapshot(store);
+  const [rows, setRows] = useState(() =>
+    current
+      ? cattedreOfTeacher(data, current.id).map((c) => ({
+          classId: c.classId,
+          subject: c.subject,
+          hours: String(c.hours),
+        }))
+      : [] as { classId: string; subject: string; hours: string }[],
+  );
 
   function save() {
     const payload = {
@@ -134,13 +158,17 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
       role,
       notes,
       color,
-      assignedClassIds: current?.assignedClassIds ?? [],
+      assignedClassIds: [...new Set(rows.map((r) => r.classId).filter(Boolean))],
       otherPlesso: current?.otherPlesso ?? false,
       awaySlots: current?.awaySlots ?? [],
     };
     if (!payload.lastName) return;
-    if (isNew) store.addTeacher(payload);
-    else if (current) store.updateTeacher(current.id, payload);
+    const id = isNew ? store.addTeacher(payload) : current!.id;
+    if (!isNew && current) store.updateTeacher(current.id, payload);
+    const parsed = rows
+      .map((r) => ({ classId: r.classId, subject: r.subject.trim(), hours: Number(r.hours) || 0 }))
+      .filter((r) => r.classId && r.subject && r.hours > 0);
+    store.setCattedre(applyTeacherCattedre(snapshot(store), id, parsed));
     toast.success(
       payload.role === "potenziamento" || payload.role === "sostegno"
         ? "Docente salvato. Ora inserisci le sue ore in Orario → Per docente."
@@ -186,6 +214,78 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
               </NativeSelect>
             </Field>
           </div>
+          <Field label="Classi e materie su questo plesso">
+            <p className="text-[12px] text-muted-foreground">
+              Quante ore in quale classe. Il totale può essere minore delle ore di organico se insegna anche altrove.
+            </p>
+            <div className="mt-2 flex flex-col gap-2">
+              {rows.map((row, i) => (
+                <div key={i} className="grid grid-cols-[1fr_1fr_4.5rem_2.5rem] items-center gap-1.5">
+                  <NativeSelect
+                    value={row.classId}
+                    onChange={(e) =>
+                      setRows((all) => all.map((r, j) => (j === i ? { ...r, classId: e.target.value } : r)))
+                    }
+                    aria-label="Classe"
+                  >
+                    <option value="">Classe</option>
+                    {data.classes
+                      .slice()
+                      .sort((a, b) => a.name.localeCompare(b.name, "it"))
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                  </NativeSelect>
+                  <Input
+                    list="docente-subjects"
+                    placeholder="Materia"
+                    value={row.subject}
+                    onChange={(e) =>
+                      setRows((all) => all.map((r, j) => (j === i ? { ...r, subject: e.target.value } : r)))
+                    }
+                  />
+                  <Input
+                    type="number"
+                    min={1}
+                    max={18}
+                    inputMode="numeric"
+                    className="text-right tabular-nums"
+                    value={row.hours}
+                    onChange={(e) =>
+                      setRows((all) => all.map((r, j) => (j === i ? { ...r, hours: e.target.value } : r)))
+                    }
+                    aria-label="Ore"
+                  />
+                  <button
+                    type="button"
+                    className="inline-flex size-10 items-center justify-center text-muted-foreground"
+                    aria-label="Togli riga"
+                    onClick={() => setRows((all) => all.filter((_, j) => j !== i))}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  setRows((all) => [
+                    ...all,
+                    {
+                      classId: data.classes[0]?.id ?? "",
+                      subject: subjects.split(",")[0]?.trim() ?? "",
+                      hours: "1",
+                    },
+                  ])
+                }
+              >
+                Aggiungi classe
+              </Button>
+            </div>
+          </Field>
           <Field label="Colore in orario">
             <Input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-10 w-20 p-1" />
           </Field>

@@ -143,6 +143,27 @@ export function resolveCattedre(data: PersistedData): Cattedra[] {
   return out;
 }
 
+export function cattedreOfTeacher(data: PersistedData, teacherId: string): Cattedra[] {
+  return resolveCattedre(data).filter((c) => c.teacherId === teacherId && c.hours > 0);
+}
+
+export function applyTeacherCattedre(
+  data: PersistedData,
+  teacherId: string,
+  rows: { classId: string; subject: string; hours: number }[],
+): Cattedra[] {
+  const next = resolveCattedre(data).map((r) =>
+    r.teacherId === teacherId ? { ...r, teacherId: "" } : r,
+  );
+  for (const row of rows) {
+    if (!row.classId || !row.subject || row.hours <= 0) continue;
+    const i = next.findIndex((r) => r.classId === row.classId && r.subject === row.subject);
+    if (i >= 0) next[i] = { ...next[i]!, teacherId, hours: row.hours };
+    else next.push({ classId: row.classId, subject: row.subject, hours: row.hours, teacherId });
+  }
+  return next;
+}
+
 export function timetableDemand(data: PersistedData): DemandResult {
   const pool = new Set(data.teachers.filter(isTimetableTeacher).map((t) => t.id));
   const lessons: LessonDemand[] = [];

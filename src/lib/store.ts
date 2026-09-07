@@ -25,7 +25,7 @@ type Actions = {
   hydrateDefaultDate: () => void;
   setSelectedDate: (date: string) => void;
   updateSettings: (patch: Partial<Settings>) => void;
-  addTeacher: (t: Omit<Teacher, "id">) => void;
+  addTeacher: (t: Omit<Teacher, "id">) => string;
   updateTeacher: (id: string, patch: Partial<Teacher>) => void;
   removeTeacher: (id: string) => void;
   addClass: (c: Omit<SchoolClass, "id">) => void;
@@ -89,7 +89,11 @@ export const useAppStore = create<AppStore>()(
 
         updateSettings: (patch) => save({ settings: { ...get().settings, ...patch } }),
 
-        addTeacher: (t) => save({ teachers: [...get().teachers, { ...t, id: uid("t") }] }),
+        addTeacher: (t) => {
+          const id = uid("t");
+          save({ teachers: [...get().teachers, { ...t, id }] });
+          return id;
+        },
 
         updateTeacher: (id, patch) =>
           save({ teachers: get().teachers.map((t) => (t.id === id ? { ...t, ...patch } : t)) }),
@@ -99,6 +103,9 @@ export const useAppStore = create<AppStore>()(
             teachers: get().teachers.filter((t) => t.id !== id),
             slots: get().slots.filter((s) => s.teacherId !== id),
             absences: get().absences.filter((a) => a.teacherId !== id),
+            cattedre: (get().cattedre ?? []).map((x) =>
+              x.teacherId === id ? { ...x, teacherId: "" } : x,
+            ),
           }),
 
         addClass: (c) => save({ classes: [...get().classes, { ...c, id: uid("c") }] }),
