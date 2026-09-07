@@ -268,6 +268,14 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                   </button>
                 </div>
               ))}
+              <datalist id="docente-subjects">
+                {(subjects.split(",").map((s) => s.trim()).filter(Boolean).length
+                  ? subjects.split(",").map((s) => s.trim()).filter(Boolean)
+                  : SUBJECTS
+                ).map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
               <Button
                 type="button"
                 variant="outline"
