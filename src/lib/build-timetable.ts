@@ -1282,7 +1282,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
           : "Varietà: niente giornate con lo stesso docente per 3+ ore, e le materie da 2 ore sono su giorni distinti.",
       );
     } else {
-      if (pile) notes.push(`${pile} giornate ancora con lo stesso docente troppe ore in una classe.`);
+      if (pile) notes.push(`${pile} giornate ancora con troppe ore dello stesso docente in una classe.`);
       if (twoBlock) notes.push(`${twoBlock} blocchi da 2 ore (materie con solo 2 ore settimanali) da spezzare.`);
     }
   }
