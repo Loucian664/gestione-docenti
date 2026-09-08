@@ -22,16 +22,18 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
       <DialogOverlay />
       <DialogPrimitive.Content
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-popover p-5 text-popover-foreground shadow-border-hover outline-none",
+          "fixed top-1/2 left-1/2 z-50 flex w-[calc(100%-1.5rem)] max-h-[calc(100dvh-1.5rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-popover p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-popover-foreground shadow-border-hover outline-none",
           className,
         )}
         {...props}
       >
-        {children}
-        <DialogPrimitive.Close className="absolute top-3 right-3 rounded-sm p-1 text-muted-foreground hover:bg-muted">
-          <X className="size-4" />
+        <DialogPrimitive.Close className="absolute top-2 right-2 z-20 flex size-11 items-center justify-center rounded-md text-muted-foreground hover:bg-muted">
+          <X className="size-5" />
           <span className="sr-only">Chiudi</span>
         </DialogPrimitive.Close>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
+          {children}
+        </div>
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   );
