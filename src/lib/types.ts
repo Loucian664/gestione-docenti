@@ -29,6 +29,8 @@ export type Teacher = {
   awaySlots?: { day: DayOfWeek; periodId: string }[];
   /** Giorni di rientro T.P.: Costruisci mette solo 5ª e 6ª. */
   rientroDays?: DayOfWeek[];
+  /** Ore a disposizione (non lezione). In copertura non sono eccedenti. */
+  dispSlots?: { day: DayOfWeek; periodId: string }[];
 };
 
 export type SchoolClass = {

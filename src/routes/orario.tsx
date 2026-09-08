@@ -11,6 +11,7 @@ import { useAppStore, snapshot } from "@/lib/store";
 import {
   cellSlots,
   defaultSubjectFor,
+  isDispHour,
   teacherDayWindow,
   teacherName,
   teacherShort,
@@ -512,13 +513,20 @@ function OrarioPage() {
                     const others = slot ? cellSlots(data, slot.classId, d, p.id).filter((s) => s.teacherId !== teacherId) : [];
                     const win = teacherDayWindow(data, teacherId, d);
                     const inWindow = Boolean(win && p.index >= win.first && p.index <= win.last);
+                    const disp = Boolean(currentTeacher && !slot && isDispHour(currentTeacher, d, p.id));
                     return (
                       <td key={d} className="p-1.5 align-top">
                         <button
                           type="button"
                           onClick={() => setTeacherEdit({ day: d, periodId: p.id, teacherId })}
                           className="flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
-                          style={slot && currentTeacher ? { background: `${currentTeacher.color}18` } : undefined}
+                          style={
+                            slot && currentTeacher
+                              ? { background: `${currentTeacher.color}18` }
+                              : disp
+                                ? { background: "color-mix(in oklab, var(--color-accent) 45%, transparent)" }
+                                : undefined
+                          }
                         >
                           {slot ? (
                             <>
@@ -530,7 +538,7 @@ function OrarioPage() {
                             </>
                           ) : (
                             <span className="text-[12px] text-ink-faint">
-                              {inWindow ? "Buco · in sede" : "Clicca per inserire"}
+                              {disp ? "A disposizione" : inWindow ? "Buco · in sede" : "Clicca per inserire"}
                             </span>
                           )}
                         </button>
@@ -701,6 +709,7 @@ function TeacherHourEditor({
   const teacher = data.teachers.find((t) => t.id === editing.teacherId);
   const existing = teacherSlotAt(data, editing.teacherId, editing.day, editing.periodId);
   const period = data.settings.periods.find((p) => p.id === editing.periodId);
+  const dispOn = Boolean(teacher && isDispHour(teacher, editing.day, editing.periodId));
   const classChoices = isTpPeriod(period)
     ? data.classes.filter((c) => c.tempo === "TP")
     : data.classes;
@@ -728,7 +737,26 @@ function TeacherHourEditor({
       teacherId: editing.teacherId,
       subject,
     });
+    if (teacher && dispOn) {
+      store.updateTeacher(teacher.id, {
+        dispSlots: (teacher.dispSlots ?? []).filter(
+          (a) => !(a.day === editing.day && a.periodId === editing.periodId),
+        ),
+      });
+    }
     toast.success(others.length ? "Ora inserita in compresenza" : "Ora inserita");
+    onClose();
+  }
+
+  function toggleDisp() {
+    if (!teacher) return;
+    if (existing) store.clearSlot(existing.id);
+    const cur = teacher.dispSlots ?? [];
+    const next = dispOn
+      ? cur.filter((a) => !(a.day === editing.day && a.periodId === editing.periodId))
+      : [...cur, { day: editing.day, periodId: editing.periodId }];
+    store.updateTeacher(teacher.id, { dispSlots: next });
+    toast.success(dispOn ? "Disposizione tolta" : "Ora a disposizione");
     onClose();
   }
 
@@ -782,13 +810,16 @@ function TeacherHourEditor({
             </NativeSelect>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
             {existing && (
               <Button variant="outline" onClick={remove}>
                 Togli ora
               </Button>
             )}
-            <Button onClick={save}>Salva</Button>
+            <Button variant="outline" onClick={toggleDisp}>
+              {dispOn ? "Togli disposizione" : "A disposizione"}
+            </Button>
+            <Button onClick={save}>Salva lezione</Button>
           </div>
         </div>
       </DialogContent>
