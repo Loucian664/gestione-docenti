@@ -9,6 +9,7 @@ import { ABSENCE_REASONS } from "@/lib/types";
 import type { Absence, AbsenceReason } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { teacherName } from "@/lib/coverage";
+import { isMensaPeriod, visiblePeriods } from "@/lib/periods";
 import { toast } from "sonner";
 
 export function AbsenceDialog({
@@ -21,7 +22,8 @@ export function AbsenceDialog({
   initial?: Absence | null;
 }) {
   const teachers = useAppStore((s) => s.teachers);
-  const periods = useAppStore((s) => s.settings.periods);
+  const settings = useAppStore((s) => s.settings);
+  const periods = visiblePeriods(settings).filter((p) => !isMensaPeriod(p));
   const selectedDate = useAppStore((s) => s.selectedDate);
   const addAbsence = useAppStore((s) => s.addAbsence);
   const updateAbsence = useAppStore((s) => s.updateAbsence);

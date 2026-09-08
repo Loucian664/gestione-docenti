@@ -10,6 +10,7 @@ import {
 } from "./coverage";
 import { formatLong } from "./dates";
 import { ABSENCE_REASONS, DAY_SHORT, type DayOfWeek, type PersistedData } from "./types";
+import { hourMark, isMensaPeriod, isTpPeriod, visiblePeriods } from "./periods";
 
 const PAPER = "#F3EFE6";
 const INK = "#1C1915";
@@ -159,10 +160,12 @@ function classOrder(data: PersistedData) {
 
 export function orarioQuadroJpeg(data: PersistedData, day: DayOfWeek): Promise<Blob> {
   const classes = classOrder(data);
-  const rows: Row[] = data.settings.periods.map((p) => ({
+  const rows: Row[] = visiblePeriods(data.settings).map((p) => ({
     title: p.label,
     sub: `${p.start}–${p.end}`,
     cells: classes.map((c) => {
+      if (isTpPeriod(p) && c.tempo !== "TP") return "";
+      if (isMensaPeriod(p)) return "Mensa";
       const occupants = cellSlots(data, c.id, day, p.id);
       if (occupants.length === 0) return "—";
       return occupants
@@ -186,10 +189,11 @@ export function orarioClassJpeg(data: PersistedData, classId: string): Promise<B
   const cls = data.classes.find((c) => c.id === classId);
   const days = data.settings.days;
   const slots = data.slots.filter((s) => s.classId === classId);
-  const rows: Row[] = data.settings.periods.map((p) => ({
+  const rows: Row[] = visiblePeriods(data.settings, cls?.tempo).map((p) => ({
     title: p.label,
     sub: `${p.start}–${p.end}`,
     cells: days.map((d) => {
+      if (isMensaPeriod(p)) return "Mensa";
       const occupants = slots.filter((s) => s.day === d && s.periodId === p.id);
       if (occupants.length === 0) return "—";
       return occupants
@@ -212,7 +216,9 @@ export function orarioClassJpeg(data: PersistedData, classId: string): Promise<B
 export function orarioTeacherJpeg(data: PersistedData, teacherId: string): Promise<Blob> {
   const t = data.teachers.find((x) => x.id === teacherId);
   const days = data.settings.days;
-  const rows: Row[] = data.settings.periods.map((p) => ({
+  const rows: Row[] = visiblePeriods(data.settings)
+    .filter((p) => !isMensaPeriod(p))
+    .map((p) => ({
     title: p.label,
     sub: `${p.start}–${p.end}`,
     cells: days.map((d) => {
@@ -399,17 +405,23 @@ export function subjectAbbr(subject: string): string {
 }
 
 export function weekCellLines(data: PersistedData, classId: string, day: DayOfWeek): {
+  mark: string;
   period: number;
   subject: string;
   teacher: string;
   extra: string;
 }[] {
-  return data.settings.periods.map((p) => {
+  const cls = data.classes.find((c) => c.id === classId);
+  return visiblePeriods(data.settings, cls?.tempo).map((p) => {
+    if (isMensaPeriod(p)) return { mark: "M", period: p.index, subject: "Mensa", teacher: "", extra: "" };
     const occupants = cellSlots(data, classId, day, p.id);
-    if (occupants.length === 0) return { period: p.index, subject: "", teacher: "", extra: "" };
+    if (occupants.length === 0) {
+      return { mark: hourMark(p), period: p.index, subject: "", teacher: "", extra: "" };
+    }
     const primary = occupants[0]!;
     const t = data.teachers.find((x) => x.id === primary.teacherId);
     return {
+      mark: hourMark(p),
       period: p.index,
       subject: subjectAbbr(primary.subject),
       teacher: t ? teacherShort(t, data.teachers) : "",
@@ -422,7 +434,7 @@ export async function orarioWeekJpeg(data: PersistedData): Promise<Blob> {
   await document.fonts.ready.catch(() => undefined);
   const classes = classOrder(data);
   const days = data.settings.days;
-  const periods = data.settings.periods;
+  const periods = visiblePeriods(data.settings);
   const dpr = 2;
   const pad = 28;
   const headH = 86;
@@ -479,15 +491,21 @@ export async function orarioWeekJpeg(data: PersistedData): Promise<Blob> {
       const lines = weekCellLines(data, c.id, d);
       lines.forEach((line, li) => {
         const ty = y + 18 + li * lineH;
+        if (line.subject === "Mensa") {
+          ctx.fillStyle = INK;
+          ctx.font = "500 11px 'Source Sans 3', system-ui, sans-serif";
+          ctx.fillText("Mensa", x + 8, ty);
+          return;
+        }
         if (!line.teacher) {
           ctx.fillStyle = MUTED;
           ctx.font = "500 11px 'Source Sans 3', system-ui, sans-serif";
-          ctx.fillText(`${line.period}  —`, x + 8, ty);
+          ctx.fillText(`${line.mark}  —`, x + 8, ty);
           return;
         }
         ctx.fillStyle = INK;
         ctx.font = "500 11px 'Source Sans 3', system-ui, sans-serif";
-        const prefix = `${line.period}  ${line.subject}  `;
+        const prefix = `${line.mark}  ${line.subject}  `;
         ctx.fillText(prefix, x + 8, ty);
         const px = x + 8 + ctx.measureText(prefix).width;
         ctx.font = "700 11px 'Source Sans 3', system-ui, sans-serif";
@@ -537,7 +555,7 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
   await document.fonts.ready.catch(() => undefined);
   const classes = classOrder(data);
   const days = data.settings.days;
-  const periods = data.settings.periods;
+  const periods = visiblePeriods(data.settings);
   const dpr = 2;
   const pad = 22;
   const titleH = 72;
@@ -610,12 +628,21 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
       ctx.fillStyle = "#111";
       ctx.font = "700 12px 'Source Sans 3', system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(String(p.index), x0 + hourW / 2, y + (withTeachers ? 22 : 17));
+      ctx.fillText(hourMark(p), x0 + hourW / 2, y + (withTeachers ? 22 : 17));
       ctx.textAlign = "left";
 
       classes.forEach((c, i) => {
         const x = x0 + hourW + i * colW;
         strokeRect(x, y, colW, rowH);
+        if (isTpPeriod(p) && c.tempo !== "TP") return;
+        if (isMensaPeriod(p)) {
+          ctx.textAlign = "center";
+          ctx.fillStyle = "#111";
+          ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+          ctx.fillText("MENSA", x + colW / 2, y + (withTeachers ? 22 : 17));
+          ctx.textAlign = "left";
+          return;
+        }
         const occupants = cellSlots(data, c.id, day, p.id);
         if (!occupants.length) return;
         const primary = occupants[0]!;

@@ -15,6 +15,7 @@ import { useAppStore, snapshot } from "@/lib/store";
 import { backupJson, parseBackupJson } from "@/lib/export";
 import { shareOrSave, shareOrSaveFile, toastSave } from "@/lib/share-file";
 import type { DayOfWeek } from "@/lib/types";
+import { ensureTpPeriods } from "@/lib/periods";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/impostazioni")({ component: ImpostazioniPage });
@@ -76,9 +77,13 @@ function ImpostazioniPage() {
 
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Orario giornaliero</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Sei ore, lunedì–venerdì. Modifica etichette e orari.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Sei ore, lunedì–venerdì. Mensa, 7ª e 8ª solo se attivi il tempo prolungato.
+        </p>
         <ul className="mt-4 flex flex-col gap-2">
-          {store.settings.periods.map((p, i) => (
+          {store.settings.periods.filter((p) => !p.tpOnly).map((p) => {
+            const i = store.settings.periods.findIndex((x) => x.id === p.id);
+            return (
             <li key={p.id} className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-2">
               <Input
                 value={p.label}
@@ -110,8 +115,64 @@ function ImpostazioniPage() {
                 }}
               />
             </li>
-          ))}
+            );
+          })}
         </ul>
+        <label className="mt-4 flex min-h-10 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="size-4 accent-primary"
+            checked={Boolean(store.settings.tpAfternoon)}
+            onChange={(e) => {
+              const on = e.target.checked;
+              store.updateSettings({
+                tpAfternoon: on,
+                periods: on ? ensureTpPeriods(store.settings.periods) : store.settings.periods,
+              });
+            }}
+          />
+          Mensa, 7ª e 8ª per le classi a tempo prolungato
+        </label>
+        {store.settings.tpAfternoon && (
+          <ul className="mt-3 flex flex-col gap-2">
+            {store.settings.periods.filter((p) => p.tpOnly).map((p) => {
+              const i = store.settings.periods.findIndex((x) => x.id === p.id);
+              return (
+                <li key={p.id} className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-2">
+                  <Input
+                    value={p.label}
+                    onChange={(e) => {
+                      const periods = store.settings.periods.map((x, idx) =>
+                        idx === i ? { ...x, label: e.target.value } : x,
+                      );
+                      store.updateSettings({ periods });
+                    }}
+                  />
+                  <Input
+                    type="time"
+                    value={p.start}
+                    onChange={(e) => {
+                      const periods = store.settings.periods.map((x, idx) =>
+                        idx === i ? { ...x, start: e.target.value } : x,
+                      );
+                      store.updateSettings({ periods });
+                    }}
+                  />
+                  <Input
+                    type="time"
+                    value={p.end}
+                    onChange={(e) => {
+                      const periods = store.settings.periods.map((x, idx) =>
+                        idx === i ? { ...x, end: e.target.value } : x,
+                      );
+                      store.updateSettings({ periods });
+                    }}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        )}
         <label className="mt-4 flex min-h-10 items-center gap-2 text-sm">
           <input
             type="checkbox"

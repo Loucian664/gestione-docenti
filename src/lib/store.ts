@@ -13,6 +13,7 @@ import type {
 import { buildSeed, EMPTY_DATA, applyOrganicoFixes } from "./seed";
 import { uid } from "./utils";
 import { isTimetableTeacher } from "./build-timetable";
+import { isTpPeriodId } from "./periods";
 import {
   createDurableStorage,
   noteUserMutation,
@@ -193,11 +194,14 @@ export const useAppStore = create<AppStore>()(
 
         replaceCattedraSlots: (next) => {
           const teachers = get().teachers;
+          const periods = get().settings.periods;
           const keep = get().slots.filter((s) => {
+            if (isTpPeriodId(periods, s.periodId)) return true;
             const t = teachers.find((x) => x.id === s.teacherId);
             return !t || !isTimetableTeacher(t);
           });
           const backup = get().slots.filter((s) => {
+            if (isTpPeriodId(periods, s.periodId)) return false;
             const t = teachers.find((x) => x.id === s.teacherId);
             return Boolean(t && isTimetableTeacher(t));
           });
@@ -208,7 +212,9 @@ export const useAppStore = create<AppStore>()(
           const backup = get().cattedraBackup;
           if (!backup) return;
           const teachers = get().teachers;
+          const periods = get().settings.periods;
           const keep = get().slots.filter((s) => {
+            if (isTpPeriodId(periods, s.periodId)) return true;
             const t = teachers.find((x) => x.id === s.teacherId);
             return !t || !isTimetableTeacher(t);
           });

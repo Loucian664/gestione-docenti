@@ -35,6 +35,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { corePeriods } from "@/lib/periods";
 
 export function CostruisciOrario() {
   const store = useAppStore();
@@ -89,6 +90,7 @@ export function CostruisciOrario() {
     () => (previewData ? gapsRanking(previewData) : []),
     [previewData],
   );
+  const morning = corePeriods(data.settings.periods);
 
   function propose() {
     const alreadyOpen = pendingSlots != null;
@@ -214,10 +216,10 @@ export function CostruisciOrario() {
                       <tr className="text-muted-foreground">
                         <th className="px-1 py-1 text-left font-medium">Altrove</th>
                         {data.settings.days.map((d) => {
-                          const n = data.settings.periods.filter((p) =>
+                          const n = morning.filter((p) =>
                             (t.awaySlots ?? []).some((a) => a.day === d && a.periodId === p.id),
                           ).length;
-                          const allOn = n === data.settings.periods.length && n > 0;
+                          const allOn = n === morning.length && n > 0;
                           const some = n > 0;
                           return (
                             <th key={d} className="px-0.5 py-1 font-medium">
@@ -235,7 +237,7 @@ export function CostruisciOrario() {
                                       ? cur.filter((a) => a.day !== d)
                                       : [
                                           ...cur.filter((a) => a.day !== d),
-                                          ...data.settings.periods.map((p) => ({
+                                          ...morning.map((p) => ({
                                             day: d as DayOfWeek,
                                             periodId: p.id,
                                           })),
@@ -259,7 +261,7 @@ export function CostruisciOrario() {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.settings.periods.map((p) => (
+                      {morning.map((p) => (
                         <tr key={p.id}>
                           <td className="px-1 py-1 text-muted-foreground">{p.index}ª</td>
                           {data.settings.days.map((d) => {
@@ -439,7 +441,7 @@ export function CostruisciOrario() {
               data={previewData}
               teachers={included}
               days={data.settings.days}
-              periods={data.settings.periods}
+              periods={morning}
             />
           )}
 
@@ -448,7 +450,7 @@ export function CostruisciOrario() {
               slots={previewSlots}
               classId={previewClassId || classOrder[0]?.id || ""}
               days={data.settings.days}
-              periods={data.settings.periods}
+              periods={morning}
               teachers={data.teachers}
             />
           )}
@@ -457,7 +459,7 @@ export function CostruisciOrario() {
               slots={previewSlots}
               day={previewDay}
               classes={classOrder}
-              periods={data.settings.periods}
+              periods={morning}
               teachers={data.teachers}
             />
           )}
