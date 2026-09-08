@@ -6,6 +6,8 @@ export type Period = {
   label: string;
   start: string;
   end: string;
+  /** Mensa / 7ª / 8ª: solo classi a tempo prolungato. */
+  tpOnly?: boolean;
 };
 
 export type TeacherRole = "cattedra" | "potenziamento" | "sostegno" | "religione";
@@ -106,6 +108,8 @@ export type Settings = {
   days: DayOfWeek[];
   periods: Period[];
   monteOre?: MonteOreRow[];
+  /** Mostra mensa, 7ª e 8ª sulle classi T.P. Costruisci non le usa. */
+  tpAfternoon?: boolean;
 };
 
 export type PersistedData = {

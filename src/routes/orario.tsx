@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { CostruisciOrario } from "@/components/costruisci-orario";
 import { BucheList } from "@/components/buche-list";
 import { gapsOf, gapsRanking, isTimetableTeacher } from "@/lib/build-timetable";
+import { ensureTpPeriods, isMensaPeriod, isTpPeriod, visiblePeriods } from "@/lib/periods";
 
 type OrarioSearch = { docente?: string };
 
@@ -65,7 +66,12 @@ function OrarioPage() {
   }, [search.docente]);
 
   const days = data.settings.days;
-  const periods = data.settings.periods;
+  const quadroPeriods = visiblePeriods(data.settings);
+  const classPeriods = visiblePeriods(
+    data.settings,
+    data.classes.find((c) => c.id === classId)?.tempo,
+  );
+  const teacherPeriods = visiblePeriods(data.settings).filter((p) => !isMensaPeriod(p));
   const classOrder = [...data.classes].sort(
     (a, b) => a.grade - b.grade || a.section.localeCompare(b.section),
   );
@@ -163,6 +169,21 @@ function OrarioPage() {
             { value: "costruisci", label: "Costruisci" },
           ]}
         />
+        <label className="flex min-h-10 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="size-4 accent-primary"
+            checked={Boolean(data.settings.tpAfternoon)}
+            onChange={(e) => {
+              const on = e.target.checked;
+              store.updateSettings({
+                tpAfternoon: on,
+                periods: on ? ensureTpPeriods(data.settings.periods) : data.settings.periods,
+              });
+            }}
+          />
+          Mensa, 7ª e 8ª per le classi a tempo prolungato
+        </label>
         {view === "quadro" && (
           <div className="flex flex-wrap gap-1.5">
             {days.map((d) => (
@@ -233,7 +254,7 @@ function OrarioPage() {
               </tr>
             </thead>
             <tbody>
-              {periods.map((p) => (
+              {quadroPeriods.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
                   <td className="sticky left-0 z-10 bg-card px-3 py-2 align-top">
                     <div className="text-[13px] font-medium">{p.label}</div>
@@ -242,9 +263,25 @@ function OrarioPage() {
                     </div>
                   </td>
                   {classOrder.map((c) => {
-                    const occupants = cellSlots(data, c.id, quadroDay, p.id);
+                    const tpCell = isTpPeriod(p);
+                    const allowed = !tpCell || c.tempo === "TP";
+                    const occupants = allowed ? cellSlots(data, c.id, quadroDay, p.id) : [];
                     const primary = occupants[0];
                     const t = primary ? data.teachers.find((x) => x.id === primary.teacherId) : null;
+                    if (!allowed) {
+                      return (
+                        <td key={c.id} className="bg-muted/40 p-1 align-top" />
+                      );
+                    }
+                    if (isMensaPeriod(p)) {
+                      return (
+                        <td key={c.id} className="p-1 align-top">
+                          <div className="flex min-h-[4.25rem] w-full items-center rounded-md bg-muted/60 px-2 py-1.5 text-[13px] font-medium">
+                            Mensa
+                          </div>
+                        </td>
+                      );
+                    }
                     return (
                       <td key={c.id} className="p-1 align-top">
                         <button
@@ -352,12 +389,14 @@ function OrarioPage() {
                           >
                             {line.teacher ? (
                               <>
-                                {line.period} {line.subject}{" "}
+                                {line.mark} {line.subject}{" "}
                                 <span className="font-semibold">{line.teacher}</span>
                                 {line.extra}
                               </>
+                            ) : line.subject === "Mensa" ? (
+                              "Mensa"
                             ) : (
-                              `${line.period}  —`
+                              `${line.mark}  —`
                             )}
                           </div>
                         ))}
@@ -386,7 +425,7 @@ function OrarioPage() {
               </tr>
             </thead>
             <tbody>
-              {periods.map((p) => (
+              {classPeriods.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 align-top">
                     <div className="text-[13px] font-medium">{p.label}</div>
@@ -395,6 +434,15 @@ function OrarioPage() {
                     </div>
                   </td>
                   {days.map((d) => {
+                    if (isMensaPeriod(p)) {
+                      return (
+                        <td key={d} className="p-1.5 align-top">
+                          <div className="flex min-h-16 items-center rounded-md bg-muted/60 px-2 py-1.5 text-[13px] font-medium">
+                            Mensa
+                          </div>
+                        </td>
+                      );
+                    }
                     const occupants = classSlots.filter((s) => s.day === d && s.periodId === p.id);
                     const primary = occupants[0];
                     const t = primary ? data.teachers.find((x) => x.id === primary.teacherId) : null;
@@ -450,7 +498,7 @@ function OrarioPage() {
               </tr>
             </thead>
             <tbody>
-              {periods.map((p) => (
+              {teacherPeriods.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 align-top">
                     <div className="text-[13px] font-medium">{p.label}</div>
@@ -542,6 +590,10 @@ function CellEditor({
 
   function add() {
     if (!teacherId) return;
+    if (isTpPeriod(period) && cls?.tempo !== "TP") {
+      toast.error("La 7ª e l’8ª ora sono solo per le classi a tempo prolungato.");
+      return;
+    }
     const busy = teacherSlotAt(data, teacherId, editing.day, editing.periodId);
     if (busy && busy.classId !== editing.classId) {
       const other = data.classes.find((c) => c.id === busy.classId);
@@ -649,13 +701,21 @@ function TeacherHourEditor({
   const teacher = data.teachers.find((t) => t.id === editing.teacherId);
   const existing = teacherSlotAt(data, editing.teacherId, editing.day, editing.periodId);
   const period = data.settings.periods.find((p) => p.id === editing.periodId);
-  const [classId, setClassId] = useState(existing?.classId ?? data.classes[0]?.id ?? "");
+  const classChoices = isTpPeriod(period)
+    ? data.classes.filter((c) => c.tempo === "TP")
+    : data.classes;
+  const [classId, setClassId] = useState(existing?.classId ?? classChoices[0]?.id ?? "");
   const [subject, setSubject] = useState(existing?.subject ?? (teacher ? defaultSubjectFor(teacher) : "Italiano"));
 
   const others = classId ? cellSlots(data, classId, editing.day, editing.periodId).filter((s) => s.teacherId !== editing.teacherId) : [];
 
   function save() {
     if (!classId || !teacher) return;
+    const cls = data.classes.find((c) => c.id === classId);
+    if (isTpPeriod(period) && cls?.tempo !== "TP") {
+      toast.error("La 7ª e l’8ª ora sono solo per le classi a tempo prolungato.");
+      return;
+    }
     const busy = teacherSlotAt(data, editing.teacherId, editing.day, editing.periodId);
     if (busy && busy.classId !== classId) {
       store.clearSlot(busy.id);
@@ -689,7 +749,7 @@ function TeacherHourEditor({
           <div className="flex flex-col gap-1.5">
             <Label>Classe</Label>
             <NativeSelect value={classId} onChange={(e) => setClassId(e.target.value)}>
-              {data.classes
+              {classChoices
                 .slice()
                 .sort((a, b) => a.grade - b.grade || a.section.localeCompare(b.section))
                 .map((c) => (

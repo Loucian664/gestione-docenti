@@ -1,5 +1,6 @@
 import { uid } from "./utils";
 import { teacherName } from "./coverage";
+import { lessonPeriodsOf, isMensaPeriod } from "./periods";
 import type { Cattedra, DayOfWeek, PersistedData, Teacher, TimetableSlot } from "./types";
 
 export type LessonDemand = {
@@ -82,7 +83,7 @@ function periodIndex(data: PersistedData, periodId: string): number {
 }
 
 function lastPeriod(data: PersistedData) {
-  return [...data.settings.periods].sort((a, b) => b.index - a.index)[0];
+  return [...lessonPeriodsOf(data)].sort((a, b) => b.index - a.index)[0];
 }
 
 export type DemandResult = {
@@ -289,7 +290,7 @@ function feasible(
   if (away.has(busyKey(day, periodId, t.id))) return false;
   if (opts.noAdjacentPlessi && t.otherPlesso && (t.awaySlots?.length ?? 0) > 0) {
     const idx = periodIndex(data, periodId);
-    for (const p of data.settings.periods) {
+    for (const p of lessonPeriodsOf(data)) {
       if (Math.abs(p.index - idx) !== 1) continue;
       if (away.has(busyKey(day, p.id, t.id))) return false;
     }
@@ -351,7 +352,9 @@ export function gapsOf(
   for (const day of data.settings.days) {
     const idxs = slots
       .filter((p) => p.teacherId === teacherId && p.day === day)
-      .map((p) => periodIndex(data, p.periodId))
+      .map((p) => data.settings.periods.find((x) => x.id === p.periodId))
+      .filter((p) => p && !isMensaPeriod(p))
+      .map((p) => p!.index)
       .sort((a, b) => a - b);
     if (idxs.length < 2) continue;
     g += idxs[idxs.length - 1]! - idxs[0]! + 1 - idxs.length;
@@ -535,7 +538,7 @@ function evaluatePlaces(
       if (!t?.otherPlesso) continue;
       const away = awaySet(t);
       const idx = periodIndex(data, p.periodId);
-      for (const q of data.settings.periods) {
+      for (const q of lessonPeriodsOf(data)) {
         if (Math.abs(q.index - idx) !== 1) continue;
         if (away.has(busyKey(p.day, q.id, t.id))) cost += 800;
       }
@@ -543,7 +546,7 @@ function evaluatePlaces(
   }
   for (const cls of data.classes) {
     for (const day of data.settings.days) {
-      const row = data.settings.periods
+      const row = lessonPeriodsOf(data)
         .slice()
         .sort((a, b) => a.index - b.index)
         .map((per) => places.find((p) => p.classId === cls.id && p.day === day && p.periodId === per.id));
@@ -726,7 +729,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     for (const item of order) {
       let best: { day: DayOfWeek; periodId: string; score: number } | null = null;
       for (const day of data.settings.days) {
-        for (const period of data.settings.periods) {
+        for (const period of lessonPeriodsOf(data)) {
           if (!feasible(data, item, day, period.id, teacherBusy, classBusy, opts, teachers, places, weekly)) continue;
           const score = slotScore(item, day, period.id);
           if (!best || score > best.score) best = { day, periodId: period.id, score };
@@ -744,7 +747,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
         const item = leftover[i]!;
         let best: { day: DayOfWeek; periodId: string; score: number } | null = null;
         for (const day of data.settings.days) {
-          for (const period of data.settings.periods) {
+          for (const period of lessonPeriodsOf(data)) {
             if (
               !feasible(
                 data,
@@ -796,7 +799,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
           let dest: { day: DayOfWeek; periodId: string } | null = null;
           if (itemFits) {
             for (const day of data.settings.days) {
-              for (const period of data.settings.periods) {
+              for (const period of lessonPeriodsOf(data)) {
                 if (day === od && period.id === op) continue;
                 if (feasible(data, occ, day, period.id, teacherBusy, classBusy, opts, teachers, places, weekly)) {
                   dest = { day, periodId: period.id };
@@ -965,7 +968,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
         for (const donorDay of donors) {
           const cands = places.filter((p) => p.teacherId === tid && p.day === donorDay);
           for (const place of cands) {
-            for (const period of data.settings.periods) {
+            for (const period of lessonPeriodsOf(data)) {
               if (movePlace(place, empty, period.id)) {
                 filled = true;
                 break;
@@ -1002,7 +1005,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
           const lighter = data.settings.days.filter((d) => d !== day && hoursOnDay(places, tid, d) < 4);
           for (const place of mine) {
             for (const dest of lighter) {
-              for (const period of data.settings.periods) {
+              for (const period of lessonPeriodsOf(data)) {
                 if (movePlace(place, dest, period.id)) {
                   improved = true;
                   break outer;
@@ -1035,7 +1038,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
           const cands = mine;
           for (const place of cands) {
             for (const h of holes) {
-              const per = data.settings.periods.find((p) => p.index === h);
+              const per = lessonPeriodsOf(data).find((p) => p.index === h);
               if (!per) continue;
               const fd = place.day;
               const fp = place.periodId;
@@ -1123,7 +1126,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
             const beforeLong = longPresenceDays(places, data, tid);
             const beforeGaps = gapsFor(places, data, tid);
             for (const dest of dests) {
-              for (const period of data.settings.periods) {
+              for (const period of lessonPeriodsOf(data)) {
                 if (!movePlace(place, dest, period.id)) continue;
                 if (
                   longPresenceDays(places, data, tid) < beforeLong ||
@@ -1172,7 +1175,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       if (!t?.otherPlesso) continue;
       const away = awaySet(t);
       const idx = periodIndex(data, p.periodId);
-      for (const q of data.settings.periods) {
+      for (const q of lessonPeriodsOf(data)) {
         if (Math.abs(q.index - idx) === 1 && away.has(busyKey(p.day, q.id, t.id))) plessoIssues += 1;
       }
     }
