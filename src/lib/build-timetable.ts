@@ -1,7 +1,7 @@
 import { uid } from "./utils";
 import { teacherName } from "./coverage";
 import { lessonPeriodsOf, isMensaPeriod } from "./periods";
-import type { Cattedra, DayOfWeek, PersistedData, Teacher, TimetableSlot } from "./types";
+import { DAY_SHORT, type Cattedra, type DayOfWeek, type PersistedData, type Teacher, type TimetableSlot } from "./types";
 
 export type LessonDemand = {
   classId: string;
@@ -288,6 +288,10 @@ function feasible(
   if (!t) return false;
   const away = awaySet(t);
   if (away.has(busyKey(day, periodId, t.id))) return false;
+  if ((t.rientroDays ?? []).includes(day)) {
+    const idx = periodIndex(data, periodId);
+    if (idx !== 5 && idx !== 6) return false;
+  }
   if (opts.noAdjacentPlessi && t.otherPlesso && (t.awaySlots?.length ?? 0) > 0) {
     const idx = periodIndex(data, periodId);
     for (const p of lessonPeriodsOf(data)) {
@@ -677,6 +681,14 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       else s += 4 - Math.min(Math.abs(idx - first), Math.abs(idx - hi));
     }
     if (opts.avoidFiveHours && hours.length >= 4) s -= 220;
+    if ((t?.rientroDays ?? []).includes(day)) {
+      if (idx === 5 || idx === 6) {
+        s += 90;
+        const cls = data.classes.find((c) => c.id === item.classId);
+        if (cls?.tempo === "TP") s += 50;
+        if (hours.includes(idx === 5 ? 6 : 5)) s += 25;
+      } else s -= 200;
+    }
     if (opts.balanceLastHour && last && periodId === last.id) s -= 10 + lastCount(item.teacherId) * 14;
     if (opts.variety) {
       const w = weekly.get(pairKey(item.classId, item.teacherId, item.subject)) ?? 1;
@@ -1294,6 +1306,14 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     if (marked === 0) notes.push("Nessun docente segnato su più plessi: attiva la spunta e le ore altrove.");
     else if (plessoIssues === 0) notes.push("Nessuna ora attaccata a un altro plesso.");
     else notes.push(`${plessoIssues} ore ancora attaccate a un altro plesso.`);
+  }
+  const rientri = data.teachers.filter((t) => isTimetableTeacher(t) && (t.rientroDays?.length ?? 0) > 0);
+  if (rientri.length) {
+    notes.push(
+      `Rientro T.P. (solo 5ª–6ª al mattino): ${rientri
+        .map((t) => `${teacherName(t)} ${(t.rientroDays ?? []).map((d) => DAY_SHORT[d]).join("/")}`)
+        .join("; ")}.`,
+    );
   }
 
   return {

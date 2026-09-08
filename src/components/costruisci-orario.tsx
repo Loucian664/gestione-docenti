@@ -183,7 +183,8 @@ export function CostruisciOrario() {
       <section className="paper-panel mt-4 max-w-3xl rounded-xl p-5">
         <h2 className="font-display text-lg">Docenti in questo orario</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Solo chi insegna anche in un altro plesso: spunta e, se serve lo spezzato, metti la X. Senza X, l’app tiene giorni pieni qui e ne lascia di vuoti per l’altro plesso. I giorni già in orario non li rimescola.
+          Altro plesso: spunta e, se serve lo spezzato, metti la X. Rientro T.P.: il giorno in cui restano per 7ª e 8ª
+          (solo 5ª e 6ª al mattino; il pomeriggio lo metti a mano).
         </p>
         <ul className="mt-3 flex flex-col gap-3">
           {included.map((t) => (
@@ -206,6 +207,38 @@ export function CostruisciOrario() {
                   </span>
                 </span>
               </label>
+              <div className="mt-2">
+                <p className="mb-1 text-[12px] text-muted-foreground">Rientro T.P. (quel giorno solo 5ª e 6ª)</p>
+                <div className="flex flex-wrap gap-1">
+                  {data.settings.days.map((d) => {
+                    const on = (t.rientroDays ?? []).includes(d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        aria-label={
+                          on
+                            ? `Togli rientro ${DAY_SHORT[d]}`
+                            : `Rientro ${DAY_SHORT[d]}: solo 5ª e 6ª`
+                        }
+                        onClick={() => {
+                          const cur = t.rientroDays ?? [];
+                          const next = on ? cur.filter((x) => x !== d) : [...cur, d];
+                          store.updateTeacher(t.id, { rientroDays: next });
+                        }}
+                        className={cn(
+                          "flex h-10 min-w-10 items-center justify-center rounded-md px-2 text-[11px] font-medium",
+                          on
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {DAY_SHORT[d]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               {t.otherPlesso && (
                 <div className="mt-2 overflow-x-auto">
                   <p className="mb-1.5 text-[12px] text-muted-foreground">

@@ -161,6 +161,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
       assignedClassIds: [...new Set(rows.map((r) => r.classId).filter(Boolean))],
       otherPlesso: current?.otherPlesso ?? false,
       awaySlots: current?.awaySlots ?? [],
+      rientroDays: current?.rientroDays ?? [],
     };
     if (!payload.lastName) return;
     const id = isNew ? store.addTeacher(payload) : current!.id;
