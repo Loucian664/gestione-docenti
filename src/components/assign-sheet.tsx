@@ -21,6 +21,11 @@ import { toast } from "sonner";
 
 const GROUPS: { bucket: SubstituteBucket | SubstituteBucket[]; title: string; hint: string }[] = [
   {
+    bucket: "disp",
+    title: "A disposizione",
+    hint: "Ora di servizio segnata. Non è eccedente.",
+  },
+  {
     bucket: "buco",
     title: "Prima scelta — buco in orario",
     hint: "Già a scuola tra due lezioni, ora libera.",

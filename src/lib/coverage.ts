@@ -117,6 +117,7 @@ export function isCovered(need: CoverageNeed): boolean {
 }
 
 export type SubstituteBucket =
+  | "disp"
   | "buco"
   | "pre-post"
   | "potenziamento"
@@ -162,6 +163,14 @@ export function teacherDayWindow(
   return { first: Math.min(...indexes), last: Math.max(...indexes) };
 }
 
+export function isDispHour(
+  teacher: Teacher,
+  day: DayOfWeek,
+  periodId: string,
+): boolean {
+  return (teacher.dispSlots ?? []).some((a) => a.day === day && a.periodId === periodId);
+}
+
 export function presenceFor(
   data: PersistedData,
   teacherId: string,
@@ -169,6 +178,10 @@ export function presenceFor(
   periodId: string,
 ): { onSite: boolean; label: string } {
   const idx = periodIndex(data, periodId);
+  const teacher = data.teachers.find((t) => t.id === teacherId);
+  if (teacher && isDispHour(teacher, day, periodId)) {
+    return { onSite: true, label: "A disposizione" };
+  }
   const win = teacherDayWindow(data, teacherId, day);
   if (!win) return { onSite: false, label: "Senza orario oggi" };
   if (idx < win.first) return { onSite: false, label: `Entra alla ${periodLabel(data, win.first)}` };
@@ -247,6 +260,7 @@ function isPotenziamentoSlot(teacher: Teacher, slot: TimetableSlot | undefined):
 }
 
 const BUCKET_ORDER: Record<SubstituteBucket, number> = {
+  disp: -1,
   buco: 0,
   "pre-post": 1,
   potenziamento: 2,
@@ -334,6 +348,12 @@ export function rankSubstitutes(
         score += 48;
         reasons.push("Già in classe");
         inferredType = teacher.role === "potenziamento" ? "potenziamento" : "compresenza";
+      } else if (isDispHour(teacher, day, need.slot.periodId) && !occupation) {
+        onSite = true;
+        bucket = "disp";
+        score += 95;
+        reasons.push("Ora a disposizione");
+        inferredType = "disposizione";
       } else if (hole) {
         onSite = true;
         bucket = "buco";
