@@ -7,7 +7,26 @@ export function isCoarsePointer(): boolean {
   const ua = navigator.userAgent;
   if (/iPad|iPhone|iPod/.test(ua)) return true;
   if (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) return true;
-  return navigator.maxTouchPoints > 0 && window.matchMedia?.("(pointer: coarse)")?.matches === true;
+  if (/Android/i.test(ua) && navigator.maxTouchPoints > 0) return true;
+  return false;
+}
+
+function triggerDownload(blob: Blob, filename: string): boolean {
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function copyText(text: string): Promise<boolean> {
@@ -74,20 +93,7 @@ export async function shareOrSave(
   }
 
   if (!preferShare) {
-    try {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
-      return "downloaded";
-    } catch {
-      // fall through to copy
-    }
+    if (triggerDownload(blob, filename)) return "downloaded";
   }
 
   const copied = await copyText(content);
@@ -123,25 +129,11 @@ export async function shareOrSaveFile(file: File): Promise<SaveOutcome> {
       }
       URL.revokeObjectURL(url);
     } catch {
-      // in-app preview handles this
+      // fall through to download
     }
   }
 
-  try {
-    const url = URL.createObjectURL(file);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.name;
-    a.rel = "noopener";
-    a.target = "_blank";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 4000);
-    return "downloaded";
-  } catch {
-    return "failed";
-  }
+  return triggerDownload(file, file.name) ? "downloaded" : "failed";
 }
 
 export function toastSave(

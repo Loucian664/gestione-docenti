@@ -60,9 +60,26 @@ export function CostruisciOrario() {
   const [previewClassId, setPreviewClassId] = useState(data.classes[0]?.id ?? "");
   const [previewDay, setPreviewDay] = useState<DayOfWeek>(data.settings.days[0] ?? 1);
 
-  const included = useMemo(() => data.teachers.filter(isTimetableTeacher), [data.teachers]);
+  const included = useMemo(
+    () =>
+      data.teachers
+        .filter(isTimetableTeacher)
+        .slice()
+        .sort(
+          (a, b) =>
+            a.lastName.localeCompare(b.lastName, "it") || a.firstName.localeCompare(b.firstName, "it"),
+        ),
+    [data.teachers],
+  );
   const skipped = useMemo(
-    () => data.teachers.filter((t) => !isTimetableTeacher(t)),
+    () =>
+      data.teachers
+        .filter((t) => !isTimetableTeacher(t))
+        .slice()
+        .sort(
+          (a, b) =>
+            a.lastName.localeCompare(b.lastName, "it") || a.firstName.localeCompare(b.firstName, "it"),
+        ),
     [data.teachers],
   );
   const demand = useMemo(() => timetableDemand(data), [data]);
@@ -183,8 +200,8 @@ export function CostruisciOrario() {
       <section className="paper-panel mt-4 max-w-3xl rounded-xl p-5">
         <h2 className="font-display text-lg">Docenti in questo orario</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Altro plesso: spunta e, se serve lo spezzato, metti la X. Rientro T.P.: il giorno in cui restano per 7ª e 8ª
-          (solo 5ª e 6ª al mattino; il pomeriggio lo metti a mano).
+          Altro plesso: spunta e, se serve lo spezzato, metti la X. Rientro T.P.: il giorno in cui restano per 7ª e
+          8ª (solo 5ª e 6ª al mattino; il pomeriggio lo metti a mano). ✓ = vorrei stare qui (non è un obbligo).
         </p>
         <ul className="mt-3 flex flex-col gap-3">
           {included.map((t) => (
@@ -239,94 +256,120 @@ export function CostruisciOrario() {
                   })}
                 </div>
               </div>
-              {t.otherPlesso && (
-                <div className="mt-2 overflow-x-auto">
-                  <p className="mb-1.5 text-[12px] text-muted-foreground">
-                    Tocca Lun, Mar… per tutto il giorno. I quadrati restano per lo spezzato.
-                  </p>
-                  <table className="w-full min-w-[280px] border-collapse text-[11px]">
-                    <thead>
-                      <tr className="text-muted-foreground">
-                        <th className="px-1 py-1 text-left font-medium">Altrove</th>
+              <div className="mt-2 overflow-x-auto">
+                <p className="mb-1.5 text-[12px] text-muted-foreground">
+                  Vuoto = decide l’app. ✓ = vorrei stare qui. × = non c’è. Tocca Lun, Mar… per tutto il giorno in
+                  X. I quadrati ruotano da soli.
+                </p>
+                <table className="w-full min-w-[280px] border-collapse text-[11px]">
+                  <thead>
+                    <tr className="text-muted-foreground">
+                      <th className="px-1 py-1 text-left font-medium">Ore</th>
+                      {data.settings.days.map((d) => {
+                        const n = morning.filter((p) =>
+                          (t.awaySlots ?? []).some((a) => a.day === d && a.periodId === p.id),
+                        ).length;
+                        const allOn = n === morning.length && n > 0;
+                        const some = n > 0;
+                        return (
+                          <th key={d} className="px-0.5 py-1 font-medium">
+                            <button
+                              type="button"
+                              aria-label={
+                                n > 0
+                                  ? `Togli tutte le X di ${DAY_SHORT[d]}`
+                                  : `Metti ${DAY_SHORT[d]} intero in altro plesso`
+                              }
+                              onClick={() => {
+                                const cur = t.awaySlots ?? [];
+                                const prefs = (t.preferSlots ?? []).filter((a) => a.day !== d);
+                                const next =
+                                  n > 0
+                                    ? cur.filter((a) => a.day !== d)
+                                    : [
+                                        ...cur.filter((a) => a.day !== d),
+                                        ...morning.map((p) => ({
+                                          day: d as DayOfWeek,
+                                          periodId: p.id,
+                                        })),
+                                      ];
+                                store.updateTeacher(t.id, { awaySlots: next, preferSlots: prefs });
+                              }}
+                              className={cn(
+                                "mx-auto flex h-10 min-w-10 items-center justify-center rounded-md px-1.5 text-[11px] font-medium",
+                                allOn
+                                  ? "bg-primary text-primary-foreground"
+                                  : some
+                                    ? "bg-primary/25 text-foreground"
+                                    : "bg-muted text-muted-foreground",
+                              )}
+                            >
+                              {DAY_SHORT[d]}
+                            </button>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {morning.map((p) => (
+                      <tr key={p.id}>
+                        <td className="px-1 py-1 text-muted-foreground">{p.index}ª</td>
                         {data.settings.days.map((d) => {
-                          const n = morning.filter((p) =>
-                            (t.awaySlots ?? []).some((a) => a.day === d && a.periodId === p.id),
-                          ).length;
-                          const allOn = n === morning.length && n > 0;
-                          const some = n > 0;
+                          const away = (t.awaySlots ?? []).some((a) => a.day === d && a.periodId === p.id);
+                          const prefer = (t.preferSlots ?? []).some((a) => a.day === d && a.periodId === p.id);
                           return (
-                            <th key={d} className="px-0.5 py-1 font-medium">
+                            <td key={d} className="p-0.5 text-center">
                               <button
                                 type="button"
                                 aria-label={
-                                  n > 0
-                                    ? `Togli tutte le X di ${DAY_SHORT[d]}`
-                                    : `Metti ${DAY_SHORT[d]} intero in altro plesso`
+                                  away
+                                    ? `${DAY_SHORT[d]} ${p.label}: togli X`
+                                    : prefer
+                                      ? `${DAY_SHORT[d]} ${p.label}: passa a X`
+                                      : `${DAY_SHORT[d]} ${p.label}: preferisci`
                                 }
                                 onClick={() => {
-                                  const cur = t.awaySlots ?? [];
-                                  const next =
-                                    n > 0
-                                      ? cur.filter((a) => a.day !== d)
-                                      : [
-                                          ...cur.filter((a) => a.day !== d),
-                                          ...morning.map((p) => ({
-                                            day: d as DayOfWeek,
-                                            periodId: p.id,
-                                          })),
-                                        ];
-                                  store.updateTeacher(t.id, { awaySlots: next });
+                                  const awayCur = t.awaySlots ?? [];
+                                  const prefCur = t.preferSlots ?? [];
+                                  if (!prefer && !away) {
+                                    store.updateTeacher(t.id, {
+                                      preferSlots: [...prefCur, { day: d as DayOfWeek, periodId: p.id }],
+                                      awaySlots: awayCur.filter((a) => !(a.day === d && a.periodId === p.id)),
+                                    });
+                                  } else if (prefer) {
+                                    store.updateTeacher(t.id, {
+                                      preferSlots: prefCur.filter((a) => !(a.day === d && a.periodId === p.id)),
+                                      awaySlots: [
+                                        ...awayCur.filter((a) => !(a.day === d && a.periodId === p.id)),
+                                        { day: d as DayOfWeek, periodId: p.id },
+                                      ],
+                                    });
+                                  } else {
+                                    store.updateTeacher(t.id, {
+                                      awaySlots: awayCur.filter((a) => !(a.day === d && a.periodId === p.id)),
+                                    });
+                                  }
                                 }}
                                 className={cn(
-                                  "mx-auto flex h-10 min-w-10 items-center justify-center rounded-md px-1.5 text-[11px] font-medium",
-                                  allOn
+                                  "inline-flex size-9 touch-manipulation items-center justify-center rounded-md text-sm font-medium",
+                                  away
                                     ? "bg-primary text-primary-foreground"
-                                    : some
-                                      ? "bg-primary/25 text-foreground"
+                                    : prefer
+                                      ? "bg-emerald-700 text-white"
                                       : "bg-muted text-muted-foreground",
                                 )}
                               >
-                                {DAY_SHORT[d]}
+                                {away ? "×" : prefer ? "✓" : ""}
                               </button>
-                            </th>
+                            </td>
                           );
                         })}
                       </tr>
-                    </thead>
-                    <tbody>
-                      {morning.map((p) => (
-                        <tr key={p.id}>
-                          <td className="px-1 py-1 text-muted-foreground">{p.index}ª</td>
-                          {data.settings.days.map((d) => {
-                            const on = (t.awaySlots ?? []).some((a) => a.day === d && a.periodId === p.id);
-                            return (
-                              <td key={d} className="p-0.5 text-center">
-                                <button
-                                  type="button"
-                                  aria-label={`${DAY_SHORT[d]} ${p.label} in altro plesso`}
-                                  onClick={() => {
-                                    const cur = t.awaySlots ?? [];
-                                    const next = on
-                                      ? cur.filter((a) => !(a.day === d && a.periodId === p.id))
-                                      : [...cur, { day: d as DayOfWeek, periodId: p.id }];
-                                    store.updateTeacher(t.id, { awaySlots: next });
-                                  }}
-                                  className={cn(
-                                    "inline-flex size-9 touch-manipulation items-center justify-center rounded-md",
-                                    on ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-                                  )}
-                                >
-                                  {on ? "×" : ""}
-                                </button>
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </li>
           ))}
         </ul>

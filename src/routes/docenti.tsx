@@ -163,6 +163,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
       awaySlots: current?.awaySlots ?? [],
       rientroDays: current?.rientroDays ?? [],
       dispSlots: current?.dispSlots ?? [],
+      preferSlots: current?.preferSlots ?? [],
     };
     if (!payload.lastName) return;
     const id = isNew ? store.addTeacher(payload) : current!.id;
