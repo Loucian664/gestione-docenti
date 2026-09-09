@@ -31,6 +31,8 @@ export type Teacher = {
   rientroDays?: DayOfWeek[];
   /** Ore a disposizione (non lezione). In copertura non sono eccedenti. */
   dispSlots?: { day: DayOfWeek; periodId: string }[];
+  /** Ore preferite a Rombiolo (✓ in Costruisci). Non è un vincolo duro. */
+  preferSlots?: { day: DayOfWeek; periodId: string }[];
 };
 
 export type SchoolClass = {

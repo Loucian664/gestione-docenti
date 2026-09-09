@@ -78,6 +78,11 @@ function awaySet(t: Teacher): Set<string> {
   return set;
 }
 
+function isDualPlesso(t: Teacher | undefined): boolean {
+  if (!t) return false;
+  return Boolean(t.otherPlesso) || (t.awaySlots?.length ?? 0) > 0;
+}
+
 function periodIndex(data: PersistedData, periodId: string): number {
   return data.settings.periods.find((p) => p.id === periodId)?.index ?? 0;
 }
@@ -292,7 +297,7 @@ function feasible(
     const idx = periodIndex(data, periodId);
     if (idx !== 5 && idx !== 6) return false;
   }
-  if (opts.noAdjacentPlessi && t.otherPlesso && (t.awaySlots?.length ?? 0) > 0) {
+  if (opts.noAdjacentPlessi && (t.awaySlots?.length ?? 0) > 0) {
     const idx = periodIndex(data, periodId);
     for (const p of lessonPeriodsOf(data)) {
       if (Math.abs(p.index - idx) !== 1) continue;
@@ -508,7 +513,7 @@ function evaluatePlaces(
         if (h >= 5) cost += (h - 4) * 520;
       }
     }
-    if (opts.noFreeDay && (load.get(id) ?? 0) >= nDays && !t?.otherPlesso) {
+    if (opts.noFreeDay && (load.get(id) ?? 0) >= nDays && !isDualPlesso(t)) {
       cost += freeDaysOf(places, data.settings.days, id).length * 900;
     }
     if (t?.otherPlesso) {
@@ -539,7 +544,7 @@ function evaluatePlaces(
   if (opts.noAdjacentPlessi) {
     for (const p of places) {
       const t = teachers.get(p.teacherId);
-      if (!t?.otherPlesso) continue;
+      if (!t || !(t.awaySlots?.length)) continue;
       const away = awaySet(t);
       const idx = periodIndex(data, p.periodId);
       for (const q of lessonPeriodsOf(data)) {
@@ -646,7 +651,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       .map((p) => periodIndex(data, p.periodId));
     let s = 10;
     const t = teachers.get(item.teacherId);
-    if (opts.noFreeDay && !t?.otherPlesso) {
+    if (opts.noFreeDay && !isDualPlesso(t)) {
       const nDays = data.settings.days.length;
       const total = load.get(item.teacherId) ?? 0;
       if (total >= nDays) {
@@ -688,6 +693,12 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
         if (cls?.tempo === "TP") s += 50;
         if (hours.includes(idx === 5 ? 6 : 5)) s += 25;
       } else s -= 200;
+    }
+    const prefers = t?.preferSlots ?? [];
+    if (prefers.length) {
+      const onDay = prefers.filter((a) => a.day === day);
+      if (onDay.some((a) => a.periodId === periodId)) s += 140;
+      else if (onDay.length) s -= 45;
     }
     if (opts.balanceLastHour && last && periodId === last.id) s -= 10 + lastCount(item.teacherId) * 14;
     if (opts.variety) {
@@ -973,7 +984,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     const nDays = data.settings.days.length;
     for (const tid of load.keys()) {
       if ((load.get(tid) ?? 0) < nDays) continue;
-      if (teachers.get(tid)?.otherPlesso) continue;
+      if (isDualPlesso(teachers.get(tid))) continue;
       for (const empty of [...freeDaysOf(places, data.settings.days, tid)]) {
         const donors = data.settings.days.filter((d) => hoursOnDay(places, tid, d) >= 2);
         let filled = false;
@@ -1184,7 +1195,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
   if (opts.noAdjacentPlessi) {
     for (const p of places) {
       const t = teachers.get(p.teacherId);
-      if (!t?.otherPlesso) continue;
+      if (!t || !(t.awaySlots?.length)) continue;
       const away = awaySet(t);
       const idx = periodIndex(data, p.periodId);
       for (const q of lessonPeriodsOf(data)) {
@@ -1195,6 +1206,17 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
 
   const notes: string[] = [];
   if (leftover.length) notes.push(`${leftover.length} ore non piazzate: manca uno slot libero senza scontri.`);
+  {
+    let want = 0;
+    let hit = 0;
+    for (const t of data.teachers.filter(isTimetableTeacher)) {
+      for (const a of t.preferSlots ?? []) {
+        want += 1;
+        if (places.some((p) => p.teacherId === t.id && p.day === a.day && p.periodId === a.periodId)) hit += 1;
+      }
+    }
+    if (want) notes.push(`Preferenze ✓: ${hit} su ${want} caselle (non è un vincolo duro).`);
+  }
   if (opts.avoidGaps) notes.push(gaps === 0 ? "Nessun buco in orario." : `${gaps} buchi in tutto (qualcuno è normale).`);
   if (opts.avoidGaps) {
     const longNames: string[] = [];
@@ -1250,7 +1272,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     const nDays = data.settings.days.length;
     const names: string[] = [];
     for (const t of data.teachers.filter(isTimetableTeacher)) {
-      if (t.otherPlesso) continue;
+      if (isDualPlesso(t)) continue;
       if ((load.get(t.id) ?? 0) < nDays) continue;
       const free = freeDaysOf(places, data.settings.days, t.id);
       if (free.length) names.push(teacherName(t));
