@@ -201,7 +201,7 @@ export function CostruisciOrario() {
         <h2 className="font-display text-lg">Docenti in questo orario</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Altro plesso: spunta e, se serve lo spezzato, metti la X. Rientro T.P.: il giorno in cui restano per 7ª e
-          8ª (solo 5ª e 6ª al mattino; il pomeriggio lo metti a mano). ✓ = vorrei stare qui (non è un obbligo).
+          8ª (4ª–6ª al mattino; il pomeriggio lo metti a mano). ✓ = vorrei stare qui (non è un obbligo).
         </p>
         <ul className="mt-3 flex flex-col gap-3">
           {included.map((t) => (
@@ -225,7 +225,7 @@ export function CostruisciOrario() {
                 </span>
               </label>
               <div className="mt-2">
-                <p className="mb-1 text-[12px] text-muted-foreground">Rientro T.P. (quel giorno solo 5ª e 6ª)</p>
+                <p className="mb-1 text-[12px] text-muted-foreground">Rientro T.P. (quel giorno 4ª–6ª)</p>
                 <div className="flex flex-wrap gap-1">
                   {data.settings.days.map((d) => {
                     const on = (t.rientroDays ?? []).includes(d);
@@ -236,7 +236,7 @@ export function CostruisciOrario() {
                         aria-label={
                           on
                             ? `Togli rientro ${DAY_SHORT[d]}`
-                            : `Rientro ${DAY_SHORT[d]}: solo 5ª e 6ª`
+                            : `Rientro ${DAY_SHORT[d]}: 4ª–6ª`
                         }
                         onClick={() => {
                           const cur = t.rientroDays ?? [];

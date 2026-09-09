@@ -295,7 +295,7 @@ function feasible(
   if (away.has(busyKey(day, periodId, t.id))) return false;
   if ((t.rientroDays ?? []).includes(day)) {
     const idx = periodIndex(data, periodId);
-    if (idx !== 5 && idx !== 6) return false;
+    if (idx < 4 || idx > 6) return false;
   }
   if (opts.noAdjacentPlessi && (t.awaySlots?.length ?? 0) > 0) {
     const idx = periodIndex(data, periodId);
@@ -693,12 +693,16 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       if ((lo === 1 && idx === 6) || (hi === 6 && idx === 1)) s -= 110;
     }
     if ((t?.rientroDays ?? []).includes(day)) {
-      if (idx === 5 || idx === 6) {
+      if (idx === 6) s += 95;
+      else if (idx === 5) {
         s += 90;
-        const cls = data.classes.find((c) => c.id === item.classId);
-        if (cls?.tempo === "TP") s += 50;
-        if (hours.includes(idx === 5 ? 6 : 5)) s += 25;
+        if (hours.includes(6)) s += 25;
+      } else if (idx === 4) {
+        s += 55;
+        if (hours.includes(5)) s += 25;
       } else s -= 200;
+      const cls = data.classes.find((c) => c.id === item.classId);
+      if (cls?.tempo === "TP" && idx >= 4) s += 50;
     }
     const prefers = t?.preferSlots ?? [];
     if (prefers.length) {
@@ -1395,7 +1399,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
   const rientri = data.teachers.filter((t) => isTimetableTeacher(t) && (t.rientroDays?.length ?? 0) > 0);
   if (rientri.length) {
     notes.push(
-      `Rientro T.P. (solo 5ª–6ª al mattino): ${rientri
+      `Rientro T.P. (4ª–6ª al mattino, 7ª–8ª a mano): ${rientri
         .map((t) => `${teacherName(t)} ${(t.rientroDays ?? []).map((d) => DAY_SHORT[d]).join("/")}`)
         .join("; ")}.`,
     );

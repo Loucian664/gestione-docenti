@@ -27,7 +27,7 @@ export type Teacher = {
   /** Insegna anche in un altro plesso: in Costruisci si segnano le ore altrove. */
   otherPlesso?: boolean;
   awaySlots?: { day: DayOfWeek; periodId: string }[];
-  /** Giorni di rientro T.P.: Costruisci mette solo 5ª e 6ª. */
+  /** Giorni di rientro T.P.: Costruisci mette 4ª–6ª (pomeriggio a mano). */
   rientroDays?: DayOfWeek[];
   /** Ore a disposizione (non lezione). In copertura non sono eccedenti. */
   dispSlots?: { day: DayOfWeek; periodId: string }[];
