@@ -21,7 +21,7 @@ import { DAY_SHORT, SUBJECTS, type DayOfWeek } from "@/lib/types";
 import { toSchoolDay } from "@/lib/dates";
 import { Download, Image as ImageIcon, FileText } from "lucide-react";
 import { timetableXlsx } from "@/lib/export";
-import { shareJpeg, sharePdfBlob, shareOrSaveFile, toastSave } from "@/lib/share-file";
+import { shareJpeg, shareOrSaveFile, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
 import { orarioClassJpeg, orarioQuadroJpeg, orarioTeacherJpeg, orarioWeekJpeg, orarioScuolaJpeg, weekCellLines } from "@/lib/sheet-image";
 import { toast } from "sonner";
@@ -139,12 +139,14 @@ function OrarioPage() {
             <Button
               variant="outline"
               onClick={() => {
+                const tab = openPdfTab();
                 void (async () => {
                   try {
                     const { blob, base } = await currentOrarioJpeg();
                     const pdf = await jpegBlobToPdf(blob);
-                    toastSave(await sharePdfBlob(`${base}.pdf`, pdf), "pdf");
+                    toastSave(tab.show(`${base}.pdf`, pdf), "pdf");
                   } catch {
+                    tab.cancel();
                     toast.error("Non sono riuscito a creare il PDF.");
                   }
                 })();
@@ -330,12 +332,14 @@ function OrarioPage() {
             <Button
               variant="outline"
               onClick={() => {
+                const tab = openPdfTab();
                 void (async () => {
                   try {
                     const jpeg = await orarioScuolaJpeg(data, false);
                     const pdf = await jpegBlobToPdf(jpeg);
-                    toastSave(await sharePdfBlob("orario-scuola.pdf", pdf), "pdf");
+                    toastSave(tab.show("orario-scuola.pdf", pdf), "pdf");
                   } catch {
+                    tab.cancel();
                     toast.error("Non sono riuscito a creare il foglio scuola.");
                   }
                 })();
@@ -347,12 +351,14 @@ function OrarioPage() {
             <Button
               variant="outline"
               onClick={() => {
+                const tab = openPdfTab();
                 void (async () => {
                   try {
                     const jpeg = await orarioScuolaJpeg(data, true);
                     const pdf = await jpegBlobToPdf(jpeg);
-                    toastSave(await sharePdfBlob("orario-scuola-docenti.pdf", pdf), "pdf");
+                    toastSave(tab.show("orario-scuola-docenti.pdf", pdf), "pdf");
                   } catch {
+                    tab.cancel();
                     toast.error("Non sono riuscito a creare il foglio scuola.");
                   }
                 })();

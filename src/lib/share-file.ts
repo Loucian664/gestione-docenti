@@ -13,16 +13,7 @@ export function isCoarsePointer(): boolean {
 
 function triggerDownload(blob: Blob, filename: string): boolean {
   try {
-    const force =
-      filename.toLowerCase().endsWith(".pdf") && blob.type !== "application/octet-stream"
-        ? new Blob([blob], { type: "application/octet-stream" })
-        : blob;
-    const nav = navigator as Navigator & { msSaveOrOpenBlob?: (b: Blob, n: string) => void };
-    if (typeof nav.msSaveOrOpenBlob === "function") {
-      nav.msSaveOrOpenBlob(force, filename);
-      return true;
-    }
-    const url = URL.createObjectURL(force);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
@@ -155,7 +146,7 @@ export function toastSave(
       kind === "backup"
         ? "Scegli dove salvare il backup (File, Mail…)"
         : kind === "pdf"
-          ? "Scegli dove salvare il PDF: File, Stampa o Mail"
+          ? "PDF aperto in una nuova scheda: da lì puoi salvare o stampare"
           : kind === "image"
             ? "Scegli Foto, File o Mail"
             : "Scegli Excel, Numbers o File",
@@ -194,9 +185,38 @@ export async function shareJpeg(filename: string, blob: Blob): Promise<SaveOutco
   return shareOrSaveFile(file);
 }
 
-export async function sharePdfBlob(filename: string, blob: Blob): Promise<SaveOutcome> {
-  const name = filename.toLowerCase().endsWith(".pdf") ? filename : `${filename}.pdf`;
-  const file = new File([blob], name, { type: "application/octet-stream" });
-  return shareOrSaveFile(file);
+/** Call from the click handler *before* any await, so the tab is not blocked. */
+export function openPdfTab(): {
+  show: (filename: string, blob: Blob) => SaveOutcome;
+  cancel: () => void;
+} {
+  let win: Window | null = null;
+  if (typeof window !== "undefined" && !isCoarsePointer()) {
+    try {
+      win = window.open("about:blank", "_blank");
+    } catch {
+      win = null;
+    }
+  }
+  return {
+    cancel() {
+      try {
+        win?.close();
+      } catch {
+        /* ignore */
+      }
+    },
+    show(filename: string, blob: Blob) {
+      const pdf = new Blob([blob], { type: "application/pdf" });
+      if (win && !win.closed) {
+        const url = URL.createObjectURL(pdf);
+        win.location.replace(url);
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        return "shared";
+      }
+      const file = new File([pdf], filename, { type: "application/pdf" });
+      return triggerDownload(file, filename) ? "downloaded" : "failed";
+    },
+  };
 }
 

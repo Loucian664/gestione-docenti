@@ -19,7 +19,7 @@ import {
   toSchoolDay,
 } from "@/lib/dates";
 import { absencesRangeText, absencesRangeXlsx } from "@/lib/export";
-import { shareOrSaveFile, sharePdfBlob, toastSave } from "@/lib/share-file";
+import { shareOrSaveFile, toastSave, openPdfTab } from "@/lib/share-file";
 import { textToPdf } from "@/lib/pdf";
 import { ChevronLeft, ChevronRight, Plus, Download, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -92,12 +92,14 @@ function AssenzePage() {
         <Button
           variant="outline"
           onClick={() => {
+            const tab = openPdfTab();
             void (async () => {
               try {
                 const text = absencesRangeText(data, from, to);
                 const blob = textToPdf(text);
-                toastSave(await sharePdfBlob(`assenze-${from}-${to}.pdf`, blob), "pdf");
+                toastSave(tab.show(`assenze-${from}-${to}.pdf`, blob), "pdf");
               } catch {
+                tab.cancel();
                 toast.error("Non sono riuscito a creare il PDF.");
               }
             })();
