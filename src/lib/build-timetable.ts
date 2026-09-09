@@ -414,7 +414,7 @@ function pairGapState(places: Place[], data: PersistedData, a: string, b: string
     tot: ga + gb,
     mx: Math.max(ga, gb),
     st: Math.max(holeStreak(places, data, a), holeStreak(places, data, b)),
-    long: longPresenceDays(places, data, a) + longPresenceDays(places, data, b),
+    long: schoolSpanDays(places, data, a) + schoolSpanDays(places, data, b),
   };
 }
 
@@ -505,6 +505,7 @@ function evaluatePlaces(
     if (opts.avoidGaps) cost += holeStreak(places, data, id) * 35;
     if (opts.avoidGaps) cost += longPresenceDays(places, data, id) * 260;
     if (opts.maxFiveAtSchool) cost += schoolSpanDays(places, data, id) * 420;
+    else cost += schoolSpanDays(places, data, id) * 820;
     lastCounts.set(id, places.filter((p) => p.teacherId === id && p.periodId === last?.id).length);
     const t = teachers.get(id);
     if (opts.avoidFiveHours) {
@@ -686,6 +687,11 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       else s += 4 - Math.min(Math.abs(idx - first), Math.abs(idx - hi));
     }
     if (opts.avoidFiveHours && hours.length >= 5) s -= 220;
+    if (!opts.maxFiveAtSchool && hours.length) {
+      const lo = Math.min(...hours);
+      const hi = Math.max(...hours);
+      if ((lo === 1 && idx === 6) || (hi === 6 && idx === 1)) s -= 110;
+    }
     if ((t?.rientroDays ?? []).includes(day)) {
       if (idx === 5 || idx === 6) {
         s += 90;
@@ -862,6 +868,13 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
   let bestLeft: typeof units = units.slice();
   let bestTB = new Set<string>();
   let bestCB = new Set<string>();
+  let bestSix = 99;
+  let bestDualKept = 99;
+  function sixCount(list: Place[]) {
+    let n = 0;
+    for (const tid of load.keys()) n += schoolSpanDays(list, data, tid);
+    return n;
+  }
   for (let t = 0; t < 8; t++) {
     const randA = rng((seed + t * 7919) >>> 0);
     const order = units.slice();
@@ -881,20 +894,20 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       if (!teachers.get(tid)?.otherPlesso) return n;
       return n + data.settings.days.filter((d) => hoursOnDay(places, tid, d) > 0).length;
     }, 0);
-    const bestDual = [...load.keys()].reduce((n, tid) => {
-      if (!teachers.get(tid)?.otherPlesso) return n;
-      return n + data.settings.days.filter((d) => hoursOnDay(bestPlaces, tid, d) > 0).length;
-    }, 0);
-    if (
+    const six = sixCount(places);
+    const better =
       leftover.length < bestLeft.length ||
-      (leftover.length === bestLeft.length && dualDays < bestDual)
-    ) {
+      (leftover.length === bestLeft.length && six < bestSix) ||
+      (leftover.length === bestLeft.length && six === bestSix && dualDays < bestDualKept);
+    if (better) {
       bestPlaces = places.map((p) => ({ ...p }));
       bestLeft = leftover.slice();
       bestTB = new Set(teacherBusy);
       bestCB = new Set(classBusy);
+      bestSix = six;
+      bestDualKept = dualDays;
     }
-    if (leftover.length === 0) break;
+    if (leftover.length === 0 && six === 0) break;
   }
   places = bestPlaces;
   leftover.length = 0;
@@ -1168,6 +1181,45 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     }
   }
 
+  if (!opts.maxFiveAtSchool && leftover.length === 0) {
+    for (let guard = 0; guard < 40; guard++) {
+      let improved = false;
+      outerSix: for (const tid of load.keys()) {
+        if (schoolSpanDays(places, data, tid) === 0) continue;
+        for (const day of data.settings.days) {
+          const mine = places.filter((p) => p.teacherId === tid && p.day === day);
+          if (mine.length < 2) continue;
+          const idxs = mine.map((p) => periodIndex(data, p.periodId)).sort((a, b) => a - b);
+          if (idxs[idxs.length - 1]! - idxs[0]! + 1 < 6) continue;
+          const first = idxs[0]!;
+          const lastI = idxs[idxs.length - 1]!;
+          const wings = mine.filter((p) => {
+            const i = periodIndex(data, p.periodId);
+            return i === first || i === lastI;
+          });
+          const dests = data.settings.days.filter((d) => d !== day && hoursOnDay(places, tid, d) < 5);
+          for (const place of wings) {
+            const fd = place.day;
+            const fp = place.periodId;
+            const before = schoolSpanDays(places, data, tid);
+            for (const dest of dests) {
+              for (const period of lessonPeriodsOf(data)) {
+                if (!movePlace(place, dest, period.id)) continue;
+                const after = schoolSpanDays(places, data, tid);
+                if (after < before) {
+                  improved = true;
+                  break outerSix;
+                }
+                movePlace(place, fd, fp);
+              }
+            }
+          }
+        }
+      }
+      if (!improved) break;
+    }
+  }
+
   const slots: TimetableSlot[] = places.map((p) => ({
     id: uid("slot"),
     day: p.day,
@@ -1228,6 +1280,17 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
         `Giornata 1ª–6ª con due buche (si resta 6 ore): ${longNames.slice(0, 4).join(", ")}.`,
       );
     }
+  }
+  if (!opts.maxFiveAtSchool) {
+    const sixNames: string[] = [];
+    for (const t of data.teachers.filter(isTimetableTeacher)) {
+      if (schoolSpanDays(places, data, t.id) > 0) sixNames.push(teacherName(t));
+    }
+    notes.push(
+      sixNames.length === 0
+        ? "Nessuna giornata 1ª–6ª (6 ore a scuola)."
+        : `Giornate 1ª–6ª tenute solo perché altrimenti restavano ore fuori: ${sixNames.slice(0, 4).join(", ")}.`,
+    );
   }
   if (opts.avoidFiveHours) {
     const heavy: string[] = [];
