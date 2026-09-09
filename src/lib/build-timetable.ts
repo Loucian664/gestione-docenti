@@ -305,10 +305,10 @@ function feasible(
     }
   }
   if (opts.variety && !pedagogyOk(places, item, day, periodId, data, weekly, t, opts.allowThreeConsecutive)) return false;
-  if (opts.avoidFiveHours && !relaxFive) {
+  if (opts.avoidFiveHours) {
     const already = hoursOnDay(places, item.teacherId, day);
     const without = item.day === day ? Math.max(0, already - 1) : already;
-    if (without >= 4) return false;
+    if (without >= 5) return false;
   }
   if (opts.maxFiveAtSchool) {
     const exclude =
@@ -510,7 +510,7 @@ function evaluatePlaces(
     if (opts.avoidFiveHours) {
       for (const day of data.settings.days) {
         const h = hoursOnDay(places, id, day);
-        if (h >= 5) cost += (h - 4) * 520;
+        if (h >= 6) cost += (h - 5) * 520;
       }
     }
     if (opts.noFreeDay && (load.get(id) ?? 0) >= nDays && !isDualPlesso(t)) {
@@ -685,7 +685,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       else if (idx === hi + 1 || idx === first - 1) s += 28;
       else s += 4 - Math.min(Math.abs(idx - first), Math.abs(idx - hi));
     }
-    if (opts.avoidFiveHours && hours.length >= 4) s -= 220;
+    if (opts.avoidFiveHours && hours.length >= 5) s -= 220;
     if ((t?.rientroDays ?? []).includes(day)) {
       if (idx === 5 || idx === 6) {
         s += 90;
@@ -1023,7 +1023,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       let improved = false;
       outer: for (const tid of load.keys()) {
         for (const day of data.settings.days) {
-          if (hoursOnDay(places, tid, day) < 5) continue;
+          if (hoursOnDay(places, tid, day) < 6) continue;
           const mine = places.filter((p) => p.teacherId === tid && p.day === day);
           const lighter = data.settings.days.filter((d) => d !== day && hoursOnDay(places, tid, d) < 4);
           for (const place of mine) {
@@ -1233,7 +1233,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     const heavy: string[] = [];
     for (const t of data.teachers.filter(isTimetableTeacher)) {
       for (const day of data.settings.days) {
-        if (hoursOnDay(places, t.id, day) >= 5) {
+        if (hoursOnDay(places, t.id, day) >= 6) {
           heavy.push(teacherName(t));
           break;
         }
@@ -1241,8 +1241,8 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     }
     notes.push(
       heavy.length === 0
-        ? "Nessuno oltre 4 ore di lezione in un giorno."
-        : `Ancora 5+ ore di lezione nello stesso giorno: ${[...new Set(heavy)].slice(0, 4).join(", ")}.`,
+        ? "Nessuno a 6 lezioni in un giorno."
+        : `Ancora 6 lezioni nello stesso giorno: ${[...new Set(heavy)].slice(0, 4).join(", ")}.`,
     );
   }
   if (opts.maxFiveAtSchool) {
