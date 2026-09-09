@@ -147,22 +147,22 @@ export function CostruisciOrario() {
         <h2 className="font-display text-lg">Criteri</h2>
         <ul className="mt-3 flex flex-col gap-2.5">
           <Toggle
-            checked={opts.avoidGaps}
-            onChange={(v) => setOpts({ ...opts, avoidGaps: v })}
-            label="Pochi buchi"
-            hint="Qualche buco è normale. Niente 1ª e 6ª con due buche in mezzo (restare a scuola tutto il giorno). Se uno ne ha due e l’altro zero, prova a invertire due ore nella stessa classe."
-          />
-          <Toggle
             checked={opts.avoidFiveHours}
             onChange={(v) => setOpts({ ...opts, avoidFiveHours: v })}
-            label="Max 4 ore di lezione al giorno"
-            hint="Le buche non contano. La 5ª ora di lezione nello stesso giorno solo se altrimenti resterebbe fuori."
+            label="Max 5 lezioni al giorno"
+            hint="Mai 6 lezioni. I buchi non contano: 5 lezioni + 1 buco = 6 ore a scuola, va bene."
           />
           <Toggle
             checked={opts.maxFiveAtSchool}
             onChange={(v) => setOpts({ ...opts, maxFiveAtSchool: v })}
             label="Max 5 ore a scuola"
-            hint="Lezione + buche, dalla prima all’ultima. Mai 1ª e 6ª nello stesso giorno. Se serve una 5ª ora di lezione, deve essere di fila (1ª–5ª o 2ª–6ª)."
+            hint="Conta lezione + buche, dalla prima all’ultima. Se è spento (come ora), si può restare 6 ore a scuola solo perché in mezzo c’è almeno un buco. Mai 1ª e 6ª tutte lezioni."
+          />
+          <Toggle
+            checked={opts.avoidGaps}
+            onChange={(v) => setOpts({ ...opts, avoidGaps: v })}
+            label="Pochi buchi"
+            hint="Qualche buco è normale. Evita 1ª e 6ª con due buche in mezzo. Se uno ne ha due e l’altro zero, prova a invertire due ore nella stessa classe."
           />
           <Toggle
             checked={opts.balanceLastHour}
@@ -180,19 +180,19 @@ export function CostruisciOrario() {
             checked={opts.allowThreeConsecutive}
             onChange={(v) => setOpts({ ...opts, allowThreeConsecutive: v })}
             label="Fino a 3 ore di fila nella stessa classe"
-            hint="Meglio 3 ore compatte che due buche in mezzo (restare 5 ore per farne 3). 4 o 5 nella stessa classe restano vietate."
+            hint="Eccezione alla varietà: 3 compatte ok (meglio che due buche in mezzo). 4 o 5 nella stessa classe restano vietate."
           />
           <Toggle
             checked={opts.noFreeDay}
             onChange={(v) => setOpts({ ...opts, noFreeDay: v })}
             label="Nessun giorno libero"
-            hint="Chi insegna solo qui: almeno un’ora ogni giorno. Chi è anche altrove può avere giorni vuoti (sono dell’altro plesso)."
+            hint="Chi insegna solo qui: almeno un’ora ogni giorno. Chi ha X o altro plesso può avere giorni vuoti."
           />
           <Toggle
             checked={opts.noAdjacentPlessi}
             onChange={(v) => setOpts({ ...opts, noAdjacentPlessi: v })}
             label="Niente ore attaccate tra plessi"
-            hint="Esempio: X in 2ª ⇒ niente 1ª né 3ª qui. Stesso per ogni ora. Giorni pieni, non spezzati, se si può."
+            hint="X in 2ª ⇒ niente 1ª né 3ª qui. Stesso per ogni ora. Giorni pieni, non spezzati, se si può."
           />
         </ul>
       </section>
