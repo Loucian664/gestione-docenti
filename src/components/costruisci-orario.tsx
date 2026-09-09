@@ -156,13 +156,13 @@ export function CostruisciOrario() {
             checked={opts.maxFiveAtSchool}
             onChange={(v) => setOpts({ ...opts, maxFiveAtSchool: v })}
             label="Max 5 ore a scuola"
-            hint="Conta lezione + buche, dalla prima all’ultima. Se è spento (come ora), si può restare 6 ore a scuola solo perché in mezzo c’è almeno un buco. Mai 1ª e 6ª tutte lezioni."
+            hint="Se è accesa, vieta 1ª+6ª. Lascia spenta: 6 ore a scuola solo come ultima spiaggia, dopo che tutte le ore sono piazzate."
           />
           <Toggle
             checked={opts.avoidGaps}
             onChange={(v) => setOpts({ ...opts, avoidGaps: v })}
             label="Pochi buchi"
-            hint="Qualche buco è normale. Evita 1ª e 6ª con due buche in mezzo. Se uno ne ha due e l’altro zero, prova a invertire due ore nella stessa classe."
+            hint="Qualche buco è normale. Le giornate 1ª–6ª (6 ore a scuola) si tengono solo se altrimenti resta un’ora fuori."
           />
           <Toggle
             checked={opts.balanceLastHour}
