@@ -9,7 +9,7 @@ import { useAppStore, snapshot } from "@/lib/store";
 import { loadByTeacher, absencesByReason, teacherShort } from "@/lib/coverage";
 import { monthRange, schoolYearRange } from "@/lib/dates";
 import { reportXlsx } from "@/lib/export";
-import { shareOrSaveFile, shareJpeg, sharePdfBlob, toastSave } from "@/lib/share-file";
+import { shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
 import { reportJpeg } from "@/lib/sheet-image";
 import { ABSENCE_REASONS } from "@/lib/types";
@@ -119,12 +119,14 @@ function ReportPage() {
             <Button
               variant="outline"
               onClick={() => {
+                const tab = openPdfTab();
                 void (async () => {
                   try {
                     const blob = await reportJpeg(data, from, to);
                     const pdf = await jpegBlobToPdf(blob);
-                    toastSave(await sharePdfBlob(`report-${from}-${to}.pdf`, pdf), "pdf");
+                    toastSave(tab.show(`report-${from}-${to}.pdf`, pdf), "pdf");
                   } catch {
+                    tab.cancel();
                     toast.error("Non sono riuscito a creare il PDF.");
                   }
                 })();

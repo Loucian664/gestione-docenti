@@ -35,7 +35,7 @@ import {
   type CoverageNeed,
 } from "@/lib/coverage";
 import { dailySheetText, substitutionsXlsx } from "@/lib/export";
-import { copyText, isCoarsePointer, shareOrSaveFile, shareJpeg, toastSave } from "@/lib/share-file";
+import { copyText, isCoarsePointer, shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { textToPdf } from "@/lib/pdf";
 import { bachecaJpeg } from "@/lib/sheet-image";
 import { formatLong, isWeekend, shiftSchoolDay, weekDaysIso, toSchoolDay } from "@/lib/dates";
@@ -130,10 +130,14 @@ function OggiPage() {
 
   async function sharePdf() {
     if (!pdf) return;
-    const blob = await fetch(pdf.url).then((r) => r.blob());
-    const file = new File([blob], pdf.name, { type: "application/pdf" });
-    const outcome = await shareOrSaveFile(file);
-    toastSave(outcome, "pdf");
+    const tab = openPdfTab();
+    try {
+      const blob = await fetch(pdf.url).then((r) => r.blob());
+      toastSave(tab.show(pdf.name, blob), "pdf");
+    } catch {
+      tab.cancel();
+      toast.error("Non sono riuscito a salvare. Prova Apri PDF.");
+    }
   }
 
   return (
