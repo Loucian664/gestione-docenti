@@ -13,7 +13,16 @@ export function isCoarsePointer(): boolean {
 
 function triggerDownload(blob: Blob, filename: string): boolean {
   try {
-    const url = URL.createObjectURL(blob);
+    const force =
+      filename.toLowerCase().endsWith(".pdf") && blob.type !== "application/octet-stream"
+        ? new Blob([blob], { type: "application/octet-stream" })
+        : blob;
+    const nav = navigator as Navigator & { msSaveOrOpenBlob?: (b: Blob, n: string) => void };
+    if (typeof nav.msSaveOrOpenBlob === "function") {
+      nav.msSaveOrOpenBlob(force, filename);
+      return true;
+    }
+    const url = URL.createObjectURL(force);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
@@ -186,7 +195,8 @@ export async function shareJpeg(filename: string, blob: Blob): Promise<SaveOutco
 }
 
 export async function sharePdfBlob(filename: string, blob: Blob): Promise<SaveOutcome> {
-  const file = new File([blob], filename, { type: "application/pdf" });
+  const name = filename.toLowerCase().endsWith(".pdf") ? filename : `${filename}.pdf`;
+  const file = new File([blob], name, { type: "application/octet-stream" });
   return shareOrSaveFile(file);
 }
 
