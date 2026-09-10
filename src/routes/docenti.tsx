@@ -132,6 +132,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
   const [firstName, setFirstName] = useState(current?.firstName ?? "");
   const [subjects, setSubjects] = useState(current?.subjects.join(", ") ?? "");
   const [weeklyHours, setWeeklyHours] = useState(String(current?.weeklyHours ?? 18));
+  const [dispHours, setDispHours] = useState(String(current?.dispHours ?? 0));
   const [role, setRole] = useState<TeacherRole>(current?.role ?? "cattedra");
   const [notes, setNotes] = useState(current?.notes ?? "");
   const [color, setColor] = useState(current?.color ?? "#3d5a4c");
@@ -155,6 +156,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
         .map((s) => s.trim())
         .filter(Boolean),
       weeklyHours: Number(weeklyHours) || 0,
+      dispHours: Math.max(0, Number(dispHours) || 0),
       role,
       notes,
       color,
@@ -164,6 +166,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
       rientroDays: current?.rientroDays ?? [],
       dispSlots: current?.dispSlots ?? [],
       preferSlots: current?.preferSlots ?? [],
+      mustSlots: current?.mustSlots ?? [],
     };
     if (!payload.lastName) return;
     const id = isNew ? store.addTeacher(payload) : current!.id;
@@ -207,6 +210,15 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             <Field label="Ore cattedra">
               <Input type="number" min={0} value={weeklyHours} onChange={(e) => setWeeklyHours(e.target.value)} />
             </Field>
+            <Field label="A disposizione (questo plesso)">
+              <Input type="number" min={0} max={18} value={dispHours} onChange={(e) => setDispHours(e.target.value)} />
+            </Field>
+          </div>
+          <p className="-mt-1 text-[12px] text-muted-foreground">
+            Le ore a disposizione non sono lezioni. Se Proponi deve lasciare buchi, prima a chi ha questo numero (fino a
+            quel tetto).
+          </p>
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Ruolo">
               <NativeSelect value={role} onChange={(e) => setRole(e.target.value as TeacherRole)}>
                 {Object.entries(ROLE_LABELS).map(([k, v]) => (

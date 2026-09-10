@@ -29,10 +29,14 @@ export type Teacher = {
   awaySlots?: { day: DayOfWeek; periodId: string }[];
   /** Giorni di rientro T.P.: Costruisci mette 4ª–6ª (pomeriggio a mano). */
   rientroDays?: DayOfWeek[];
+  /** Ore a disposizione su questo plesso. In Costruisci i buchi, se servono, vanno prima a loro (fino a questo numero). */
+  dispHours?: number;
   /** Ore a disposizione (non lezione). In copertura non sono eccedenti. */
   dispSlots?: { day: DayOfWeek; periodId: string }[];
-  /** Ore preferite a Rombiolo (✓ in Costruisci). Non è un vincolo duro. */
+  /** Ore preferite su questo plesso (✓ in Costruisci). Non è un vincolo duro. */
   preferSlots?: { day: DayOfWeek; periodId: string }[];
+  /** Obbligo: in quell’ora, in una delle classi indicate. */
+  mustSlots?: { day: DayOfWeek; periodId: string; classId?: string; classIds?: string[] }[];
 };
 
 export type SchoolClass = {
