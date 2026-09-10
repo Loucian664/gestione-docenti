@@ -19,6 +19,8 @@ export type BuildOptions = {
   avoidFiveHours: boolean;
   allowThreeConsecutive: boolean;
   maxFiveAtSchool: boolean;
+  /** Niente 4 ore di fila ITA/STO/GEO/MAT/SCI nella stessa classe. */
+  avoidHeavyBlocks: boolean;
 };
 
 export type BuildReport = {
@@ -60,6 +62,7 @@ export function monteOreOf(data: PersistedData): { subject: string; hours: numbe
 }
 
 const HEAVY = new Set(["Italiano", "Matematica", "Inglese"]);
+const CORE_LOAD = new Set(["Italiano", "Storia", "Geografia", "Matematica", "Scienze"]);
 
 const STRUMENTO = /strumento|chitarra|flauto|oboe|pianoforte/i;
 
@@ -89,6 +92,55 @@ function periodIndex(data: PersistedData, periodId: string): number {
 
 function lastPeriod(data: PersistedData) {
   return [...lessonPeriodsOf(data)].sort((a, b) => b.index - a.index)[0];
+}
+
+function mustClassIds(a: { classId?: string; classIds?: string[] }): string[] {
+  if (a.classIds && a.classIds.length) return a.classIds;
+  return a.classId ? [a.classId] : [];
+}
+
+function coreRunIfPlaced(
+  places: Place[],
+  data: PersistedData,
+  classId: string,
+  day: DayOfWeek,
+  periodId: string,
+  subject: string,
+): number {
+  const periods = lessonPeriodsOf(data).slice().sort((a, b) => a.index - b.index);
+  const row = periods.map((per) => {
+    if (per.id === periodId) return subject;
+    return places.find((p) => p.classId === classId && p.day === day && p.periodId === per.id)?.subject ?? "";
+  });
+  const at = periods.findIndex((p) => p.id === periodId);
+  if (at < 0 || !CORE_LOAD.has(subject)) return 0;
+  let run = 1;
+  for (let i = at - 1; i >= 0 && CORE_LOAD.has(row[i] ?? ""); i--) run += 1;
+  for (let i = at + 1; i < row.length && CORE_LOAD.has(row[i] ?? ""); i++) run += 1;
+  return run;
+}
+
+function heavyBlockCount(places: Place[], data: PersistedData): number {
+  let n = 0;
+  for (const cls of data.classes) {
+    for (const day of data.settings.days) {
+      const row = lessonPeriodsOf(data)
+        .slice()
+        .sort((a, b) => a.index - b.index)
+        .map((per) => places.find((p) => p.classId === cls.id && p.day === day && p.periodId === per.id)?.subject ?? "");
+      let run = 0;
+      for (const sub of row) {
+        if (CORE_LOAD.has(sub)) {
+          run += 1;
+          if (run >= 4) {
+            n += 1;
+            break;
+          }
+        } else run = 0;
+      }
+    }
+  }
+  return n;
 }
 
 export type DemandResult = {
@@ -230,12 +282,11 @@ function pedagogyOk(
   day: DayOfWeek,
   periodId: string,
   data: PersistedData,
-  weekly: Map<string, number>,
+  _weekly: Map<string, number>,
   teacher: Teacher | undefined,
   allowThree: boolean,
 ): boolean {
   const rest = places.filter((p) => p !== item);
-  const w = weekly.get(pairKey(item.classId, item.teacherId, item.subject)) ?? 1;
   const already = places.filter(
     (p) => p.teacherId === item.teacherId && p.classId === item.classId && p.day === day,
   );
@@ -255,13 +306,10 @@ function pedagogyOk(
   ).length;
   const sameSub = rest.filter((p) => p.classId === item.classId && p.subject === item.subject && p.day === day);
   const newSub = sameSub.length + 1;
-  if (w <= 2 && newSub > 1 && newSub > alreadySub) return false;
   if (newSub > 2 && newSub > alreadySub) return false;
 
   const idx = periodIndex(data, periodId);
   const idxs = sameTeacher.map((p) => periodIndex(data, p.periodId));
-  const subIdxs = sameSub.map((p) => periodIndex(data, p.periodId));
-  if (w <= 2 && newSub > alreadySub && subIdxs.some((i) => Math.abs(i - idx) === 1)) return false;
   if (!teacher?.otherPlesso && !allowThree) {
     const oldIdxs = already.map((p) => periodIndex(data, p.periodId));
     const newIdxs = [...idxs, idx];
@@ -286,6 +334,7 @@ function feasible(
   places: Place[],
   weekly: Map<string, number>,
   relaxFive = false,
+  relaxPedagogy = false,
 ): boolean {
   if (teacherBusy.has(busyKey(day, periodId, item.teacherId))) return false;
   if (classBusy.has(busyKey(day, periodId, item.classId))) return false;
@@ -304,8 +353,11 @@ function feasible(
       if (away.has(busyKey(day, p.id, t.id))) return false;
     }
   }
-  if (opts.variety && !pedagogyOk(places, item, day, periodId, data, weekly, t, opts.allowThreeConsecutive)) return false;
-  if (opts.avoidFiveHours) {
+  if (opts.variety && !relaxPedagogy && !pedagogyOk(places, item, day, periodId, data, weekly, t, opts.allowThreeConsecutive)) return false;
+  if (opts.avoidHeavyBlocks && !relaxPedagogy) {
+    if (coreRunIfPlaced(places, data, item.classId, day, periodId, item.subject) >= 4) return false;
+  }
+  if (opts.avoidFiveHours && !relaxFive) {
     const already = hoursOnDay(places, item.teacherId, day);
     const without = item.day === day ? Math.max(0, already - 1) : already;
     if (without >= 5) return false;
@@ -407,14 +459,22 @@ function holeStreak(places: Place[], data: PersistedData, teacherId: string): nu
   return mx;
 }
 
-function pairGapState(places: Place[], data: PersistedData, a: string, b: string) {
+function pairGapState(
+  places: Place[],
+  data: PersistedData,
+  a: string,
+  b: string,
+  disp: Map<string, number>,
+) {
   const ga = gapsFor(places, data, a);
   const gb = gapsFor(places, data, b);
+  const extra = Math.max(0, ga - (disp.get(a) ?? 0)) + Math.max(0, gb - (disp.get(b) ?? 0));
   return {
     tot: ga + gb,
     mx: Math.max(ga, gb),
     st: Math.max(holeStreak(places, data, a), holeStreak(places, data, b)),
     long: schoolSpanDays(places, data, a) + schoolSpanDays(places, data, b),
+    extra,
   };
 }
 
@@ -433,15 +493,17 @@ function longPresenceDays(places: Place[], data: PersistedData, teacherId: strin
   return n;
 }
 
-/** Meno buche in tutto, oppure stesso totale ma niente giornate-lunghe / più equo. */
+/** Meno buche in tutto; a parità, i buchi oltre la disposizione stanno sui meno carichi. */
 function fairerGaps(
-  before: { tot: number; mx: number; st: number; long: number },
-  after: { tot: number; mx: number; st: number; long: number },
+  before: { tot: number; mx: number; st: number; long: number; extra: number },
+  after: { tot: number; mx: number; st: number; long: number; extra: number },
 ): boolean {
   if (after.tot < before.tot) return true;
   if (after.tot > before.tot) return false;
   if (after.long < before.long) return true;
   if (after.long > before.long) return false;
+  if (after.extra < before.extra) return true;
+  if (after.extra > before.extra) return false;
   if (after.mx < before.mx) return true;
   if (after.mx > before.mx) return false;
   return after.st < before.st;
@@ -501,11 +563,15 @@ function evaluatePlaces(
   const nDays = data.settings.days.length;
 
   for (const id of new Set(places.map((p) => p.teacherId))) {
-    if (opts.avoidGaps) cost += gapsFor(places, data, id) * 55;
+    if (opts.avoidGaps) {
+      const cap = teachers.get(id)?.dispHours ?? 0;
+      const g = gapsFor(places, data, id);
+      cost += Math.max(0, g - cap) * 90 + Math.min(g, cap) * 12;
+    }
     if (opts.avoidGaps) cost += holeStreak(places, data, id) * 35;
     if (opts.avoidGaps) cost += longPresenceDays(places, data, id) * 260;
     if (opts.maxFiveAtSchool) cost += schoolSpanDays(places, data, id) * 420;
-    else cost += schoolSpanDays(places, data, id) * 820;
+    else cost += schoolSpanDays(places, data, id) * 1600;
     lastCounts.set(id, places.filter((p) => p.teacherId === id && p.periodId === last?.id).length);
     const t = teachers.get(id);
     if (opts.avoidFiveHours) {
@@ -579,6 +645,18 @@ function evaluatePlaces(
         const c = row[i + 2];
         if (a && b && c && HEAVY.has(a.subject) && HEAVY.has(b.subject) && HEAVY.has(c.subject)) cost += 40;
       }
+      if (opts.avoidHeavyBlocks) {
+        let run = 0;
+        for (const p of row) {
+          if (p && CORE_LOAD.has(p.subject)) {
+            run += 1;
+            if (run >= 4) {
+              cost += 480;
+              break;
+            }
+          } else run = 0;
+        }
+      }
     }
     if (opts.variety) {
       for (const subject of ["Italiano", "Matematica"]) {
@@ -600,7 +678,7 @@ function evaluatePlaces(
           }
         }
         for (const n of byDay.values()) {
-          if (n >= 2) cost += 300;
+          if (n >= 2) cost += 55;
         }
       }
     }
@@ -630,6 +708,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     weekly.set(pairKey(l.classId, l.teacherId, l.subject), l.hours);
   }
   const teachers = new Map(data.teachers.map((t) => [t.id, t]));
+  const disp = new Map(data.teachers.map((t) => [t.id, t.dispHours ?? 0]));
   const last = lastPeriod(data);
 
   function lastCountOf(list: Place[], tid: string) {
@@ -690,7 +769,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     if (!opts.maxFiveAtSchool && hours.length) {
       const lo = Math.min(...hours);
       const hi = Math.max(...hours);
-      if ((lo === 1 && idx === 6) || (hi === 6 && idx === 1)) s -= 110;
+      if ((lo === 1 && idx === 6) || (hi === 6 && idx === 1)) s -= 220;
     }
     if ((t?.rientroDays ?? []).includes(day)) {
       if (idx === 6) s += 95;
@@ -710,6 +789,16 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       if (onDay.some((a) => a.periodId === periodId)) s += 140;
       else if (onDay.length) s -= 45;
     }
+    const musts = t?.mustSlots ?? [];
+    if (musts.length) {
+      const hit = musts.find((a) => a.day === day && a.periodId === periodId);
+      if (hit) s += mustClassIds(hit).includes(item.classId) ? 1400 : -800;
+    }
+    if (opts.avoidHeavyBlocks) {
+      const run = coreRunIfPlaced(places, data, item.classId, day, periodId, item.subject);
+      if (run >= 4) s -= 520;
+      else if (run === 3) s -= 70;
+    }
     if (opts.balanceLastHour && last && periodId === last.id) s -= 10 + lastCount(item.teacherId) * 14;
     if (opts.variety) {
       const w = weekly.get(pairKey(item.classId, item.teacherId, item.subject)) ?? 1;
@@ -726,11 +815,15 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       const leftSub = w - placedSub;
       const emptySubDays = data.settings.days.filter((d) => !subDays.has(d)).length;
       if (w <= 2) {
-        s -= places.filter(
-          (p) => p.teacherId === item.teacherId && p.classId === item.classId && p.day === day,
-        ).length * 45;
-        if (subDays.has(day)) s -= 80;
-        else s += 50;
+        const sameDaySub = places.filter(
+          (p) => p.classId === item.classId && p.teacherId === item.teacherId && p.subject === item.subject && p.day === day,
+        );
+        if (sameDaySub.length) {
+          const adj = sameDaySub.some((p) => Math.abs(periodIndex(data, p.periodId) - idx) === 1);
+          s += adj ? 8 : -75;
+        } else {
+          s += 45;
+        }
       } else if (item.subject === "Italiano" || item.subject === "Matematica") {
         const adj = places.some(
           (p) =>
@@ -755,6 +848,79 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     teacherBusy.add(busyKey(day, periodId, item.teacherId));
     classBusy.add(busyKey(day, periodId, item.classId));
     places.push({ ...item, day, periodId });
+  }
+
+  function isMustPlace(p: { teacherId: string; classId: string; day: DayOfWeek; periodId: string }) {
+    return (teachers.get(p.teacherId)?.mustSlots ?? []).some(
+      (a) => a.day === p.day && a.periodId === p.periodId && mustClassIds(a).includes(p.classId),
+    );
+  }
+
+  function pinMust(order: typeof units): typeof units {
+    const rest = order.slice();
+    for (const t of data.teachers) {
+      for (const a of t.mustSlots ?? []) {
+        const ids = mustClassIds(a);
+        if (!ids.length) continue;
+        if (teacherBusy.has(busyKey(a.day, a.periodId, t.id))) continue;
+        if (awaySet(t).has(busyKey(a.day, a.periodId, t.id))) continue;
+        let placed = false;
+        for (const relax of [false, true]) {
+          for (const classId of ids) {
+            if (classBusy.has(busyKey(a.day, a.periodId, classId))) continue;
+            for (let i = 0; i < rest.length; i++) {
+              const item = rest[i]!;
+              if (item.teacherId !== t.id || item.classId !== classId) continue;
+              if (
+                !feasible(
+                  data,
+                  item,
+                  a.day,
+                  a.periodId,
+                  teacherBusy,
+                  classBusy,
+                  opts,
+                  teachers,
+                  places,
+                  weekly,
+                  true,
+                  relax,
+                )
+              )
+                continue;
+              placeItem(item, a.day, a.periodId);
+              rest.splice(i, 1);
+              placed = true;
+              break;
+            }
+            if (placed) break;
+          }
+          if (placed) break;
+        }
+      }
+    }
+    return rest;
+  }
+
+  function mustMissCount(list: Place[]) {
+    let n = 0;
+    for (const t of data.teachers) {
+      for (const a of t.mustSlots ?? []) {
+        const ids = mustClassIds(a);
+        if (!ids.length) continue;
+        if (
+          !list.some(
+            (p) =>
+              p.teacherId === t.id &&
+              p.day === a.day &&
+              p.periodId === a.periodId &&
+              ids.includes(p.classId),
+          )
+        )
+          n += 1;
+      }
+    }
+    return n;
   }
 
   function greedyFill(order: typeof units) {
@@ -809,6 +975,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
         }
         const occs = places.filter((p) => p.classId === item.classId);
         for (const occ of occs) {
+          if (isMustPlace(occ)) continue;
           const od = occ.day;
           const op = occ.periodId;
           const occIdx = places.indexOf(occ);
@@ -873,13 +1040,21 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
   let bestTB = new Set<string>();
   let bestCB = new Set<string>();
   let bestSix = 99;
+  let bestMust = 99;
+  let bestHeavy = 99;
   let bestDualKept = 99;
+  let bestGaps = 999;
   function sixCount(list: Place[]) {
     let n = 0;
     for (const tid of load.keys()) n += schoolSpanDays(list, data, tid);
     return n;
   }
-  for (let t = 0; t < 8; t++) {
+  function gapSum(list: Place[]) {
+    let n = 0;
+    for (const tid of load.keys()) n += gapsFor(list, data, tid);
+    return n;
+  }
+  for (let t = 0; t < 12; t++) {
     const randA = rng((seed + t * 7919) >>> 0);
     const order = units.slice();
     order.sort(() => randA() - 0.5);
@@ -892,26 +1067,44 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     teacherBusy = new Set();
     classBusy = new Set();
     places = [];
-    greedyFill(order);
+    greedyFill(pinMust(order));
     packAll();
     const dualDays = [...load.keys()].reduce((n, tid) => {
       if (!teachers.get(tid)?.otherPlesso) return n;
       return n + data.settings.days.filter((d) => hoursOnDay(places, tid, d) > 0).length;
     }, 0);
     const six = sixCount(places);
+    const gapsN = gapSum(places);
+    const miss = mustMissCount(places);
+    const heavyN = opts.avoidHeavyBlocks ? heavyBlockCount(places, data) : 0;
     const better =
       leftover.length < bestLeft.length ||
-      (leftover.length === bestLeft.length && six < bestSix) ||
-      (leftover.length === bestLeft.length && six === bestSix && dualDays < bestDualKept);
+      (leftover.length === bestLeft.length && miss < bestMust) ||
+      (leftover.length === bestLeft.length && miss === bestMust && six < bestSix) ||
+      (leftover.length === bestLeft.length && miss === bestMust && six === bestSix && heavyN < bestHeavy) ||
+      (leftover.length === bestLeft.length &&
+        miss === bestMust &&
+        six === bestSix &&
+        heavyN === bestHeavy &&
+        gapsN < bestGaps) ||
+      (leftover.length === bestLeft.length &&
+        miss === bestMust &&
+        six === bestSix &&
+        heavyN === bestHeavy &&
+        gapsN === bestGaps &&
+        dualDays < bestDualKept);
     if (better) {
       bestPlaces = places.map((p) => ({ ...p }));
       bestLeft = leftover.slice();
       bestTB = new Set(teacherBusy);
       bestCB = new Set(classBusy);
       bestSix = six;
+      bestMust = miss;
+      bestHeavy = heavyN;
       bestDualKept = dualDays;
+      bestGaps = gapsN;
     }
-    if (leftover.length === 0 && six === 0) break;
+    if (leftover.length === 0 && six === 0 && miss === 0) break;
   }
   places = bestPlaces;
   leftover.length = 0;
@@ -924,6 +1117,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     const a = places[i]!;
     const b = places[j]!;
     if (a.day === b.day && a.periodId === b.periodId) return false;
+    if (isMustPlace(a) || isMustPlace(b)) return false;
     teacherBusy.delete(busyKey(a.day, a.periodId, a.teacherId));
     teacherBusy.delete(busyKey(b.day, b.periodId, b.teacherId));
     classBusy.delete(busyKey(a.day, a.periodId, a.classId));
@@ -982,6 +1176,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
   packAll();
 
   function movePlace(place: Place, day: DayOfWeek, periodId: string): boolean {
+    if (isMustPlace(place)) return false;
     teacherBusy.delete(busyKey(place.day, place.periodId, place.teacherId));
     classBusy.delete(busyKey(place.day, place.periodId, place.classId));
     const ok = feasible(data, place, day, periodId, teacherBusy, classBusy, opts, teachers, places, weekly);
@@ -1064,7 +1259,8 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
       let improved = false;
       for (const tid of load.keys()) {
         const before = gapsFor(places, data, tid);
-        if (before === 0) continue;
+        const cap = disp.get(tid) ?? 0;
+        if (before === 0 || before <= cap) continue;
         for (const day of data.settings.days) {
           const mine = places.filter((p) => p.teacherId === tid && p.day === day);
           if (mine.length < 2) continue;
@@ -1084,7 +1280,7 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
               const fp = place.periodId;
               if (movePlace(place, day, per.id)) {
                 const after = gapsFor(places, data, tid);
-                if (after < before) {
+                if (after < before && after >= cap) {
                   improved = true;
                   break;
                 }
@@ -1097,9 +1293,9 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
               const i = places.indexOf(place);
               const j = places.indexOf(other);
               if (i < 0 || j < 0) continue;
-              const prev = pairGapState(places, data, tid, other.teacherId);
+              const prev = pairGapState(places, data, tid, other.teacherId, disp);
               if (!swap(i, j)) continue;
-              if (fairerGaps(prev, pairGapState(places, data, tid, other.teacherId))) {
+              if (fairerGaps(prev, pairGapState(places, data, tid, other.teacherId, disp))) {
                 improved = true;
                 break;
               }
@@ -1128,9 +1324,9 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
               const i = places.indexOf(pa);
               const j = places.indexOf(pb);
               if (i < 0 || j < 0) continue;
-              const prev = pairGapState(places, data, pa.teacherId, pb.teacherId);
+              const prev = pairGapState(places, data, pa.teacherId, pb.teacherId, disp);
               if (!swap(i, j)) continue;
-              if (fairerGaps(prev, pairGapState(places, data, pa.teacherId, pb.teacherId))) {
+              if (fairerGaps(prev, pairGapState(places, data, pa.teacherId, pb.teacherId, disp))) {
                 improved = true;
                 break outer;
               }
@@ -1273,7 +1469,59 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     }
     if (want) notes.push(`Preferenze ✓: ${hit} su ${want} caselle (non è un vincolo duro).`);
   }
+  {
+    let want = 0;
+    let hit = 0;
+    const miss: string[] = [];
+    for (const t of data.teachers.filter(isTimetableTeacher)) {
+      for (const a of t.mustSlots ?? []) {
+        want += 1;
+        const ids = mustClassIds(a);
+        const ok = places.some(
+          (p) =>
+            p.teacherId === t.id && p.day === a.day && p.periodId === a.periodId && ids.includes(p.classId),
+        );
+        if (ok) hit += 1;
+        else {
+          const names = ids
+            .map((id) => data.classes.find((c) => c.id === id)?.name ?? "")
+            .filter(Boolean)
+            .join("/");
+          miss.push(`${teacherName(t)} ${DAY_SHORT[a.day]} ${a.periodId.replace("p", "")}ª ${names}`.trim());
+        }
+      }
+    }
+    if (want) {
+      notes.push(
+        miss.length
+          ? `Obblighi classe: ${hit} su ${want}. Manca: ${miss.join("; ")}.`
+          : `Obblighi classe: ${hit} su ${want}.`,
+      );
+    }
+  }
+  if (opts.avoidHeavyBlocks) {
+    const n = heavyBlockCount(places, data);
+    notes.push(
+      n === 0
+        ? "Nessun blocco di 4 ore pesanti di fila (ita/sto/geo/mate/scienze)."
+        : `${n} giornate-classe con 4 ore pesanti di fila (ita/sto/geo/mate/scienze).`,
+    );
+  }
   if (opts.avoidGaps) notes.push(gaps === 0 ? "Nessun buco in orario." : `${gaps} buchi in tutto (qualcuno è normale).`);
+  {
+    const marked = data.teachers.filter((t) => (t.dispHours ?? 0) > 0);
+    if (marked.length) {
+      notes.push(
+        `A disposizione (buchi ammessi): ${marked
+          .map((t) => {
+            const g = gapsFor(places, data, t.id);
+            const cap = t.dispHours ?? 0;
+            return `${teacherName(t)} ${g}/${cap}`;
+          })
+          .join("; ")}.`,
+      );
+    }
+  }
   if (opts.avoidGaps) {
     const longNames: string[] = [];
     for (const t of data.teachers.filter(isTimetableTeacher)) {
@@ -1382,12 +1630,12 @@ export function buildTimetable(data: PersistedData, opts: BuildOptions, seed = D
     if (pile === 0 && twoBlock === 0) {
       notes.push(
         opts.allowThreeConsecutive
-          ? "Varietà: al massimo 3 ore dello stesso docente in una classe; le materie da 2 ore su giorni distinti."
-          : "Varietà: niente giornate con lo stesso docente per 3+ ore, e le materie da 2 ore sono su giorni distinti.",
+          ? "Varietà: al massimo 3 ore dello stesso docente in una classe; le materie da 2 ore preferite su giorni distinti (blocco da 2 solo se serve)."
+          : "Varietà: niente giornate con lo stesso docente per 3+ ore; materie da 2 ore preferite su giorni distinti.",
       );
     } else {
       if (pile) notes.push(`${pile} giornate ancora con troppe ore dello stesso docente in una classe.`);
-      if (twoBlock) notes.push(`${twoBlock} blocchi da 2 ore (materie con solo 2 ore settimanali) da spezzare.`);
+      if (twoBlock) notes.push(`${twoBlock} blocchi da 2 ore (materie da 2 ore settimanali): ammessi se evitano buchi o ore fuori.`);
     }
   }
   if (opts.noAdjacentPlessi) {

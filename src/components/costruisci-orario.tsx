@@ -15,6 +15,7 @@ import {
   isTimetableTeacher,
   timetableDemand,
   resolveCattedre,
+  cattedreOfTeacher,
   MONTE_ORE,
   gapsRanking,
   type BuildOptions,
@@ -50,6 +51,7 @@ export function CostruisciOrario() {
     avoidFiveHours: true,
     allowThreeConsecutive: true,
     maxFiveAtSchool: false,
+    avoidHeavyBlocks: true,
   });
   const [report, setReport] = useState<BuildReport | null>(null);
   const [pendingSlots, setPendingSlots] = useState<TimetableSlot[] | null>(null);
@@ -59,6 +61,12 @@ export function CostruisciOrario() {
   const [previewMode, setPreviewMode] = useState<"settimana" | "docenti" | "class" | "quadro">("settimana");
   const [previewClassId, setPreviewClassId] = useState(data.classes[0]?.id ?? "");
   const [previewDay, setPreviewDay] = useState<DayOfWeek>(data.settings.days[0] ?? 1);
+  const [mustPick, setMustPick] = useState<{
+    teacherId: string;
+    day: DayOfWeek;
+    periodId: string;
+    selected: string[];
+  } | null>(null);
 
   const included = useMemo(
     () =>
@@ -111,6 +119,7 @@ export function CostruisciOrario() {
 
   function propose() {
     const alreadyOpen = pendingSlots != null;
+    const y = typeof window !== "undefined" ? window.scrollY : 0;
     const result = buildTimetable(data, opts);
     setPendingSlots(result.slots);
     setReport(result.report);
@@ -118,7 +127,10 @@ export function CostruisciOrario() {
       toast.message("Niente da piazzare: inserisci prima docenti, classi e ore in orario.");
       return;
     }
-    if (alreadyOpen) return;
+    if (alreadyOpen) {
+      requestAnimationFrame(() => window.scrollTo(0, y));
+      return;
+    }
     window.setTimeout(() => {
       previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
@@ -156,13 +168,13 @@ export function CostruisciOrario() {
             checked={opts.maxFiveAtSchool}
             onChange={(v) => setOpts({ ...opts, maxFiveAtSchool: v })}
             label="Max 5 ore a scuola"
-            hint="Se è accesa, vieta 1ª+6ª. Lascia spenta: 6 ore a scuola solo come ultima spiaggia, dopo che tutte le ore sono piazzate."
+            hint="Se è accesa, vieta 1ª+6ª (più ore fuori). Spenta: dopo un orario pieno, l’obiettivo è zero giornate 1ª–6ª."
           />
           <Toggle
             checked={opts.avoidGaps}
             onChange={(v) => setOpts({ ...opts, avoidGaps: v })}
             label="Pochi buchi"
-            hint="Qualche buco è normale. Le giornate 1ª–6ª (6 ore a scuola) si tengono solo se altrimenti resta un’ora fuori."
+            hint="Qualche buco è normale. Tra due orari pieni vince chi ha meno gente dalla 1ª alla 6ª, poi i buchi."
           />
           <Toggle
             checked={opts.balanceLastHour}
@@ -174,7 +186,13 @@ export function CostruisciOrario() {
             checked={opts.variety}
             onChange={(v) => setOpts({ ...opts, variety: v })}
             label="Varietà in classe"
-            hint="Le materie da 2 ore settimanali non stanno attaccate e non stanno nello stesso giorno. Italiano e matematica possono fare il blocco da 2 ore."
+            hint="Preferite in giorni diversi. Se serve (buchi o ore fuori), va il blocco da 2 attaccate. Mai 3 della stessa materia in un giorno. Italiano e matematica: blocco da 2 ok."
+          />
+          <Toggle
+            checked={opts.avoidHeavyBlocks}
+            onChange={(v) => setOpts({ ...opts, avoidHeavyBlocks: v })}
+            label="Niente 4 ore pesanti di fila"
+            hint="In una classe, niente 4 ore consecutive di italiano/storia/geografia/matematica/scienze. Francese, arte, motoria ecc. spezzano il blocco."
           />
           <Toggle
             checked={opts.allowThreeConsecutive}
@@ -201,7 +219,8 @@ export function CostruisciOrario() {
         <h2 className="font-display text-lg">Docenti in questo orario</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Altro plesso: spunta e, se serve lo spezzato, metti la X. Rientro T.P.: il giorno in cui restano per 7ª e
-          8ª (4ª–6ª al mattino; il pomeriggio lo metti a mano). ✓ = vorrei stare qui (non è un obbligo).
+          8ª (4ª–6ª al mattino; il pomeriggio lo metti a mano). ✓ = vorrei. Il nome classe nella casella = deve
+          stare lì.
         </p>
         <ul className="mt-3 flex flex-col gap-3">
           {included.map((t) => (
@@ -218,6 +237,7 @@ export function CostruisciOrario() {
                   <span className="text-muted-foreground">
                     {" "}
                     · {t.subjects.slice(0, 3).join(", ")} · {t.weeklyHours} h
+                    {(t.dispHours ?? 0) > 0 ? ` · ${t.dispHours} disp.` : ""}
                   </span>
                   <span className="mt-0.5 block text-[12px] text-muted-foreground">
                     Anche in un altro plesso
@@ -258,8 +278,8 @@ export function CostruisciOrario() {
               </div>
               <div className="mt-2 overflow-x-auto">
                 <p className="mb-1.5 text-[12px] text-muted-foreground">
-                  Vuoto = decide l’app. ✓ = vorrei stare qui. × = non c’è. Tocca Lun, Mar… per tutto il giorno in
-                  X. I quadrati ruotano da soli.
+                  Vuoto = decide l’app. ✓ = vorrei. Tocco su ✓: spunta una o più classi (obbligo: basta una). × =
+                  non c’è. Tocca Lun, Mar… per tutto il giorno in X.
                 </p>
                 <table className="w-full min-w-[280px] border-collapse text-[11px]">
                   <thead>
@@ -283,6 +303,7 @@ export function CostruisciOrario() {
                               onClick={() => {
                                 const cur = t.awaySlots ?? [];
                                 const prefs = (t.preferSlots ?? []).filter((a) => a.day !== d);
+                                const musts = (t.mustSlots ?? []).filter((a) => a.day !== d);
                                 const next =
                                   n > 0
                                     ? cur.filter((a) => a.day !== d)
@@ -293,7 +314,11 @@ export function CostruisciOrario() {
                                           periodId: p.id,
                                         })),
                                       ];
-                                store.updateTeacher(t.id, { awaySlots: next, preferSlots: prefs });
+                                store.updateTeacher(t.id, {
+                                  awaySlots: next,
+                                  preferSlots: prefs,
+                                  mustSlots: musts,
+                                });
                               }}
                               className={cn(
                                 "mx-auto flex h-10 min-w-10 items-center justify-center rounded-md px-1.5 text-[11px] font-medium",
@@ -318,6 +343,26 @@ export function CostruisciOrario() {
                         {data.settings.days.map((d) => {
                           const away = (t.awaySlots ?? []).some((a) => a.day === d && a.periodId === p.id);
                           const prefer = (t.preferSlots ?? []).some((a) => a.day === d && a.periodId === p.id);
+                          const must = (t.mustSlots ?? []).find((a) => a.day === d && a.periodId === p.id);
+                          const mustIds = must
+                            ? must.classIds && must.classIds.length
+                              ? must.classIds
+                              : must.classId
+                                ? [must.classId]
+                                : []
+                            : [];
+                          const mustTags = mustIds
+                            .map((id) => data.classes.find((c) => c.id === id))
+                            .filter((c): c is NonNullable<typeof c> => Boolean(c))
+                            .map((c) => `${c.grade}${c.section}`);
+                          const mustLabel =
+                            mustTags.length === 0
+                              ? ""
+                              : mustTags.length === 1
+                                ? mustTags[0]
+                                : mustTags.length === 2
+                                  ? `${mustTags[0]}+`
+                                  : `${mustTags.length}`;
                           return (
                             <td key={d} className="p-0.5 text-center">
                               <button
@@ -325,42 +370,60 @@ export function CostruisciOrario() {
                                 aria-label={
                                   away
                                     ? `${DAY_SHORT[d]} ${p.label}: togli X`
-                                    : prefer
-                                      ? `${DAY_SHORT[d]} ${p.label}: passa a X`
-                                      : `${DAY_SHORT[d]} ${p.label}: preferisci`
+                                    : must
+                                      ? `${DAY_SHORT[d]} ${p.label}: ${mustTags.join(", ")}, passa a X`
+                                      : prefer
+                                        ? `${DAY_SHORT[d]} ${p.label}: scegli classi obbligo`
+                                        : `${DAY_SHORT[d]} ${p.label}: preferisci`
                                 }
                                 onClick={() => {
                                   const awayCur = t.awaySlots ?? [];
                                   const prefCur = t.preferSlots ?? [];
-                                  if (!prefer && !away) {
+                                  const mustCur = t.mustSlots ?? [];
+                                  const notCell = (a: { day: DayOfWeek; periodId: string }) =>
+                                    !(a.day === d && a.periodId === p.id);
+                                  if (!prefer && !must && !away) {
                                     store.updateTeacher(t.id, {
                                       preferSlots: [...prefCur, { day: d as DayOfWeek, periodId: p.id }],
-                                      awaySlots: awayCur.filter((a) => !(a.day === d && a.periodId === p.id)),
+                                      mustSlots: mustCur.filter(notCell),
+                                      awaySlots: awayCur.filter(notCell),
                                     });
                                   } else if (prefer) {
+                                    setMustPick({
+                                      teacherId: t.id,
+                                      day: d as DayOfWeek,
+                                      periodId: p.id,
+                                      selected: [],
+                                    });
+                                  } else if (must) {
                                     store.updateTeacher(t.id, {
-                                      preferSlots: prefCur.filter((a) => !(a.day === d && a.periodId === p.id)),
+                                      preferSlots: prefCur.filter(notCell),
+                                      mustSlots: mustCur.filter(notCell),
                                       awaySlots: [
-                                        ...awayCur.filter((a) => !(a.day === d && a.periodId === p.id)),
+                                        ...awayCur.filter(notCell),
                                         { day: d as DayOfWeek, periodId: p.id },
                                       ],
                                     });
                                   } else {
                                     store.updateTeacher(t.id, {
-                                      awaySlots: awayCur.filter((a) => !(a.day === d && a.periodId === p.id)),
+                                      awaySlots: awayCur.filter(notCell),
+                                      mustSlots: mustCur.filter(notCell),
+                                      preferSlots: prefCur.filter(notCell),
                                     });
                                   }
                                 }}
                                 className={cn(
-                                  "inline-flex size-9 touch-manipulation items-center justify-center rounded-md text-sm font-medium",
+                                  "inline-flex size-9 touch-manipulation items-center justify-center rounded-md text-[10px] font-semibold",
                                   away
-                                    ? "bg-primary text-primary-foreground"
-                                    : prefer
-                                      ? "bg-emerald-700 text-white"
-                                      : "bg-muted text-muted-foreground",
+                                    ? "bg-primary text-primary-foreground text-sm font-medium"
+                                    : must
+                                      ? "bg-amber-700 text-white"
+                                      : prefer
+                                        ? "bg-emerald-700 text-white text-sm font-medium"
+                                        : "bg-muted text-muted-foreground",
                                 )}
                               >
-                                {away ? "×" : prefer ? "✓" : ""}
+                                {away ? "×" : must ? mustLabel : prefer ? "✓" : ""}
                               </button>
                             </td>
                           );
@@ -417,6 +480,24 @@ export function CostruisciOrario() {
           <p className="mt-1 text-sm text-muted-foreground">
             Non è ancora salvata. Scorri le classi o i giorni. Se va bene, usa la proposta.
           </p>
+          <div className="sticky top-0 z-20 mt-3 flex flex-wrap gap-2 border-b border-border bg-background/95 py-2 backdrop-blur-sm">
+            <Button disabled={!pendingSlots} onClick={() => setConfirm(true)}>
+              Usa questa proposta
+            </Button>
+            <Button variant="outline" onClick={propose}>
+              Proponi di nuovo
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!store.cattedraBackup?.length}
+              onClick={() => {
+                store.undoCattedraSlots();
+                toast.message("Ripristinato l’orario di cattedra precedente.");
+              }}
+            >
+              Annulla ultima proposta
+            </Button>
+          </div>
           <div className="mt-3 flex flex-col gap-3">
             <Tabs
               className="flex-wrap overflow-visible"
@@ -555,26 +636,107 @@ export function CostruisciOrario() {
             </div>
           )}
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button disabled={!pendingSlots} onClick={() => setConfirm(true)}>
-              Usa questa proposta
-            </Button>
-            <Button variant="outline" onClick={propose}>
-              Proponi di nuovo
+        </section>
+      )}
+
+      <Dialog open={Boolean(mustPick)} onOpenChange={(open) => !open && setMustPick(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Obbligo: quali classi?</DialogTitle>
+            <DialogDescription>
+              {(() => {
+                if (!mustPick) return "";
+                const t = data.teachers.find((x) => x.id === mustPick.teacherId);
+                const lab = morning.find((p) => p.id === mustPick.periodId)?.label ?? mustPick.periodId;
+                return `${t ? teacherName(t) : ""} · ${DAY_SHORT[mustPick.day]} ${lab}. Spunta una o più classi: basta che stia in una di quelle.`;
+              })()}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap gap-2 pb-2">
+            {[
+              ...new Map(
+                (mustPick ? cattedreOfTeacher(data, mustPick.teacherId) : [])
+                  .map((c) => data.classes.find((cl) => cl.id === c.classId))
+                  .filter((c): c is NonNullable<typeof c> => Boolean(c))
+                  .map((c) => [c.id, c]),
+              ).values(),
+            ].map((cls) => {
+              const on = mustPick?.selected.includes(cls.id);
+              return (
+                <Button
+                  key={cls.id}
+                  type="button"
+                  variant={on ? "default" : "outline"}
+                  className="min-h-10"
+                  onClick={() => {
+                    setMustPick((cur) => {
+                      if (!cur) return cur;
+                      const has = cur.selected.includes(cls.id);
+                      return {
+                        ...cur,
+                        selected: has
+                          ? cur.selected.filter((id) => id !== cls.id)
+                          : [...cur.selected, cls.id],
+                      };
+                    });
+                  }}
+                >
+                  {cls.name}
+                </Button>
+              );
+            })}
+          </div>
+          <div className="mt-8 flex flex-wrap justify-end gap-2 border-t border-border pt-6">
+            <Button variant="outline" type="button" onClick={() => setMustPick(null)}>
+              Lascia ✓
             </Button>
             <Button
               variant="outline"
-              disabled={!store.cattedraBackup?.length}
+              type="button"
               onClick={() => {
-                store.undoCattedraSlots();
-                toast.message("Ripristinato l’orario di cattedra precedente.");
+                if (!mustPick) return;
+                const t = data.teachers.find((x) => x.id === mustPick.teacherId);
+                if (!t) return;
+                const notCell = (a: { day: DayOfWeek; periodId: string }) =>
+                  !(a.day === mustPick.day && a.periodId === mustPick.periodId);
+                store.updateTeacher(t.id, {
+                  preferSlots: (t.preferSlots ?? []).filter(notCell),
+                  mustSlots: (t.mustSlots ?? []).filter(notCell),
+                  awaySlots: [
+                    ...(t.awaySlots ?? []).filter(notCell),
+                    { day: mustPick.day, periodId: mustPick.periodId },
+                  ],
+                });
+                setMustPick(null);
               }}
             >
-              Annulla ultima proposta
+              Metti X
+            </Button>
+            <Button
+              type="button"
+              disabled={!mustPick || mustPick.selected.length === 0}
+              onClick={() => {
+                if (!mustPick || mustPick.selected.length === 0) return;
+                const t = data.teachers.find((x) => x.id === mustPick.teacherId);
+                if (!t) return;
+                const notCell = (a: { day: DayOfWeek; periodId: string }) =>
+                  !(a.day === mustPick.day && a.periodId === mustPick.periodId);
+                store.updateTeacher(t.id, {
+                  preferSlots: (t.preferSlots ?? []).filter(notCell),
+                  awaySlots: (t.awaySlots ?? []).filter(notCell),
+                  mustSlots: [
+                    ...(t.mustSlots ?? []).filter(notCell),
+                    { day: mustPick.day, periodId: mustPick.periodId, classIds: mustPick.selected },
+                  ],
+                });
+                setMustPick(null);
+              }}
+            >
+              Conferma
             </Button>
           </div>
-        </section>
-      )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirm} onOpenChange={setConfirm}>
         <DialogContent>
