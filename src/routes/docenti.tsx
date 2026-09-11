@@ -52,17 +52,17 @@ function DocentiPage() {
         <Input className="pl-9" placeholder="Cerca per cognome o materia" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="paper-panel overflow-x-auto rounded-xl">
-        <table className="w-full min-w-[720px] text-sm">
+        <table className="w-full min-w-[52rem] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
-              <th className="px-4 py-2 font-medium">Docente</th>
-              <th className="px-4 py-2 font-medium">Materie</th>
-              <th className="px-4 py-2 font-medium">Ruolo</th>
-              <th className="px-4 py-2 font-medium">Classi</th>
-              <th className="px-4 py-2 font-medium">Cattedra</th>
-              <th className="px-4 py-2 font-medium">A disposizione</th>
-              <th className="px-4 py-2 font-medium">Coperture mese</th>
-              <th className="px-4 py-2 font-medium">Orario</th>
+              <th className="whitespace-nowrap px-4 py-2 font-medium">Docente</th>
+              <th className="whitespace-nowrap px-4 py-2 font-medium">Materie</th>
+              <th className="whitespace-nowrap px-4 py-2 font-medium">Ruolo</th>
+              <th className="whitespace-nowrap px-4 py-2 font-medium">Classi</th>
+              <th className="whitespace-nowrap px-4 py-2 text-right font-medium">Cattedra</th>
+              <th className="whitespace-nowrap px-4 py-2 text-right font-medium">A disposizione</th>
+              <th className="whitespace-nowrap px-4 py-2 text-right font-medium">Coperture mese</th>
+              <th className="whitespace-nowrap px-4 py-2 font-medium">Orario</th>
             </tr>
           </thead>
           <tbody>
@@ -72,25 +72,25 @@ function DocentiPage() {
                 className="cursor-pointer border-b border-border last:border-0 hover:bg-muted/60"
                 onClick={() => setEditing(t)}
               >
-                <td className="px-4 py-3">
+                <td className="whitespace-nowrap px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <span className="size-2.5 rounded-full" style={{ background: t.color }} />
+                    <span className="size-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
                     <span className="font-medium">{teacherName(t)}</span>
                   </div>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{t.subjects.join(", ")}</td>
-                <td className="px-4 py-3">
+                <td className="whitespace-nowrap px-4 py-3">
                   <Badge variant="outline">{ROLE_LABELS[t.role]}</Badge>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {classLabels(data, t.id) || "—"}
                 </td>
-                <td className="px-4 py-3 tabular-nums">{t.weeklyHours} h</td>
-                <td className="px-4 py-3 tabular-nums">
+                <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{t.weeklyHours} h</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                   <DispHoursCell quota={t.dispHours ?? 0} assigned={t.dispSlots?.length ?? 0} />
                 </td>
-                <td className="px-4 py-3 tabular-nums">{counts[t.id] ?? 0}</td>
-                <td className="px-4 py-3">
+                <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{counts[t.id] ?? 0}</td>
+                <td className="whitespace-nowrap px-4 py-3">
                   <Button
                     size="sm"
                     variant="ghost"
