@@ -15,7 +15,18 @@ export function isTpPeriodId(periods: Period[], periodId: string): boolean {
 }
 
 export function isMensaPeriod(p: Period | undefined): boolean {
-  return Boolean(p?.tpOnly && (p.id === "p-mensa" || /mensa/i.test(p.label ?? "")));
+  if (!p) return false;
+  return p.id === "p-mensa" || /mensa/i.test(p.id) || /mensa/i.test(p.label ?? "");
+}
+
+export function isMensaSlot(
+  period: Period | undefined,
+  slot?: { periodId?: string; subject?: string },
+): boolean {
+  if (isMensaPeriod(period)) return true;
+  if (slot?.periodId && /mensa/i.test(slot.periodId)) return true;
+  if (slot?.subject && /mensa/i.test(slot.subject)) return true;
+  return false;
 }
 
 export function corePeriods(periods: Period[]): Period[] {

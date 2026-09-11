@@ -1,6 +1,6 @@
 import { uid } from "./utils";
 import { teacherName } from "./coverage";
-import { lessonPeriodsOf, isMensaPeriod } from "./periods";
+import { lessonPeriodsOf, isMensaPeriod, isMensaSlot } from "./periods";
 import { DAY_SHORT, type Cattedra, type DayOfWeek, type PersistedData, type Teacher, type TimetableSlot } from "./types";
 
 export type LessonDemand = {
@@ -412,9 +412,13 @@ function taughtLessonIndexes(
 ): number[] {
   const idxs = slots
     .filter((p) => p.teacherId === teacherId && p.day === day)
-    .map((p) => data.settings.periods.find((x) => x.id === p.periodId))
-    .filter((p) => p && !isMensaPeriod(p))
-    .map((p) => p!.index)
+    .map((p) => {
+      const period = data.settings.periods.find((x) => x.id === p.periodId);
+      if (isMensaSlot(period, p)) return null;
+      return period;
+    })
+    .filter((p): p is NonNullable<typeof p> => Boolean(p && !isMensaPeriod(p)))
+    .map((p) => p.index)
     .sort((a, b) => a - b);
   return idxs;
 }
