@@ -86,8 +86,8 @@ function DocentiPage() {
                   {classLabels(data, t.id) || "—"}
                 </td>
                 <td className="px-4 py-3 tabular-nums">{t.weeklyHours} h</td>
-                <td className="px-4 py-3 tabular-nums text-muted-foreground">
-                  {(t.dispSlots?.length ?? 0) > 0 ? `${t.dispSlots!.length} h` : "—"}
+                <td className="px-4 py-3 tabular-nums">
+                  <DispHoursCell quota={t.dispHours ?? 0} assigned={t.dispSlots?.length ?? 0} />
                 </td>
                 <td className="px-4 py-3 tabular-nums">{counts[t.id] ?? 0}</td>
                 <td className="px-4 py-3">
@@ -116,6 +116,16 @@ function DocentiPage() {
         />
       )}
     </div>
+  );
+}
+
+function DispHoursCell({ quota, assigned }: { quota: number; assigned: number }) {
+  if (quota <= 0) return <span className="text-muted-foreground">—</span>;
+  const done = assigned >= quota;
+  return (
+    <span className={done ? "font-medium text-success" : "font-medium text-destructive"}>
+      {quota} h
+    </span>
   );
 }
 
