@@ -409,18 +409,24 @@ function taughtLessonIndexes(
   slots: { teacherId: string; day: DayOfWeek; periodId: string }[],
   teacherId: string,
   day: DayOfWeek,
+  countDisp = false,
 ): number[] {
-  const idxs = slots
-    .filter((p) => p.teacherId === teacherId && p.day === day)
-    .map((p) => {
-      const period = data.settings.periods.find((x) => x.id === p.periodId);
-      if (isMensaSlot(period, p)) return null;
-      return period;
-    })
-    .filter((p): p is NonNullable<typeof p> => Boolean(p && !isMensaPeriod(p)))
-    .map((p) => p.index)
-    .sort((a, b) => a - b);
-  return idxs;
+  const idxs: number[] = [];
+  for (const p of slots) {
+    if (p.teacherId !== teacherId || p.day !== day) continue;
+    const period = data.settings.periods.find((x) => x.id === p.periodId);
+    if (!period || isMensaSlot(period, p) || isMensaPeriod(period)) continue;
+    idxs.push(period.index);
+  }
+  if (countDisp) {
+    const teacher = data.teachers.find((t) => t.id === teacherId);
+    for (const a of teacher?.dispSlots ?? []) {
+      if (a.day !== day) continue;
+      const period = data.settings.periods.find((x) => x.id === a.periodId);
+      if (period && !isMensaPeriod(period)) idxs.push(period.index);
+    }
+  }
+  return [...new Set(idxs)].sort((a, b) => a - b);
 }
 
 function lessonTimeline(data: PersistedData): number[] {
@@ -447,11 +453,12 @@ export function gapsOf(
   data: PersistedData,
   slots: { teacherId: string; day: DayOfWeek; periodId: string }[],
   teacherId: string,
+  countDisp = false,
 ): number {
   const timeline = lessonTimeline(data);
   let g = 0;
   for (const day of data.settings.days) {
-    g += gapsOnDay(taughtLessonIndexes(data, slots, teacherId, day), timeline);
+    g += gapsOnDay(taughtLessonIndexes(data, slots, teacherId, day, countDisp), timeline);
   }
   return g;
 }
@@ -459,13 +466,14 @@ export function gapsOf(
 export function gapsRanking(
   data: PersistedData,
   slots: { teacherId: string; day: DayOfWeek; periodId: string }[] = data.slots,
+  countDisp = false,
 ): { id: string; name: string; gaps: number }[] {
   return data.teachers
     .filter(isTimetableTeacher)
     .map((t) => ({
       id: t.id,
       name: teacherName(t),
-      gaps: gapsOf(data, slots, t.id),
+      gaps: gapsOf(data, slots, t.id, countDisp),
     }))
     .filter((x) => slots.some((s) => s.teacherId === x.id))
     .sort((a, b) => b.gaps - a.gaps || a.name.localeCompare(b.name, "it"));
