@@ -10,6 +10,7 @@ import type {
 } from "./types";
 import { ABSENCE_REASONS } from "./types";
 import { dateInRange, eachIsoInRange, isWeekend, monthRange, toSchoolDay } from "./dates";
+import { isMensaPeriod } from "./periods";
 
 export type CoverageNeed = {
   key: string;
@@ -157,7 +158,10 @@ export function teacherDayWindow(
   const indexes: number[] = [];
   for (const s of data.slots) {
     if (s.day !== day) continue;
-    if (s.teacherId === teacherId) indexes.push(periodIndex(data, s.periodId));
+    if (s.teacherId !== teacherId) continue;
+    const p = data.settings.periods.find((x) => x.id === s.periodId);
+    if (isMensaPeriod(p)) continue;
+    indexes.push(periodIndex(data, s.periodId));
   }
   if (indexes.length === 0) return null;
   return { first: Math.min(...indexes), last: Math.max(...indexes) };

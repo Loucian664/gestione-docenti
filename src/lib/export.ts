@@ -3,6 +3,10 @@ import { coverageNeeds, isCovered, teacherName, teacherShort, absencesByReason, 
 import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, DAY_SHORT, SUBSTITUTION_TYPES } from "./types";
 import { xlsxFile } from "./xlsx";
+import { jpegBlobToPdf } from "./pdf";
+import { orarioTeacherJpeg, teachersOnTimetable } from "./sheet-image";
+import { teacherPdfFileName } from "./teacher-print";
+import { zipFile } from "./zip";
 
 function typeLabel(t: SubstitutionType | null): string {
   if (!t) return "";
@@ -256,4 +260,19 @@ export function parseBackupJson(raw: string): PersistedData {
     throw new Error("file non valido");
   }
   return data;
+}
+
+export async function docentiPdfZip(data: PersistedData): Promise<File> {
+  const teachers = teachersOnTimetable(data);
+  if (teachers.length === 0) throw new Error("nessun docente in orario");
+  const entries: { name: string; data: Uint8Array }[] = [];
+  for (const t of teachers) {
+    const jpeg = await orarioTeacherJpeg(data, t.id);
+    const pdf = await jpegBlobToPdf(jpeg);
+    entries.push({
+      name: teacherPdfFileName(t),
+      data: new Uint8Array(await pdf.arrayBuffer()),
+    });
+  }
+  return zipFile("orari-docenti.zip", entries);
 }

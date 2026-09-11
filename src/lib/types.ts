@@ -136,6 +136,8 @@ export type PersistedData = {
   savedAt?: number;
   /** "user" = this device's registro. "seed" = example data. */
   origin?: "seed" | "user";
+  /** Last imported backup filename, if any. */
+  importedBackupName?: string;
 };
 
 export const ABSENCE_REASONS: { value: AbsenceReason; label: string }[] = [
