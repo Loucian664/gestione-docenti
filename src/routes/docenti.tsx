@@ -52,7 +52,7 @@ function DocentiPage() {
         <Input className="pl-9" placeholder="Cerca per cognome o materia" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="paper-panel overflow-x-auto rounded-xl">
-        <table className="w-full min-w-[640px] text-sm">
+        <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
               <th className="px-4 py-2 font-medium">Docente</th>
@@ -60,6 +60,7 @@ function DocentiPage() {
               <th className="px-4 py-2 font-medium">Ruolo</th>
               <th className="px-4 py-2 font-medium">Classi</th>
               <th className="px-4 py-2 font-medium">Cattedra</th>
+              <th className="px-4 py-2 font-medium">A disposizione</th>
               <th className="px-4 py-2 font-medium">Coperture mese</th>
               <th className="px-4 py-2 font-medium">Orario</th>
             </tr>
@@ -85,6 +86,9 @@ function DocentiPage() {
                   {classLabels(data, t.id) || "—"}
                 </td>
                 <td className="px-4 py-3 tabular-nums">{t.weeklyHours} h</td>
+                <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                  {(t.dispSlots?.length ?? 0) > 0 ? `${t.dispSlots!.length} h` : "—"}
+                </td>
                 <td className="px-4 py-3 tabular-nums">{counts[t.id] ?? 0}</td>
                 <td className="px-4 py-3">
                   <Button
