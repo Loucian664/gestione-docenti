@@ -404,21 +404,50 @@ function gapsFor(places: Place[], data: PersistedData, teacherId: string): numbe
   return gapsOf(data, places, teacherId);
 }
 
+function taughtLessonIndexes(
+  data: PersistedData,
+  slots: { teacherId: string; day: DayOfWeek; periodId: string }[],
+  teacherId: string,
+  day: DayOfWeek,
+): number[] {
+  const idxs = slots
+    .filter((p) => p.teacherId === teacherId && p.day === day)
+    .map((p) => data.settings.periods.find((x) => x.id === p.periodId))
+    .filter((p) => p && !isMensaPeriod(p))
+    .map((p) => p!.index)
+    .sort((a, b) => a - b);
+  return idxs;
+}
+
+function lessonTimeline(data: PersistedData): number[] {
+  return data.settings.periods
+    .filter((p) => !isMensaPeriod(p))
+    .map((p) => p.index)
+    .sort((a, b) => a - b);
+}
+
+/** Ore vuote tra la prima e l’ultima lezione. La mensa non è una buca. */
+function gapsOnDay(taught: number[], timeline: number[]): number {
+  if (taught.length < 2) return 0;
+  const first = taught[0]!;
+  const last = taught[taught.length - 1]!;
+  const have = new Set(taught);
+  let g = 0;
+  for (const idx of timeline) {
+    if (idx > first && idx < last && !have.has(idx)) g += 1;
+  }
+  return g;
+}
+
 export function gapsOf(
   data: PersistedData,
   slots: { teacherId: string; day: DayOfWeek; periodId: string }[],
   teacherId: string,
 ): number {
+  const timeline = lessonTimeline(data);
   let g = 0;
   for (const day of data.settings.days) {
-    const idxs = slots
-      .filter((p) => p.teacherId === teacherId && p.day === day)
-      .map((p) => data.settings.periods.find((x) => x.id === p.periodId))
-      .filter((p) => p && !isMensaPeriod(p))
-      .map((p) => p!.index)
-      .sort((a, b) => a - b);
-    if (idxs.length < 2) continue;
-    g += idxs[idxs.length - 1]! - idxs[0]! + 1 - idxs.length;
+    g += gapsOnDay(taughtLessonIndexes(data, slots, teacherId, day), timeline);
   }
   return g;
 }
@@ -440,17 +469,21 @@ export function gapsRanking(
 
 /** Buche consecutive più lunghe (es. 1ª–2ª poi 6ª → tre di fila). */
 function holeStreak(places: Place[], data: PersistedData, teacherId: string): number {
+  const timeline = lessonTimeline(data);
   let mx = 0;
   for (const day of data.settings.days) {
-    const idxs = places
-      .filter((p) => p.teacherId === teacherId && p.day === day)
-      .map((p) => periodIndex(data, p.periodId))
-      .sort((a, b) => a - b);
-    if (idxs.length < 2) continue;
-    const occ = new Set(idxs);
+    const taught = taughtLessonIndexes(data, places, teacherId, day);
+    if (taught.length < 2) continue;
+    const have = new Set(taught);
+    const first = taught[0]!;
+    const last = taught[taught.length - 1]!;
     let cur = 0;
-    for (let i = idxs[0]!; i <= idxs[idxs.length - 1]!; i++) {
-      if (!occ.has(i)) {
+    for (const idx of timeline) {
+      if (idx <= first || idx >= last) {
+        cur = 0;
+        continue;
+      }
+      if (!have.has(idx)) {
         cur += 1;
         if (cur > mx) mx = cur;
       } else cur = 0;

@@ -628,7 +628,12 @@ function OrarioPage() {
                     const cls = slot ? data.classes.find((c) => c.id === slot.classId) : null;
                     const others = slot ? cellSlots(data, slot.classId, d, p.id).filter((s) => s.teacherId !== teacherId) : [];
                     const win = teacherDayWindow(data, teacherId, d);
-                    const inWindow = Boolean(win && p.index >= win.first && p.index <= win.last);
+                    const inWindow = Boolean(
+                      win &&
+                        !isMensaPeriod(p) &&
+                        p.index >= win.first &&
+                        p.index <= win.last,
+                    );
                     const disp = Boolean(currentTeacher && !slot && isDispHour(currentTeacher, d, p.id));
                     return (
                       <td key={d} className="p-1.5 align-top">
