@@ -87,9 +87,12 @@ function OrarioPage() {
   );
   const currentTeacher = data.teachers.find((t) => t.id === teacherId);
   const teacherHours = data.slots.filter((s) => s.teacherId === teacherId).length;
+  const teacherDisp = currentTeacher?.dispSlots?.length ?? 0;
   const teacherGaps =
-    currentTeacher && isTimetableTeacher(currentTeacher) ? gapsOf(data, data.slots, teacherId) : 0;
-  const weekGaps = useMemo(() => gapsRanking(data), [data]);
+    currentTeacher && isTimetableTeacher(currentTeacher)
+      ? gapsOf(data, data.slots, teacherId, true)
+      : 0;
+  const weekGaps = useMemo(() => gapsRanking(data, data.slots, true), [data]);
   const className = data.classes.find((c) => c.id === classId)?.name ?? "classe";
 
   async function currentOrarioJpeg(): Promise<{ blob: Blob; base: string }> {
@@ -300,6 +303,11 @@ function OrarioPage() {
             </NativeSelect>
             <p className="text-[12px] text-muted-foreground">
               {teacherHours === 1 ? "1 ora in orario" : `${teacherHours} ore in orario`}
+              {teacherDisp > 0
+                ? teacherDisp === 1
+                  ? " · 1 a disposizione"
+                  : ` · ${teacherDisp} a disposizione`
+                : ""}
               {currentTeacher && isTimetableTeacher(currentTeacher)
                 ? teacherGaps === 1
                   ? " · 1 buca"
