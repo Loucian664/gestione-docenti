@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 import { CostruisciOrario } from "@/components/costruisci-orario";
 import { BucheList } from "@/components/buche-list";
 import { gapsOf, gapsRanking, isTimetableTeacher } from "@/lib/build-timetable";
-import { ensureTpPeriods, isMensaPeriod, isTpPeriod, visiblePeriods } from "@/lib/periods";
+import { ensureTpPeriods, isMensaPeriod, isMensaSlot, isTpPeriod, visiblePeriods } from "@/lib/periods";
 
 type OrarioSearch = { docente?: string };
 
@@ -89,7 +89,7 @@ function OrarioPage() {
   const teacherHours = data.slots.filter((s) => {
     if (s.teacherId !== teacherId) return false;
     const p = data.settings.periods.find((x) => x.id === s.periodId);
-    return !isMensaPeriod(p);
+    return !isMensaSlot(p, s);
   }).length;
   const teacherGaps =
     currentTeacher && isTimetableTeacher(currentTeacher) ? gapsOf(data, data.slots, teacherId) : 0;
@@ -303,14 +303,14 @@ function OrarioPage() {
                 ))}
             </NativeSelect>
             <p className="text-[12px] text-muted-foreground">
-              {teacherHours === 1 ? "1 ora in orario" : `${teacherHours} ore in orario`}
+              {teacherHours === 1 ? "1 ora di lezione" : `${teacherHours} ore di lezione`}
               {currentTeacher && isTimetableTeacher(currentTeacher)
                 ? teacherGaps === 1
                   ? " · 1 buca"
                   : ` · ${teacherGaps} buche`
                 : ""}
-              {currentTeacher ? ` · ${ROLE_LABELS_HINT[currentTeacher.role]}` : ""}. Clicca una cella per
-              inserirla, anche in compresenza.
+              {currentTeacher ? ` · ${ROLE_LABELS_HINT[currentTeacher.role]}` : ""}. La mensa non conta. Clicca
+              una cella per inserirla, anche in compresenza.
             </p>
           </div>
         )}
