@@ -31,7 +31,7 @@ function ImpostazioniPage() {
     reader.onload = () => {
       try {
         const parsed = parseBackupJson(String(reader.result));
-        store.importData(parsed);
+        store.importData(parsed, file.name);
         toast.success("Registro importato e salvato su questo dispositivo");
       } catch {
         toast.error("File non riconosciuto. Serve il backup .json, non il file Excel.");
@@ -200,6 +200,9 @@ function ImpostazioniPage() {
         ) : (
           <p className="mt-2 text-[13px] text-warning">Ancora nessun salvataggio su questo dispositivo.</p>
         )}
+        <p className="mt-1 text-[13px] text-foreground">
+          JSON in uso: {store.importedBackupName?.trim() || "nessuno importato (registro di questo dispositivo)"}
+        </p>
         <p className="mt-2 text-sm text-muted-foreground">
           Esporta: su iPhone e iPad passa da Condividi (File o Mail); sul Mac il file va in Download. Poi Importa backup e scegli quel .json.
         </p>

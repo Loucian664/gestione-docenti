@@ -43,7 +43,7 @@ type Actions = {
   replaceCattedraSlots: (slots: TimetableSlot[]) => void;
   undoCattedraSlots: () => void;
   setCattedre: (cattedre: Cattedra[]) => void;
-  importData: (data: PersistedData) => void;
+  importData: (data: PersistedData, fileName?: string) => void;
   resetDemo: () => void;
   clearAll: () => void;
 };
@@ -63,6 +63,7 @@ export function snapshot(state: AppStore): PersistedData {
     cattedraBackup: state.cattedraBackup,
     savedAt: state.savedAt,
     origin: state.origin,
+    importedBackupName: state.importedBackupName,
   };
 }
 
@@ -223,21 +224,22 @@ export const useAppStore = create<AppStore>()(
 
         setCattedre: (cattedre) => save({ cattedre }),
 
-        importData: (data) => {
+        importData: (data, fileName) => {
           noteUserMutation();
-          set({ ...applyOrganicoFixes(data), savedAt: Date.now(), origin: "user" });
+          const importedBackupName = (fileName ?? data.importedBackupName)?.trim() || undefined;
+          set({ ...applyOrganicoFixes(data), savedAt: Date.now(), origin: "user", importedBackupName });
           writePersistSync(snapshot(get()), { force: true });
         },
 
         resetDemo: () => {
           noteUserMutation();
-          set({ ...buildSeed(), savedAt: Date.now(), origin: "seed" });
+          set({ ...buildSeed(), savedAt: Date.now(), origin: "seed", importedBackupName: undefined });
           writePersistSync(snapshot(get()), { force: true });
         },
 
         clearAll: () => {
           noteUserMutation();
-          set({ ...EMPTY_DATA, savedAt: Date.now(), origin: "user" });
+          set({ ...EMPTY_DATA, savedAt: Date.now(), origin: "user", importedBackupName: undefined });
           writePersistSync(snapshot(get()), { force: true });
         },
       };
@@ -261,6 +263,7 @@ export const useAppStore = create<AppStore>()(
         selectedDate: state.selectedDate,
         savedAt: state.savedAt,
         origin: state.origin,
+        importedBackupName: state.importedBackupName,
       }),
     },
   ),

@@ -19,11 +19,20 @@ import {
 } from "@/lib/coverage";
 import { DAY_SHORT, SUBJECTS, type DayOfWeek } from "@/lib/types";
 import { toSchoolDay } from "@/lib/dates";
-import { Download, Image as ImageIcon, FileText } from "lucide-react";
-import { timetableXlsx } from "@/lib/export";
+import { Download, Image as ImageIcon, FileText, Archive } from "lucide-react";
+import { docentiPdfZip, timetableXlsx } from "@/lib/export";
 import { shareJpeg, shareOrSaveFile, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
-import { orarioClassJpeg, orarioQuadroJpeg, orarioTeacherJpeg, orarioWeekJpeg, orarioScuolaJpeg, weekCellLines } from "@/lib/sheet-image";
+import {
+  orarioClassJpeg,
+  orarioQuadroJpeg,
+  orarioTeacherJpeg,
+  orarioWeekJpeg,
+  orarioScuolaJpeg,
+  orarioOrizzontaleJpeg,
+  orarioClassiGridJpeg,
+  weekCellLines,
+} from "@/lib/sheet-image";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { CostruisciOrario } from "@/components/costruisci-orario";
@@ -72,12 +81,16 @@ function OrarioPage() {
     data.settings,
     data.classes.find((c) => c.id === classId)?.tempo,
   );
-  const teacherPeriods = visiblePeriods(data.settings).filter((p) => !isMensaPeriod(p));
+  const teacherPeriods = visiblePeriods(data.settings);
   const classOrder = [...data.classes].sort(
     (a, b) => a.grade - b.grade || a.section.localeCompare(b.section),
   );
   const currentTeacher = data.teachers.find((t) => t.id === teacherId);
-  const teacherHours = data.slots.filter((s) => s.teacherId === teacherId).length;
+  const teacherHours = data.slots.filter((s) => {
+    if (s.teacherId !== teacherId) return false;
+    const p = data.settings.periods.find((x) => x.id === s.periodId);
+    return !isMensaPeriod(p);
+  }).length;
   const teacherGaps =
     currentTeacher && isTimetableTeacher(currentTeacher) ? gapsOf(data, data.slots, teacherId) : 0;
   const weekGaps = useMemo(() => gapsRanking(data), [data]);
@@ -95,6 +108,20 @@ function OrarioPage() {
       return { blob: await orarioTeacherJpeg(data, teacherId), base: `orario-${name}` };
     }
     return { blob: await orarioQuadroJpeg(data, quadroDay), base: `orario-${DAY_SHORT[quadroDay]}` };
+  }
+
+  function saveJpegAsPdf(makeJpeg: () => Promise<Blob>, filename: string) {
+    const tab = openPdfTab();
+    void (async () => {
+      try {
+        const jpeg = await makeJpeg();
+        const pdf = await jpegBlobToPdf(jpeg);
+        toastSave(tab.show(filename, pdf), "pdf");
+      } catch {
+        tab.cancel();
+        toast.error("Non sono riuscito a creare il PDF.");
+      }
+    })();
   }
 
   const classSlots = useMemo(
@@ -187,6 +214,55 @@ function OrarioPage() {
           />
           Mensa, 7ª e 8ª per le classi a tempo prolungato
         </label>
+        {view !== "costruisci" && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Fogli
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => saveJpegAsPdf(() => orarioOrizzontaleJpeg(data), "orario-orizzontale.pdf")}
+            >
+              <FileText />
+              Orizzontale
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data), "orario-classi.pdf")}
+            >
+              <FileText />
+              Per classe
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, true), "orario-classi-docenti.pdf")}
+            >
+              <FileText />
+              Per classe + docenti
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                toast.message("Preparo lo zip dei PDF…");
+                void (async () => {
+                  try {
+                    const file = await docentiPdfZip(data);
+                    toastSave(await shareOrSaveFile(file), "zip");
+                  } catch {
+                    toast.error("Non sono riuscito a creare lo zip dei docenti.");
+                  }
+                })();
+              }}
+            >
+              <Archive />
+              PDF docenti
+            </Button>
+          </div>
+        )}
         {view === "quadro" && (
           <div className="flex flex-wrap gap-1.5">
             {days.map((d) => (
@@ -279,9 +355,26 @@ function OrarioPage() {
                     if (isMensaPeriod(p)) {
                       return (
                         <td key={c.id} className="p-1 align-top">
-                          <div className="flex min-h-[4.25rem] w-full items-center rounded-md bg-muted/60 px-2 py-1.5 text-[13px] font-medium">
-                            Mensa
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setCellEdit({ day: quadroDay, periodId: p.id, classId: c.id })}
+                            className="flex min-h-[4.25rem] w-full flex-col justify-center rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                            style={t ? { background: `${t.color}1f` } : undefined}
+                          >
+                            <span className="text-[13px] font-medium">Mensa</span>
+                            {occupants.length === 0 ? (
+                              <span className="text-[11px] text-ink-faint">Clicca per assegnare</span>
+                            ) : (
+                              occupants.map((s) => {
+                                const doc = data.teachers.find((x) => x.id === s.teacherId);
+                                return (
+                                  <span key={s.id} className="text-[12px] text-muted-foreground">
+                                    {doc ? teacherShort(doc, data.teachers) : ""}
+                                  </span>
+                                );
+                              })
+                            )}
+                          </button>
                         </td>
                       );
                     }
@@ -441,18 +534,35 @@ function OrarioPage() {
                     </div>
                   </td>
                   {days.map((d) => {
-                    if (isMensaPeriod(p)) {
-                      return (
-                        <td key={d} className="p-1.5 align-top">
-                          <div className="flex min-h-16 items-center rounded-md bg-muted/60 px-2 py-1.5 text-[13px] font-medium">
-                            Mensa
-                          </div>
-                        </td>
-                      );
-                    }
                     const occupants = classSlots.filter((s) => s.day === d && s.periodId === p.id);
                     const primary = occupants[0];
                     const t = primary ? data.teachers.find((x) => x.id === primary.teacherId) : null;
+                    if (isMensaPeriod(p)) {
+                      return (
+                        <td key={d} className="p-1.5 align-top">
+                          <button
+                            type="button"
+                            onClick={() => setCellEdit({ day: d, periodId: p.id, classId })}
+                            className="flex min-h-16 w-full flex-col justify-center rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                            style={t ? { background: `${t.color}18` } : undefined}
+                          >
+                            <span className="text-[13px] font-medium">Mensa</span>
+                            {occupants.length === 0 ? (
+                              <span className="text-[12px] text-ink-faint">Clicca per assegnare</span>
+                            ) : (
+                              occupants.map((s) => {
+                                const doc = data.teachers.find((x) => x.id === s.teacherId);
+                                return (
+                                  <span key={s.id} className="text-[12px] text-muted-foreground">
+                                    {doc ? teacherShort(doc, data.teachers) : ""}
+                                  </span>
+                                );
+                              })
+                            )}
+                          </button>
+                        </td>
+                      );
+                    }
                     return (
                       <td key={d} className="p-1.5 align-top">
                         <button
@@ -595,17 +705,18 @@ function CellEditor({
   const occupants = cellSlots(data, editing.classId, editing.day, editing.periodId);
   const period = data.settings.periods.find((p) => p.id === editing.periodId);
   const cls = data.classes.find((c) => c.id === editing.classId);
+  const mensa = isMensaPeriod(period);
   const used = new Set(occupants.map((s) => s.teacherId));
   const [teacherId, setTeacherId] = useState(
     data.teachers.find((t) => !used.has(t.id))?.id ?? data.teachers[0]?.id ?? "",
   );
   const picked = data.teachers.find((t) => t.id === teacherId);
-  const [subject, setSubject] = useState(picked ? defaultSubjectFor(picked) : "Italiano");
+  const [subject, setSubject] = useState(mensa ? "Mensa" : picked ? defaultSubjectFor(picked) : "Italiano");
 
   function add() {
     if (!teacherId) return;
     if (isTpPeriod(period) && cls?.tempo !== "TP") {
-      toast.error("La 7ª e l’8ª ora sono solo per le classi a tempo prolungato.");
+      toast.error("Mensa, 7ª e 8ª ora sono solo per le classi a tempo prolungato.");
       return;
     }
     const busy = teacherSlotAt(data, teacherId, editing.day, editing.periodId);
@@ -619,9 +730,9 @@ function CellEditor({
       periodId: editing.periodId,
       classId: editing.classId,
       teacherId,
-      subject,
+      subject: mensa ? "Mensa" : subject,
     });
-    toast.success(occupants.length ? "Compresenza aggiunta" : "Cella aggiornata");
+    toast.success(mensa ? "Mensa assegnata" : occupants.length ? "Compresenza aggiunta" : "Cella aggiornata");
   }
 
   return (
@@ -666,7 +777,7 @@ function CellEditor({
                 const id = e.target.value;
                 setTeacherId(id);
                 const t = data.teachers.find((x) => x.id === id);
-                if (t) setSubject(defaultSubjectFor(t));
+                if (t && !mensa) setSubject(defaultSubjectFor(t));
               }}
             >
               {data.teachers
@@ -680,6 +791,7 @@ function CellEditor({
                 ))}
             </NativeSelect>
           </div>
+          {!mensa && (
           <div className="flex flex-col gap-1.5">
             <Label>Materia</Label>
             <NativeSelect value={subject} onChange={(e) => setSubject(e.target.value)}>
@@ -691,6 +803,7 @@ function CellEditor({
             </NativeSelect>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
           </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose}>
               Chiudi
@@ -715,12 +828,15 @@ function TeacherHourEditor({
   const teacher = data.teachers.find((t) => t.id === editing.teacherId);
   const existing = teacherSlotAt(data, editing.teacherId, editing.day, editing.periodId);
   const period = data.settings.periods.find((p) => p.id === editing.periodId);
+  const mensa = isMensaPeriod(period);
   const dispOn = Boolean(teacher && isDispHour(teacher, editing.day, editing.periodId));
   const classChoices = isTpPeriod(period)
     ? data.classes.filter((c) => c.tempo === "TP")
     : data.classes;
   const [classId, setClassId] = useState(existing?.classId ?? classChoices[0]?.id ?? "");
-  const [subject, setSubject] = useState(existing?.subject ?? (teacher ? defaultSubjectFor(teacher) : "Italiano"));
+  const [subject, setSubject] = useState(
+    mensa ? "Mensa" : existing?.subject ?? (teacher ? defaultSubjectFor(teacher) : "Italiano"),
+  );
 
   const others = classId ? cellSlots(data, classId, editing.day, editing.periodId).filter((s) => s.teacherId !== editing.teacherId) : [];
 
@@ -728,7 +844,7 @@ function TeacherHourEditor({
     if (!classId || !teacher) return;
     const cls = data.classes.find((c) => c.id === classId);
     if (isTpPeriod(period) && cls?.tempo !== "TP") {
-      toast.error("La 7ª e l’8ª ora sono solo per le classi a tempo prolungato.");
+      toast.error("Mensa, 7ª e 8ª ora sono solo per le classi a tempo prolungato.");
       return;
     }
     const busy = teacherSlotAt(data, editing.teacherId, editing.day, editing.periodId);
@@ -741,7 +857,7 @@ function TeacherHourEditor({
       periodId: editing.periodId,
       classId,
       teacherId: editing.teacherId,
-      subject,
+      subject: mensa ? "Mensa" : subject,
     });
     if (teacher && dispOn) {
       store.updateTeacher(teacher.id, {
@@ -805,6 +921,7 @@ function TeacherHourEditor({
               . Verrà registrata come compresenza.
             </p>
           )}
+          {!mensa && (
           <div className="flex flex-col gap-1.5">
             <Label>Materia / attività</Label>
             <NativeSelect value={subject} onChange={(e) => setSubject(e.target.value)}>
@@ -816,16 +933,19 @@ function TeacherHourEditor({
             </NativeSelect>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
           </div>
+          )}
           <div className="flex flex-wrap justify-end gap-2 pt-2">
             {existing && (
               <Button variant="outline" onClick={remove}>
                 Togli ora
               </Button>
             )}
+            {!mensa && (
             <Button variant="outline" onClick={toggleDisp}>
               {dispOn ? "Togli disposizione" : "A disposizione"}
             </Button>
-            <Button onClick={save}>Salva lezione</Button>
+            )}
+            <Button onClick={save}>{mensa ? "Salva mensa" : "Salva lezione"}</Button>
           </div>
         </div>
       </DialogContent>
