@@ -783,7 +783,8 @@ export async function orarioOrizzontaleJpeg(data: PersistedData): Promise<Blob> 
   g.textAlign = "left";
 
   const x0 = pad;
-  let y = pad + titleH;
+  const gridTop = pad + titleH;
+  let y = gridTop;
 
   function box(x: number, yy: number, w: number, h: number) {
     g.strokeStyle = "#111";
@@ -886,6 +887,23 @@ export async function orarioOrizzontaleJpeg(data: PersistedData): Promise<Blob> 
     });
     y += rowH;
   });
+
+  const gridBottom = y;
+  g.strokeStyle = "#111";
+  g.lineWidth = 2.2;
+  g.lineCap = "butt";
+  let dx = x0 + nameW;
+  days.forEach((_, di) => {
+    g.beginPath();
+    g.moveTo(dx, gridTop);
+    g.lineTo(dx, gridBottom);
+    g.stroke();
+    dx += dayWidths[di] ?? 0;
+  });
+  g.beginPath();
+  g.moveTo(dx, gridTop);
+  g.lineTo(dx, gridBottom);
+  g.stroke();
 
   return canvasToJpeg(canvas, 0.92);
 }
