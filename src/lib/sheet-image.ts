@@ -553,23 +553,58 @@ function classHeader(c: { name: string; grade: number; section: string }): strin
   return `${c.grade}${c.section}`;
 }
 
+function dispNamesAt(data: PersistedData, day: DayOfWeek, periodId: string): string[] {
+  return data.teachers
+    .filter((t) => isDispHour(t, day, periodId))
+    .sort((a, b) => a.lastName.localeCompare(b.lastName, "it") || a.firstName.localeCompare(b.firstName, "it"))
+    .map((t) => teacherSheetName(t, data.teachers));
+}
+
+function drawDispNames(
+  ctx: CanvasRenderingContext2D,
+  names: string[],
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  if (!names.length) return;
+  ctx.fillStyle = "#111";
+  ctx.textAlign = "center";
+  const joined = names.join(" / ");
+  ctx.font =
+    names.length > 1
+      ? "600 8px 'Source Sans 3', system-ui, sans-serif"
+      : "600 9px 'Source Sans 3', system-ui, sans-serif";
+  const lines = wrap(ctx, joined, w - 8);
+  const lineH = names.length > 1 ? 10 : 12;
+  const block = lines.length * lineH;
+  let ty = y + (h - block) / 2 + lineH - 2;
+  for (const line of lines) {
+    ctx.fillText(line, x + w / 2, ty);
+    ty += lineH;
+  }
+  ctx.textAlign = "left";
+}
+
 /** Foglio ufficiale da appendere: giorni in colonna, classi in riga. Non sostituisce orarioWeekJpeg. */
 export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolean): Promise<Blob> {
   await document.fonts.ready.catch(() => undefined);
   const classes = classOrder(data);
   const days = data.settings.days;
-  const periods = visiblePeriods(data.settings);
+  const periodsByDay = days.map((d) => periodsOnDay(data, d));
   const dpr = 2;
-  const pad = 22;
-  const titleH = 72;
-  const hourW = 36;
-  const dispW = withTeachers ? 118 : 128;
-  const colW = Math.max(78, Math.min(102, Math.floor((720 - hourW - dispW) / Math.max(1, classes.length))));
-  const rowH = withTeachers ? 36 : 26;
-  const dayHeadH = 22;
+  const pad = 18;
+  const titleH = 64;
+  const hourW = 28;
+  const dispW = 120;
+  const colW = Math.max(72, Math.min(96, Math.floor((680 - hourW - dispW) / Math.max(1, classes.length))));
+  const rowH = withTeachers ? 34 : 24;
+  const dayHeadH = 20;
   const tableW = hourW + classes.length * colW + dispW;
+  const bodyH = periodsByDay.reduce((n, ps) => n + dayHeadH + ps.length * rowH, 0);
   const width = pad * 2 + tableW;
-  const height = pad + titleH + 8 + dayHeadH + days.length * (dayHeadH + periods.length * rowH) + pad;
+  const height = pad + titleH + dayHeadH + bodyH + pad;
 
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(width * dpr);
@@ -582,13 +617,13 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
 
   ctx.fillStyle = "#111";
   ctx.textAlign = "center";
-  ctx.font = "600 13px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillText(data.settings.schoolName || "Scuola secondaria", width / 2, pad + 16);
-  ctx.font = "700 16px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillText("ORARIO SETTIMANALE DELLE LEZIONI", width / 2, pad + 38);
-  ctx.font = "500 11px 'Source Sans 3', system-ui, sans-serif";
+  ctx.font = "600 12px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillText(data.settings.schoolName || "Scuola secondaria", width / 2, pad + 14);
+  ctx.font = "700 15px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillText("ORARIO SETTIMANALE DELLE LEZIONI", width / 2, pad + 34);
+  ctx.font = "500 10px 'Source Sans 3', system-ui, sans-serif";
   ctx.fillStyle = "#444";
-  ctx.fillText(data.settings.schoolYear || "", width / 2, pad + 56);
+  ctx.fillText(data.settings.schoolYear || "", width / 2, pad + 50);
   ctx.textAlign = "left";
 
   let y = pad + titleH;
@@ -600,38 +635,39 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
     ctx.strokeRect(x, yy, w, h);
   }
 
-  ctx.font = "700 11px 'Source Sans 3', system-ui, sans-serif";
+  ctx.font = "700 10px 'Source Sans 3', system-ui, sans-serif";
   ctx.fillStyle = "#111";
   strokeRect(x0, y, hourW, dayHeadH);
   classes.forEach((c, i) => {
     const x = x0 + hourW + i * colW;
     strokeRect(x, y, colW, dayHeadH);
     ctx.textAlign = "center";
-    ctx.fillText(classHeader(c), x + colW / 2, y + 15);
+    ctx.fillText(classHeader(c), x + colW / 2, y + 14);
   });
   strokeRect(x0 + hourW + classes.length * colW, y, dispW, dayHeadH);
-  ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillText("Ore a disposizione", x0 + hourW + classes.length * colW + dispW / 2, y + 15);
+  ctx.font = "600 8px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillText("Ore a disposizione", x0 + hourW + classes.length * colW + dispW / 2, y + 14);
   ctx.textAlign = "left";
   y += dayHeadH;
 
-  days.forEach((day) => {
+  days.forEach((day, di) => {
+    const periods = periodsByDay[di] ?? [];
     strokeRect(x0, y, tableW, dayHeadH);
     ctx.fillStyle = "#f3f3f3";
     ctx.fillRect(x0 + 0.5, y + 0.5, tableW - 1, dayHeadH - 1);
     ctx.fillStyle = "#111";
-    ctx.font = "700 12px 'Source Sans 3', system-ui, sans-serif";
+    ctx.font = "700 11px 'Source Sans 3', system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(DAY_SCHOOL[day] ?? "", x0 + tableW / 2, y + 16);
+    ctx.fillText(DAY_SCHOOL[day] ?? "", x0 + tableW / 2, y + 14);
     ctx.textAlign = "left";
     y += dayHeadH;
 
     periods.forEach((p) => {
       strokeRect(x0, y, hourW, rowH);
       ctx.fillStyle = "#111";
-      ctx.font = "700 12px 'Source Sans 3', system-ui, sans-serif";
+      ctx.font = "700 11px 'Source Sans 3', system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(hourMark(p), x0 + hourW / 2, y + (withTeachers ? 22 : 17));
+      ctx.fillText(hourMark(p), x0 + hourW / 2, y + (withTeachers ? 21 : 16));
       ctx.textAlign = "left";
 
       classes.forEach((c, i) => {
@@ -642,7 +678,7 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
           ctx.textAlign = "center";
           ctx.fillStyle = "#111";
           ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
-          ctx.fillText("MENSA", x + colW / 2, y + (withTeachers ? 22 : 17));
+          ctx.fillText("MENSA", x + colW / 2, y + (withTeachers ? 21 : 16));
           ctx.textAlign = "left";
           return;
         }
@@ -666,6 +702,7 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
 
       const dx = x0 + hourW + classes.length * colW;
       strokeRect(dx, y, dispW, rowH);
+      if (!isMensaPeriod(p)) drawDispNames(ctx, dispNamesAt(data, day, p.id), dx, y, dispW, rowH);
       y += rowH;
     });
   });
@@ -681,7 +718,8 @@ function sheetPeriods(data: PersistedData) {
 function periodsOnDay(data: PersistedData, day: DayOfWeek) {
   return sheetPeriods(data).filter((p) => {
     if (!isTpPeriod(p)) return true;
-    return data.slots.some((s) => s.day === day && s.periodId === p.id);
+    if (data.slots.some((s) => s.day === day && s.periodId === p.id)) return true;
+    return data.teachers.some((t) => isDispHour(t, day, p.id));
   });
 }
 
@@ -859,18 +897,19 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
   const days = data.settings.days;
   const periodsByDay = days.map((d) => periodsOnDay(data, d));
   const dpr = 2;
-  const pad = 20;
+  const pad = 18;
   const titleH = 52;
-  const dayW = 22;
-  const hourW = 28;
+  const dayW = 20;
+  const hourW = 26;
+  const dispW = 112;
   const colW = Math.max(
-    withSubjects ? 78 : 72,
-    Math.min(withSubjects ? 104 : 96, Math.floor((620 - dayW - hourW) / Math.max(1, classes.length))),
+    withSubjects ? 72 : 68,
+    Math.min(withSubjects ? 96 : 88, Math.floor((620 - dayW - hourW - dispW) / Math.max(1, classes.length))),
   );
-  const rowH = withSubjects ? 36 : 24;
-  const gap = 10;
+  const rowH = withSubjects ? 34 : 22;
+  const gap = 8;
   const headH = 22;
-  const tableW = dayW + hourW + classes.length * colW;
+  const tableW = dayW + hourW + classes.length * colW + dispW;
   const width = pad * 2 + tableW;
   const height =
     pad +
@@ -920,6 +959,12 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
     box(x, y, colW, headH);
     ctx.fillText(classHeader(c), x + colW / 2, y + 15);
   });
+  {
+    const dx = x0 + dayW + hourW + classes.length * colW;
+    box(dx, y, dispW, headH);
+    ctx.font = "600 8px 'Source Sans 3', system-ui, sans-serif";
+    ctx.fillText("Ore a disposizione", dx + dispW / 2, y + 15);
+  }
   ctx.textAlign = "left";
   y += headH;
 
@@ -972,6 +1017,9 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
           ctx.fillText(teacherSheetName(t, data.teachers), x + colW / 2, yy + 16);
         }
       });
+      const dx = x0 + dayW + hourW + classes.length * colW;
+      box(dx, yy, dispW, rowH);
+      if (!isMensaPeriod(p)) drawDispNames(ctx, dispNamesAt(data, day, p.id), dx, yy, dispW, rowH);
     });
     y += blockH;
   });
