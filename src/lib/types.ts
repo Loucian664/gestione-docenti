@@ -179,7 +179,7 @@ export const SUBJECTS = [
   "Educazione civica",
   "Sostegno",
   "Potenziamento",
-  "Progetto",
+  "Altro",
   "Mensa",
 ];
 

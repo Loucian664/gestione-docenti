@@ -406,7 +406,7 @@ const SUBJECT_ABBR: Record<string, string> = {
   "Educazione civica": "CIV",
   Sostegno: "SOS",
   Potenziamento: "POT",
-  Progetto: "PRO",
+  Altro: "ALT",
   Mensa: "MEN",
 };
 
@@ -550,7 +550,7 @@ const SCHOOL_SUBJECT: Record<string, string> = {
   "Scienze Motorie": "SC. MOT",
   Religione: "RELIGIONE",
   "Educazione civica": "CIVICA",
-  Progetto: "PROGETTO",
+  Altro: "ALTRO",
   Mensa: "MENSA",
 };
 
