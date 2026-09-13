@@ -161,14 +161,6 @@ export default defineConfig(({ command, isPreview }) => {
       strictPort: true,
     },
     resolve: { tsconfigPaths: true },
-    build: {
-      rollupOptions: {
-        output: {
-          chunkFileNames: "assets/c-[hash].js",
-          entryFileNames: "assets/e-[hash].js",
-        },
-      },
-    },
     plugins: [
       pgliteBootstrapPlugin(),
       authPopupPlugin(),
