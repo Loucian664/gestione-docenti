@@ -209,43 +209,38 @@ export function timetableXlsx(data: PersistedData): File {
 
 export function dailySheetText(data: PersistedData, date: string, needs: CoverageNeed[]): string {
   const lines: string[] = [];
-  lines.push(`SOSTITUZIONI - ${formatLong(date)}`);
-  lines.push(`${data.settings.schoolName} - ${data.settings.plesso} - ${data.settings.schoolYear}`);
-  if (data.settings.responsabile) lines.push(`Responsabile di plesso: ${data.settings.responsabile}`);
-  lines.push("");
+  const heading = formatLong(date);
+  lines.push(`Sostituzioni — ${heading.charAt(0).toUpperCase() + heading.slice(1)}`);
 
   if (needs.length === 0) {
-    lines.push("Nessuna sostituzione in giornata.");
+    lines.push("");
+    lines.push("Nessuna sostituzione.");
     return lines.join("\n");
   }
 
   let lastPeriod = "";
   for (const n of needs) {
     const period = findPeriod(data, n.slot.periodId);
-    const label = period ? `${period.label} (${period.start}-${period.end})` : n.slot.periodId;
+    const label = period ? period.label.replace(/\s*ora\s*$/i, "") : n.slot.periodId;
     if (label !== lastPeriod) {
-      lines.push(label.toUpperCase());
+      lines.push("");
+      lines.push(label);
       lastPeriod = label;
     }
     const cls = findClass(data, n.slot.classId);
     const absent = findTeacher(data, n.absence.teacherId);
     const sub = findTeacher(data, n.substitution?.substituteId ?? null);
-    let who = "DA COPRIRE";
+    let who = "da coprire";
     if (n.substitution?.type === "divisione") who = "classe divisa";
     else if (sub) who = teacherShort(sub, data.teachers);
-    const type = typeLabel(n.substitution?.type ?? null);
     lines.push(
-      `  ${cls?.name ?? "?"}  ${n.slot.subject}  |  assente ${absent ? teacherShort(absent, data.teachers) : "?"}  |  copre ${who}${type ? ` (${type})` : ""}`,
+      `${cls?.name ?? "?"}  ${absent ? teacherShort(absent, data.teachers) : "?"} → ${who}`,
     );
   }
 
   const uncovered = needs.filter((n) => !isCovered(n)).length;
-  const covered = needs.length - uncovered;
   lines.push("");
-  lines.push(
-    `Coperture: ${covered}/${needs.length}` +
-      (uncovered ? `  -  ${uncovered} ancora scoperte` : "  -  giornata completa"),
-  );
+  lines.push(uncovered ? `${uncovered} da coprire` : "Tutto coperto");
   return lines.join("\n");
 }
 
