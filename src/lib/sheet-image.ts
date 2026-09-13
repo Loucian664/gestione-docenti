@@ -12,7 +12,7 @@ import {
 } from "./coverage";
 import { formatLong } from "./dates";
 import { ABSENCE_REASONS, DAY_SHORT, type DayOfWeek, type PersistedData } from "./types";
-import { hourMark, isMensaPeriod, isTpPeriod, visiblePeriods } from "./periods";
+import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "./periods";
 import { teacherSheetName } from "./teacher-print";
 
 
@@ -168,10 +168,17 @@ export function orarioQuadroJpeg(data: PersistedData, day: DayOfWeek): Promise<B
     title: p.label,
     sub: `${p.start}–${p.end}`,
     cells: classes.map((c) => {
-      if (isTpPeriod(p) && c.tempo !== "TP") return "";
-      if (isMensaPeriod(p)) return "Mensa";
+      if (isRestrictedTpPeriod(p) && c.tempo !== "TP") return "";
       const occupants = cellSlots(data, c.id, day, p.id);
       if (occupants.length === 0) return "—";
+      if (isMensaPeriod(p) && occupants.every((s) => isMensaLesson(s))) {
+        return occupants
+          .map((s, i) => {
+            const t = data.teachers.find((x) => x.id === s.teacherId);
+            return `Mensa\n${t ? teacherShort(t, data.teachers) : ""}${i > 0 ? " · compr." : ""}`.trim();
+          })
+          .join("\n");
+      }
       return occupants
         .map((s, i) => {
           const t = data.teachers.find((x) => x.id === s.teacherId);
@@ -197,7 +204,6 @@ export function orarioClassJpeg(data: PersistedData, classId: string): Promise<B
     title: p.label,
     sub: `${p.start}–${p.end}`,
     cells: days.map((d) => {
-      if (isMensaPeriod(p)) return "Mensa";
       const occupants = slots.filter((s) => s.day === d && s.periodId === p.id);
       if (occupants.length === 0) return "—";
       return occupants
@@ -226,7 +232,6 @@ export function orarioTeacherJpeg(data: PersistedData, teacherId: string): Promi
     cells: days.map((d) => {
       const slot = teacherSlotAt(data, teacherId, d, p.id);
       if (!slot) return "—";
-      if (isMensaPeriod(p)) return "Mensa";
       const cls = data.classes.find((c) => c.id === slot.classId);
       return `${cls?.name ?? ""}\n${slot.subject}`;
     }),
@@ -401,6 +406,8 @@ const SUBJECT_ABBR: Record<string, string> = {
   "Educazione civica": "CIV",
   Sostegno: "SOS",
   Potenziamento: "POT",
+  Progetto: "PRO",
+  Mensa: "MEN",
 };
 
 export function subjectAbbr(subject: string): string {
@@ -416,17 +423,17 @@ export function weekCellLines(data: PersistedData, classId: string, day: DayOfWe
 }[] {
   const cls = data.classes.find((c) => c.id === classId);
   return visiblePeriods(data.settings, cls?.tempo).map((p) => {
-    if (isMensaPeriod(p)) return { mark: "M", period: p.index, subject: "Mensa", teacher: "", extra: "" };
     const occupants = cellSlots(data, classId, day, p.id);
     if (occupants.length === 0) {
       return { mark: hourMark(p), period: p.index, subject: "", teacher: "", extra: "" };
     }
     const primary = occupants[0]!;
     const t = data.teachers.find((x) => x.id === primary.teacherId);
+    const mensaLesson = isMensaPeriod(p) && isMensaLesson(primary);
     return {
       mark: hourMark(p),
       period: p.index,
-      subject: subjectAbbr(primary.subject),
+      subject: mensaLesson ? "Mensa" : subjectAbbr(primary.subject),
       teacher: t ? teacherShort(t, data.teachers) : "",
       extra: occupants.length > 1 ? " +" : "",
     };
@@ -543,6 +550,8 @@ const SCHOOL_SUBJECT: Record<string, string> = {
   "Scienze Motorie": "SC. MOT",
   Religione: "RELIGIONE",
   "Educazione civica": "CIVICA",
+  Progetto: "PROGETTO",
+  Mensa: "MENSA",
 };
 
 function schoolSubjectLabel(subject: string): string {
@@ -673,8 +682,9 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
       classes.forEach((c, i) => {
         const x = x0 + hourW + i * colW;
         strokeRect(x, y, colW, rowH);
-        if (isTpPeriod(p) && c.tempo !== "TP") return;
-        if (isMensaPeriod(p)) {
+        if (isRestrictedTpPeriod(p) && c.tempo !== "TP") return;
+        const occupants = cellSlots(data, c.id, day, p.id);
+        if (isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
           ctx.textAlign = "center";
           ctx.fillStyle = "#111";
           ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
@@ -682,7 +692,6 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
           ctx.textAlign = "left";
           return;
         }
-        const occupants = cellSlots(data, c.id, day, p.id);
         if (!occupants.length) return;
         const primary = occupants[0]!;
         const t = data.teachers.find((x) => x.id === primary.teacherId);
@@ -702,7 +711,7 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
 
       const dx = x0 + hourW + classes.length * colW;
       strokeRect(dx, y, dispW, rowH);
-      if (!isMensaPeriod(p)) drawDispNames(ctx, dispNamesAt(data, day, p.id), dx, y, dispW, rowH);
+      drawDispNames(ctx, dispNamesAt(data, day, p.id), dx, y, dispW, rowH);
       y += rowH;
     });
   });
@@ -717,7 +726,7 @@ function sheetPeriods(data: PersistedData) {
 /** Mattina sempre; mensa / 7ª / 8ª solo se in quel giorno c’è almeno una cella compilata. */
 function periodsOnDay(data: PersistedData, day: DayOfWeek) {
   return sheetPeriods(data).filter((p) => {
-    if (!isTpPeriod(p)) return true;
+    if (!p.tpOnly) return true;
     if (data.slots.some((s) => s.day === day && s.periodId === p.id)) return true;
     return data.teachers.some((t) => isDispHour(t, day, p.id));
   });
@@ -867,13 +876,13 @@ export async function orarioOrizzontaleJpeg(data: PersistedData): Promise<Blob> 
       periods.forEach((p) => {
         const mensa = isMensaPeriod(p);
         const slot = teacherSlotAt(data, t.id, day, p.id);
-        const cell = mensa ? "" : slotClassAt(data, t.id, day, p.id);
-        const disp = !mensa && !cell && isDispHour(t, day, p.id);
+        const cell = slotClassAt(data, t.id, day, p.id);
+        const disp = !cell && isDispHour(t, day, p.id);
         const buca = Boolean(!mensa && !cell && !disp && win && p.index > win.first && p.index < win.last);
         if (disp) fillD(x, y, hourW, rowH);
         else if (buca) hatch(x, y, hourW, rowH);
         box(x, y, hourW, rowH);
-        const mark = mensa && slot ? "M" : cell;
+        const mark = mensa && slot && isMensaLesson(slot) ? "M" : cell;
         if (mark) {
           ctx.textAlign = "center";
           ctx.textBaseline = "alphabetic";
@@ -1012,14 +1021,14 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
       classes.forEach((c, i) => {
         const x = x0 + dayW + hourW + i * colW;
         box(x, yy, colW, rowH);
-        if (isTpPeriod(p) && c.tempo !== "TP") return;
-        if (isMensaPeriod(p)) {
+        if (isRestrictedTpPeriod(p) && c.tempo !== "TP") return;
+        const occupants = cellSlots(data, c.id, day, p.id);
+        if (isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
           ctx.fillStyle = "#111";
           ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
           ctx.fillText("MENSA", x + colW / 2, yy + (withSubjects ? 22 : 16));
           return;
         }
-        const occupants = cellSlots(data, c.id, day, p.id);
         if (!occupants.length) return;
         const primary = occupants[0]!;
         const t = data.teachers.find((x) => x.id === primary.teacherId);
@@ -1037,7 +1046,7 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
       });
       const dx = x0 + dayW + hourW + classes.length * colW;
       box(dx, yy, dispW, rowH);
-      if (!isMensaPeriod(p)) drawDispNames(ctx, dispNamesAt(data, day, p.id), dx, yy, dispW, rowH);
+      drawDispNames(ctx, dispNamesAt(data, day, p.id), dx, yy, dispW, rowH);
     });
     y += blockH;
   });

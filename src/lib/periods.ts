@@ -19,6 +19,15 @@ export function isMensaPeriod(p: Period | undefined): boolean {
   return p.id === "p-mensa" || /mensa/i.test(p.id) || /mensa/i.test(p.label ?? "");
 }
 
+/** 7ª / 8ª: solo classi T.P. La fascia 14:00 (mensa o lezione) è per tutte. */
+export function isRestrictedTpPeriod(p: Period | undefined): boolean {
+  return isTpPeriod(p) && !isMensaPeriod(p);
+}
+
+export function isMensaLesson(slot?: { subject?: string } | null): boolean {
+  return Boolean(slot?.subject && /mensa/i.test(slot.subject));
+}
+
 export function isMensaSlot(
   period: Period | undefined,
   slot?: { periodId?: string; subject?: string },
@@ -50,7 +59,7 @@ export function visiblePeriods(settings: Settings, tempo?: Tempo): Period[] {
   const core = corePeriods(settings.periods);
   if (!settings.tpAfternoon) return core;
   const extra = extraTpPeriods(settings);
-  if (tempo === "TN") return core;
+  if (tempo === "TN") return [...core, ...extra.filter(isMensaPeriod)];
   return [...core, ...extra];
 }
 

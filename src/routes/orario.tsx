@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 import { CostruisciOrario } from "@/components/costruisci-orario";
 import { BucheList } from "@/components/buche-list";
 import { gapsOf, gapsRanking, isTimetableTeacher } from "@/lib/build-timetable";
-import { ensureTpPeriods, isMensaPeriod, isTpPeriod, visiblePeriods } from "@/lib/periods";
+import { ensureTpPeriods, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "@/lib/periods";
 
 type OrarioSearch = { docente?: string };
 
@@ -346,7 +346,7 @@ function OrarioPage() {
                     </div>
                   </td>
                   {classOrder.map((c) => {
-                    const tpCell = isTpPeriod(p);
+                    const tpCell = isRestrictedTpPeriod(p);
                     const allowed = !tpCell || c.tempo === "TP";
                     const occupants = allowed ? cellSlots(data, c.id, quadroDay, p.id) : [];
                     const primary = occupants[0];
@@ -354,32 +354,6 @@ function OrarioPage() {
                     if (!allowed) {
                       return (
                         <td key={c.id} className="bg-muted/40 p-1 align-top" />
-                      );
-                    }
-                    if (isMensaPeriod(p)) {
-                      return (
-                        <td key={c.id} className="p-1 align-top">
-                          <button
-                            type="button"
-                            onClick={() => setCellEdit({ day: quadroDay, periodId: p.id, classId: c.id })}
-                            className="flex min-h-[4.25rem] w-full flex-col justify-center rounded-md px-2 py-1.5 text-left hover:bg-muted"
-                            style={t ? { background: `${t.color}1f` } : undefined}
-                          >
-                            <span className="text-[13px] font-medium">Mensa</span>
-                            {occupants.length === 0 ? (
-                              <span className="text-[11px] text-ink-faint">Clicca per assegnare</span>
-                            ) : (
-                              occupants.map((s) => {
-                                const doc = data.teachers.find((x) => x.id === s.teacherId);
-                                return (
-                                  <span key={s.id} className="text-[12px] text-muted-foreground">
-                                    {doc ? teacherShort(doc, data.teachers) : ""}
-                                  </span>
-                                );
-                              })
-                            )}
-                          </button>
-                        </td>
                       );
                     }
                     return (
@@ -541,32 +515,6 @@ function OrarioPage() {
                     const occupants = classSlots.filter((s) => s.day === d && s.periodId === p.id);
                     const primary = occupants[0];
                     const t = primary ? data.teachers.find((x) => x.id === primary.teacherId) : null;
-                    if (isMensaPeriod(p)) {
-                      return (
-                        <td key={d} className="p-1.5 align-top">
-                          <button
-                            type="button"
-                            onClick={() => setCellEdit({ day: d, periodId: p.id, classId })}
-                            className="flex min-h-16 w-full flex-col justify-center rounded-md px-2 py-1.5 text-left hover:bg-muted"
-                            style={t ? { background: `${t.color}18` } : undefined}
-                          >
-                            <span className="text-[13px] font-medium">Mensa</span>
-                            {occupants.length === 0 ? (
-                              <span className="text-[12px] text-ink-faint">Clicca per assegnare</span>
-                            ) : (
-                              occupants.map((s) => {
-                                const doc = data.teachers.find((x) => x.id === s.teacherId);
-                                return (
-                                  <span key={s.id} className="text-[12px] text-muted-foreground">
-                                    {doc ? teacherShort(doc, data.teachers) : ""}
-                                  </span>
-                                );
-                              })
-                            )}
-                          </button>
-                        </td>
-                      );
-                    }
                     return (
                       <td key={d} className="p-1.5 align-top">
                         <button
@@ -720,12 +668,15 @@ function CellEditor({
     data.teachers.find((t) => !used.has(t.id))?.id ?? data.teachers[0]?.id ?? "",
   );
   const picked = data.teachers.find((t) => t.id === teacherId);
-  const [subject, setSubject] = useState(mensa ? "Mensa" : picked ? defaultSubjectFor(picked) : "Italiano");
+  const defaultMensaSubject = cls?.tempo === "TP" ? "Mensa" : "Progetto";
+  const [subject, setSubject] = useState(
+    occupants[0]?.subject ?? (mensa ? defaultMensaSubject : picked ? defaultSubjectFor(picked) : "Italiano"),
+  );
 
   function add() {
     if (!teacherId) return;
-    if (isTpPeriod(period) && cls?.tempo !== "TP") {
-      toast.error("Mensa, 7ª e 8ª ora sono solo per le classi a tempo prolungato.");
+    if (isRestrictedTpPeriod(period) && cls?.tempo !== "TP") {
+      toast.error("7ª e 8ª ora sono solo per le classi a tempo prolungato.");
       return;
     }
     const busy = teacherSlotAt(data, teacherId, editing.day, editing.periodId);
@@ -739,9 +690,9 @@ function CellEditor({
       periodId: editing.periodId,
       classId: editing.classId,
       teacherId,
-      subject: mensa ? "Mensa" : subject,
+      subject,
     });
-    toast.success(mensa ? "Mensa assegnata" : occupants.length ? "Compresenza aggiunta" : "Cella aggiornata");
+    toast.success(occupants.length ? "Compresenza aggiunta" : "Cella aggiornata");
   }
 
   return (
@@ -800,7 +751,6 @@ function CellEditor({
                 ))}
             </NativeSelect>
           </div>
-          {!mensa && (
           <div className="flex flex-col gap-1.5">
             <Label>Materia</Label>
             <NativeSelect value={subject} onChange={(e) => setSubject(e.target.value)}>
@@ -812,7 +762,6 @@ function CellEditor({
             </NativeSelect>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
           </div>
-          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose}>
               Chiudi
@@ -839,12 +788,20 @@ function TeacherHourEditor({
   const period = data.settings.periods.find((p) => p.id === editing.periodId);
   const mensa = isMensaPeriod(period);
   const dispOn = Boolean(teacher && isDispHour(teacher, editing.day, editing.periodId));
-  const classChoices = isTpPeriod(period)
+  const classChoices = isRestrictedTpPeriod(period)
     ? data.classes.filter((c) => c.tempo === "TP")
     : data.classes;
+  const pickedClass = data.classes.find((c) => c.id === (existing?.classId ?? classChoices[0]?.id ?? ""));
   const [classId, setClassId] = useState(existing?.classId ?? classChoices[0]?.id ?? "");
   const [subject, setSubject] = useState(
-    mensa ? "Mensa" : existing?.subject ?? (teacher ? defaultSubjectFor(teacher) : "Italiano"),
+    existing?.subject ??
+      (mensa
+        ? pickedClass?.tempo === "TP"
+          ? "Mensa"
+          : "Progetto"
+        : teacher
+          ? defaultSubjectFor(teacher)
+          : "Italiano"),
   );
 
   const others = classId ? cellSlots(data, classId, editing.day, editing.periodId).filter((s) => s.teacherId !== editing.teacherId) : [];
@@ -852,8 +809,8 @@ function TeacherHourEditor({
   function save() {
     if (!classId || !teacher) return;
     const cls = data.classes.find((c) => c.id === classId);
-    if (isTpPeriod(period) && cls?.tempo !== "TP") {
-      toast.error("Mensa, 7ª e 8ª ora sono solo per le classi a tempo prolungato.");
+    if (isRestrictedTpPeriod(period) && cls?.tempo !== "TP") {
+      toast.error("7ª e 8ª ora sono solo per le classi a tempo prolungato.");
       return;
     }
     const busy = teacherSlotAt(data, editing.teacherId, editing.day, editing.periodId);
@@ -866,7 +823,7 @@ function TeacherHourEditor({
       periodId: editing.periodId,
       classId,
       teacherId: editing.teacherId,
-      subject: mensa ? "Mensa" : subject,
+      subject,
     });
     if (teacher && dispOn) {
       store.updateTeacher(teacher.id, {
@@ -930,7 +887,6 @@ function TeacherHourEditor({
               . Verrà registrata come compresenza.
             </p>
           )}
-          {!mensa && (
           <div className="flex flex-col gap-1.5">
             <Label>Materia / attività</Label>
             <NativeSelect value={subject} onChange={(e) => setSubject(e.target.value)}>
@@ -942,19 +898,16 @@ function TeacherHourEditor({
             </NativeSelect>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
           </div>
-          )}
           <div className="flex flex-wrap justify-end gap-2 pt-2">
             {existing && (
               <Button variant="outline" onClick={remove}>
                 Togli ora
               </Button>
             )}
-            {!mensa && (
             <Button variant="outline" onClick={toggleDisp}>
               {dispOn ? "Togli disposizione" : "A disposizione"}
             </Button>
-            )}
-            <Button onClick={save}>{mensa ? "Salva mensa" : "Salva lezione"}</Button>
+            <Button onClick={save}>Salva lezione</Button>
           </div>
         </div>
       </DialogContent>
