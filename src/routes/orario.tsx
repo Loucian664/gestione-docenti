@@ -28,7 +28,6 @@ import {
   orarioQuadroJpeg,
   orarioTeacherJpeg,
   orarioWeekJpeg,
-  orarioScuolaJpeg,
   orarioOrizzontaleJpeg,
   orarioClassiGridJpeg,
   weekCellLines,
@@ -399,46 +398,6 @@ function OrarioPage() {
           <p className="mb-3 text-sm text-muted-foreground">
             Questo quadro è il foglio di lavoro. Foto e PDF in alto lo salvano così, con i docenti.
           </p>
-          <div className="mb-3 flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                const tab = openPdfTab();
-                void (async () => {
-                  try {
-                    const jpeg = await orarioScuolaJpeg(data, false);
-                    const pdf = await jpegBlobToPdf(jpeg);
-                    toastSave(tab.show("orario-scuola.pdf", pdf), "pdf");
-                  } catch {
-                    tab.cancel();
-                    toast.error("Non sono riuscito a creare il foglio scuola.");
-                  }
-                })();
-              }}
-            >
-              <FileText />
-              Foglio scuola
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const tab = openPdfTab();
-                void (async () => {
-                  try {
-                    const jpeg = await orarioScuolaJpeg(data, true);
-                    const pdf = await jpegBlobToPdf(jpeg);
-                    toastSave(tab.show("orario-scuola-docenti.pdf", pdf), "pdf");
-                  } catch {
-                    tab.cancel();
-                    toast.error("Non sono riuscito a creare il foglio scuola.");
-                  }
-                })();
-              }}
-            >
-              <FileText />
-              Foglio scuola + docenti
-            </Button>
-          </div>
           <div className="paper-panel overflow-x-auto rounded-xl">
             <table className="w-full min-w-[720px] border-collapse text-[12px]">
               <thead>
