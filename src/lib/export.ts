@@ -261,41 +261,6 @@ export function dailySheetText(data: PersistedData, date: string, needs: Coverag
   lines.push(`Coperture: ${covered}/${needs.length}.`);
   return lines.join("\n");
 }
-  const lines: string[] = [];
-  const heading = formatLong(date);
-  lines.push(`Sostituzioni — ${heading.charAt(0).toUpperCase() + heading.slice(1)}`);
-
-  if (needs.length === 0) {
-    lines.push("");
-    lines.push("Nessuna sostituzione.");
-    return lines.join("\n");
-  }
-
-  let lastPeriod = "";
-  for (const n of needs) {
-    const period = findPeriod(data, n.slot.periodId);
-    const label = period ? period.label.replace(/\s*ora\s*$/i, "") : n.slot.periodId;
-    if (label !== lastPeriod) {
-      lines.push("");
-      lines.push(label);
-      lastPeriod = label;
-    }
-    const cls = findClass(data, n.slot.classId);
-    const absent = findTeacher(data, n.absence.teacherId);
-    const sub = findTeacher(data, n.substitution?.substituteId ?? null);
-    let who = "da coprire";
-    if (n.substitution?.type === "divisione") who = "classe divisa";
-    else if (sub) who = teacherShort(sub, data.teachers);
-    lines.push(
-      `${cls?.name ?? "?"}  ${absent ? teacherShort(absent, data.teachers) : "?"} → ${who}`,
-    );
-  }
-
-  const uncovered = needs.filter((n) => !isCovered(n)).length;
-  lines.push("");
-  lines.push(uncovered ? `${uncovered} da coprire` : "Tutto coperto");
-  return lines.join("\n");
-}
 
 export function backupJson(data: PersistedData): string {
   return JSON.stringify({ ...data, savedAt: data.savedAt || Date.now(), origin: "user" }, null, 2);
