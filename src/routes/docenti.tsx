@@ -11,9 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useAppStore, snapshot } from "@/lib/store";
 import { monthSubCounts, teacherName } from "@/lib/coverage";
 import { applyTeacherCattedre, cattedreOfTeacher } from "@/lib/build-timetable";
-import { ROLE_LABELS, SUBJECTS, type Teacher, type TeacherRole } from "@/lib/types";
+import { DAY_SHORT, ROLE_LABELS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole } from "@/lib/types";
 import { Plus, Search, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { corePeriods } from "@/lib/periods";
 
 export const Route = createFileRoute("/docenti")({ component: DocentiPage });
 
@@ -87,7 +89,15 @@ function DocentiPage() {
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{t.weeklyHours} h</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
-                  <DispHoursCell quota={t.dispHours ?? 0} assigned={t.dispSlots?.length ?? 0} />
+                  {t.role === "potenziamento" ? (
+                    <DispHoursCell
+                      quota={t.weeklyHours}
+                      assigned={t.dispSlots?.length ?? 0}
+                      emptyLabel="0 h"
+                    />
+                  ) : (
+                    <DispHoursCell quota={t.dispHours ?? 0} assigned={t.dispSlots?.length ?? 0} />
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{counts[t.id] ?? 0}</td>
                 <td className="whitespace-nowrap px-4 py-3">
@@ -119,12 +129,20 @@ function DocentiPage() {
   );
 }
 
-function DispHoursCell({ quota, assigned }: { quota: number; assigned: number }) {
-  if (quota <= 0) return <span className="text-muted-foreground">—</span>;
+function DispHoursCell({
+  quota,
+  assigned,
+  emptyLabel,
+}: {
+  quota: number;
+  assigned: number;
+  emptyLabel?: string;
+}) {
+  if (quota <= 0) return <span className="text-muted-foreground">{emptyLabel ?? "—"}</span>;
   const done = assigned >= quota;
   return (
     <span className={done ? "font-medium text-success" : "font-medium text-destructive"}>
-      {quota} h
+      {assigned}/{quota} h
     </span>
   );
 }
@@ -150,6 +168,9 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
   const [role, setRole] = useState<TeacherRole>(current?.role ?? "cattedra");
   const [notes, setNotes] = useState(current?.notes ?? "");
   const [color, setColor] = useState(current?.color ?? "#3d5a4c");
+  const [dispSlots, setDispSlots] = useState<{ day: DayOfWeek; periodId: string }[]>(
+    current?.dispSlots ?? [],
+  );
   const data = snapshot(store);
   const [rows, setRows] = useState(() =>
     current
@@ -178,21 +199,26 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
       otherPlesso: current?.otherPlesso ?? false,
       awaySlots: current?.awaySlots ?? [],
       rientroDays: current?.rientroDays ?? [],
-      dispSlots: current?.dispSlots ?? [],
+      dispSlots,
       preferSlots: current?.preferSlots ?? [],
       mustSlots: current?.mustSlots ?? [],
     };
     if (!payload.lastName) return;
     const id = isNew ? store.addTeacher(payload) : current!.id;
     if (!isNew && current) store.updateTeacher(current.id, payload);
-    const parsed = rows
-      .map((r) => ({ classId: r.classId, subject: r.subject.trim(), hours: Number(r.hours) || 0 }))
-      .filter((r) => r.classId && r.subject && r.hours > 0);
+    const parsed =
+      payload.role === "potenziamento"
+        ? []
+        : rows
+            .map((r) => ({ classId: r.classId, subject: r.subject.trim(), hours: Number(r.hours) || 0 }))
+            .filter((r) => r.classId && r.subject && r.hours > 0);
     store.setCattedre(applyTeacherCattedre(snapshot(store), id, parsed));
     toast.success(
-      payload.role === "potenziamento" || payload.role === "sostegno"
-        ? "Docente salvato. Ora inserisci le sue ore in Orario → Per docente."
-        : "Docente salvato",
+      payload.role === "potenziamento"
+        ? "Docente salvato. L’orario in sede è senza classe: copre dove serve."
+        : payload.role === "sostegno"
+          ? "Docente salvato. Ora inserisci le sue ore in Orario → Per docente."
+          : "Docente salvato",
     );
     onClose();
   }
@@ -221,17 +247,21 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             </datalist>
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Ore cattedra">
+            <Field label={role === "potenziamento" ? "Ore settimanali" : "Ore cattedra"}>
               <Input type="number" min={0} value={weeklyHours} onChange={(e) => setWeeklyHours(e.target.value)} />
             </Field>
-            <Field label="A disposizione (questo plesso)">
-              <Input type="number" min={0} max={18} value={dispHours} onChange={(e) => setDispHours(e.target.value)} />
-            </Field>
+            {role !== "potenziamento" && (
+              <Field label="A disposizione (questo plesso)">
+                <Input type="number" min={0} max={18} value={dispHours} onChange={(e) => setDispHours(e.target.value)} />
+              </Field>
+            )}
           </div>
-          <p className="-mt-1 text-[12px] text-muted-foreground">
-            Le ore a disposizione non sono lezioni. Se Proponi deve lasciare buchi, prima a chi ha questo numero (fino a
-            quel tetto).
-          </p>
+          {role !== "potenziamento" && (
+            <p className="-mt-1 text-[12px] text-muted-foreground">
+              Le ore a disposizione non sono lezioni. Se Proponi deve lasciare buchi, prima a chi ha questo numero (fino a
+              quel tetto).
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Ruolo">
               <NativeSelect value={role} onChange={(e) => setRole(e.target.value as TeacherRole)}>
@@ -243,6 +273,26 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
               </NativeSelect>
             </Field>
           </div>
+          {role === "potenziamento" && (
+            <PresenceGrid
+              days={data.settings.days}
+              periods={corePeriods(data.settings.periods)}
+              selected={dispSlots}
+              onChange={setDispSlots}
+              occupied={
+                current
+                  ? data.slots
+                      .filter((s) => s.teacherId === current.id)
+                      .map((s) => ({
+                        day: s.day,
+                        periodId: s.periodId,
+                        label: data.classes.find((c) => c.id === s.classId)?.name ?? "lez",
+                      }))
+                  : []
+              }
+            />
+          )}
+          {role !== "potenziamento" && (
           <Field label="Classi e materie su questo plesso">
             <p className="text-[12px] text-muted-foreground">
               Quante ore in quale classe. Il totale può essere minore delle ore di organico se insegna anche altrove.
@@ -323,6 +373,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
               </Button>
             </div>
           </Field>
+          )}
           <Field label="Colore in orario">
             <Input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-10 w-20 p-1" />
           </Field>
@@ -362,5 +413,120 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <Label>{label}</Label>
       {children}
     </div>
+  );
+}
+
+function PresenceGrid({
+  days,
+  periods,
+  selected,
+  onChange,
+  occupied,
+}: {
+  days: DayOfWeek[];
+  periods: { id: string; index: number; label: string }[];
+  selected: { day: DayOfWeek; periodId: string }[];
+  onChange: (next: { day: DayOfWeek; periodId: string }[]) => void;
+  occupied: { day: DayOfWeek; periodId: string; label: string }[];
+}) {
+  const on = (day: DayOfWeek, periodId: string) =>
+    selected.some((a) => a.day === day && a.periodId === periodId);
+  const lesson = (day: DayOfWeek, periodId: string) =>
+    occupied.find((a) => a.day === day && a.periodId === periodId);
+
+  function toggle(day: DayOfWeek, periodId: string) {
+    if (lesson(day, periodId)) return;
+    onChange(
+      on(day, periodId)
+        ? selected.filter((a) => !(a.day === day && a.periodId === periodId))
+        : [...selected, { day, periodId }],
+    );
+  }
+
+  function toggleDay(day: DayOfWeek) {
+    const n = periods.filter((p) => on(day, p.id) || lesson(day, p.id)).length;
+    const free = periods.filter((p) => !lesson(day, p.id));
+    if (n > 0) {
+      onChange(selected.filter((a) => a.day !== day));
+    } else {
+      onChange([...selected.filter((a) => a.day !== day), ...free.map((p) => ({ day, periodId: p.id }))]);
+    }
+  }
+
+  return (
+    <Field label="Orario in sede (senza classe)">
+      <p className="text-[12px] text-muted-foreground">
+        Segna quando è a scuola. Non serve la classe: copre gli assenti. Tocca Lun, Mar… per tutto il
+        giorno. {selected.length} ore segnate.
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[280px] border-collapse text-[11px]">
+          <thead>
+            <tr className="text-muted-foreground">
+              <th className="px-1 py-1 text-left font-medium">Ore</th>
+              {days.map((d) => {
+                const n = periods.filter((p) => on(d, p.id)).length;
+                return (
+                  <th key={d} className="px-0.5 py-1 font-medium">
+                    <button
+                      type="button"
+                      aria-label={n > 0 ? `Togli ${DAY_SHORT[d]}` : `Segna ${DAY_SHORT[d]} intero`}
+                      onClick={() => toggleDay(d)}
+                      className={cn(
+                        "mx-auto flex h-10 min-w-10 items-center justify-center rounded-md px-1.5 text-[11px] font-medium",
+                        n === periods.length && periods.length > 0
+                          ? "bg-primary text-primary-foreground"
+                          : n > 0
+                            ? "bg-primary/25 text-foreground"
+                            : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {DAY_SHORT[d]}
+                    </button>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {periods.map((p) => (
+              <tr key={p.id}>
+                <td className="px-1 py-1 text-muted-foreground">{p.index}ª</td>
+                {days.map((d) => {
+                  const busy = lesson(d, p.id);
+                  const marked = on(d, p.id);
+                  return (
+                    <td key={d} className="p-0.5 text-center">
+                      <button
+                        type="button"
+                        disabled={Boolean(busy)}
+                        aria-label={
+                          busy
+                            ? `${DAY_SHORT[d]} ${p.label}: già in classe`
+                            : marked
+                              ? `${DAY_SHORT[d]} ${p.label}: togli`
+                              : `${DAY_SHORT[d]} ${p.label}: in sede`
+                        }
+                        onClick={() => toggle(d, p.id)}
+                        className={cn(
+                          "inline-flex size-10 touch-manipulation items-center justify-center rounded-md text-[10px] font-semibold",
+                          busy
+                            ? "bg-muted text-muted-foreground"
+                            : marked
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {busy ? busy.label.replace(/^(\d)ª\s*/u, "$1") : marked ? "D" : ""}
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Field>
   );
 }
