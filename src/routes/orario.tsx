@@ -668,7 +668,7 @@ function CellEditor({
     data.teachers.find((t) => !used.has(t.id))?.id ?? data.teachers[0]?.id ?? "",
   );
   const picked = data.teachers.find((t) => t.id === teacherId);
-  const defaultMensaSubject = cls?.tempo === "TP" ? "Mensa" : "Progetto";
+  const defaultMensaSubject = cls?.tempo === "TP" ? "Mensa" : "Altro";
   const [subject, setSubject] = useState(
     occupants[0]?.subject ?? (mensa ? defaultMensaSubject : picked ? defaultSubjectFor(picked) : "Italiano"),
   );
@@ -798,7 +798,7 @@ function TeacherHourEditor({
       (mensa
         ? pickedClass?.tempo === "TP"
           ? "Mensa"
-          : "Progetto"
+          : "Altro"
         : teacher
           ? defaultSubjectFor(teacher)
           : "Italiano"),
