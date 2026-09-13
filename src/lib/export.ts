@@ -207,7 +207,60 @@ export function timetableXlsx(data: PersistedData): File {
   return xlsxFile("orario.xlsx", rows, "Orario");
 }
 
+function padEnd(s: string, n: number): string {
+  return s.length >= n ? s : s + " ".repeat(n - s.length);
+}
+
+function classCode(name: string): string {
+  return name.replace(/ª\s*/g, "").replace(/\s+/g, "");
+}
+
 export function dailySheetText(data: PersistedData, date: string, needs: CoverageNeed[]): string {
+  const lines: string[] = [];
+  lines.push(`SOSTITUZIONI - ${formatLong(date)}`);
+  const head = [data.settings.schoolName, data.settings.plesso, data.settings.schoolYear]
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (head.length) lines.push(head.join(" - "));
+
+  if (needs.length === 0) {
+    lines.push("Nessuna sostituzione.");
+    lines.push("Coperture: 0/0.");
+    return lines.join("\n");
+  }
+
+  const rows = needs.map((n) => {
+    const period = findPeriod(data, n.slot.periodId);
+    const cls = findClass(data, n.slot.classId);
+    const absent = findTeacher(data, n.absence.teacherId);
+    const sub = findTeacher(data, n.substitution?.substituteId ?? null);
+    let who = "DA COPRIRE";
+    if (n.substitution?.type === "divisione") who = "classe divisa";
+    else if (sub) who = teacherShort(sub, data.teachers);
+    return {
+      ora: (period?.label ?? n.slot.periodId).toUpperCase(),
+      cls: classCode(cls?.name ?? "?"),
+      subj: n.slot.subject,
+      absent: absent ? teacherShort(absent, data.teachers) : "?",
+      who,
+    };
+  });
+  const oraW = Math.max(...rows.map((r) => r.ora.length));
+  const clsW = Math.max(...rows.map((r) => r.cls.length));
+  const subjW = Math.max(...rows.map((r) => r.subj.length));
+  const absW = Math.max(...rows.map((r) => r.absent.length));
+
+  for (const r of rows) {
+    lines.push(
+      `${padEnd(r.ora, oraW)}  -  ${padEnd(r.cls, clsW)}  ${padEnd(r.subj, subjW)}  |  assente ${padEnd(r.absent, absW)}  |  copre ${r.who}`,
+    );
+  }
+
+  const uncovered = needs.filter((n) => !isCovered(n)).length;
+  const covered = needs.length - uncovered;
+  lines.push(`Coperture: ${covered}/${needs.length}.`);
+  return lines.join("\n");
+}
   const lines: string[] = [];
   const heading = formatLong(date);
   lines.push(`Sostituzioni — ${heading.charAt(0).toUpperCase() + heading.slice(1)}`);
