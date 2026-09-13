@@ -759,7 +759,7 @@ export async function orarioOrizzontaleJpeg(data: PersistedData): Promise<Blob> 
   const teachers = teachersOnTimetable(data);
   const dpr = 2;
   const pad = 18;
-  const titleH = 58;
+  const titleH = 72;
   const nameW = 128;
   const hourW = 34;
   const dayWidths = periodsByDay.map((ps) => ps.length * hourW);
@@ -786,9 +786,12 @@ export async function orarioOrizzontaleJpeg(data: PersistedData): Promise<Blob> 
   g.fillText(data.settings.schoolName || "Orario", width / 2, pad + 14);
   g.font = "700 15px 'Source Sans 3', system-ui, sans-serif";
   g.fillText("ORARIO SETTIMANALE — DOCENTI", width / 2, pad + 34);
+  g.font = "500 10px 'Source Sans 3', system-ui, sans-serif";
+  g.fillStyle = "#444";
+  g.fillText(data.settings.schoolYear || "", width / 2, pad + 50);
   g.font = "500 9px 'Source Sans 3', system-ui, sans-serif";
   g.fillStyle = "#333";
-  g.fillText("D nera = a disposizione     righe = ora buca", width / 2, pad + 50);
+  g.fillText("D nera = a disposizione     righe = ora buca", width / 2, pad + 64);
   g.textAlign = "left";
 
   const x0 = pad;
@@ -925,7 +928,7 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
   const periodsByDay = days.map((d) => periodsOnDay(data, d));
   const dpr = 2;
   const pad = 18;
-  const titleH = 52;
+  const titleH = 64;
   const dayW = 20;
   const hourW = 26;
   const dispW = 112;
@@ -965,6 +968,9 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
     width / 2,
     pad + 36,
   );
+  ctx.font = "500 10px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillStyle = "#444";
+  ctx.fillText(data.settings.schoolYear || "", width / 2, pad + 52);
   ctx.textAlign = "left";
 
   const x0 = pad;
