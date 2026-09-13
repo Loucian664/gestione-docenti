@@ -26,6 +26,10 @@ export function formatLong(iso: string): string {
   return format(parseDate(iso), "EEEE d MMMM yyyy", { locale: it });
 }
 
+export function formatDayMonth(iso: string): string {
+  return format(parseDate(iso), "EEEE d MMMM", { locale: it });
+}
+
 export function formatMedium(iso: string): string {
   return format(parseDate(iso), "EEE d MMM", { locale: it });
 }
