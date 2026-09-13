@@ -240,19 +240,17 @@ export function dailySheetText(data: PersistedData, date: string, needs: Coverag
     return {
       ora: (period?.label ?? n.slot.periodId).toUpperCase(),
       cls: classCode(cls?.name ?? "?"),
-      subj: n.slot.subject,
       absent: absent ? teacherShort(absent, data.teachers) : "?",
       who,
     };
   });
   const oraW = Math.max(...rows.map((r) => r.ora.length));
   const clsW = Math.max(...rows.map((r) => r.cls.length));
-  const subjW = Math.max(...rows.map((r) => r.subj.length));
   const absW = Math.max(...rows.map((r) => r.absent.length));
 
   for (const r of rows) {
     lines.push(
-      `${padEnd(r.ora, oraW)}  -  ${padEnd(r.cls, clsW)}  ${padEnd(r.subj, subjW)}  |  assente ${padEnd(r.absent, absW)}  |  copre ${r.who}`,
+      `${padEnd(r.ora, oraW)}  -  ${padEnd(r.cls, clsW)}  |  assente ${padEnd(r.absent, absW)}  |  copre ${r.who}`,
     );
   }
 
