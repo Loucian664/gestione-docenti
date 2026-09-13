@@ -13,7 +13,7 @@ import { shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-f
 import { jpegBlobToPdf } from "@/lib/pdf";
 import { reportJpeg } from "@/lib/sheet-image";
 import { ABSENCE_REASONS } from "@/lib/types";
-import { Download, Image as ImageIcon, FileText } from "lucide-react";
+import { Download, Images as ImageIcon, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/report")({ component: ReportPage });
