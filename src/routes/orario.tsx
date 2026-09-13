@@ -19,7 +19,7 @@ import {
 } from "@/lib/coverage";
 import { DAY_SHORT, SUBJECTS, type DayOfWeek } from "@/lib/types";
 import { toSchoolDay } from "@/lib/dates";
-import { Download, Image as ImageIcon, FileText, Archive } from "lucide-react";
+import { Download, Images as ImageIcon, FileText, Archive } from "lucide-react";
 import { docentiPdfZip, timetableXlsx } from "@/lib/export";
 import { shareJpeg, shareOrSaveFile, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
