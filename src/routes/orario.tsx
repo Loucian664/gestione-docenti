@@ -792,7 +792,9 @@ function TeacherHourEditor({
     ? data.classes.filter((c) => c.tempo === "TP")
     : data.classes;
   const pickedClass = data.classes.find((c) => c.id === (existing?.classId ?? classChoices[0]?.id ?? ""));
-  const [classId, setClassId] = useState(existing?.classId ?? classChoices[0]?.id ?? "");
+  const [classId, setClassId] = useState(
+    existing?.classId ?? (teacher?.role === "potenziamento" ? "" : classChoices[0]?.id ?? ""),
+  );
   const [subject, setSubject] = useState(
     existing?.subject ??
       (mensa
@@ -807,7 +809,12 @@ function TeacherHourEditor({
   const others = classId ? cellSlots(data, classId, editing.day, editing.periodId).filter((s) => s.teacherId !== editing.teacherId) : [];
 
   function save() {
-    if (!classId || !teacher) return;
+    if (!teacher) return;
+    if (!classId) {
+      if (!dispOn) toggleDisp();
+      else onClose();
+      return;
+    }
     const cls = data.classes.find((c) => c.id === classId);
     if (isRestrictedTpPeriod(period) && cls?.tempo !== "TP") {
       toast.error("7ª e 8ª ora sono solo per le classi a tempo prolungato.");
@@ -865,6 +872,7 @@ function TeacherHourEditor({
           <div className="flex flex-col gap-1.5">
             <Label>Classe</Label>
             <NativeSelect value={classId} onChange={(e) => setClassId(e.target.value)}>
+              <option value="">Solo in sede (senza classe)</option>
               {classChoices
                 .slice()
                 .sort((a, b) => a.grade - b.grade || a.section.localeCompare(b.section))
@@ -907,7 +915,7 @@ function TeacherHourEditor({
             <Button variant="outline" onClick={toggleDisp}>
               {dispOn ? "Togli disposizione" : "A disposizione"}
             </Button>
-            <Button onClick={save}>Salva lezione</Button>
+            <Button onClick={save}>{classId ? "Salva lezione" : "Salva in sede"}</Button>
           </div>
         </div>
       </DialogContent>
