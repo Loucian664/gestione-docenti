@@ -38,7 +38,7 @@ import { dailySheetText, substitutionsXlsx } from "@/lib/export";
 import { copyText, isCoarsePointer, shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { textToPdf } from "@/lib/pdf";
 import { bachecaJpeg } from "@/lib/sheet-image";
-import { formatLong, isWeekend, shiftSchoolDay, weekDaysIso, toSchoolDay, todayIso } from "@/lib/dates";
+import { formatDayMonth, formatLong, isWeekend, shiftSchoolDay, weekDaysIso, toSchoolDay, todayIso } from "@/lib/dates";
 import { ABSENCE_REASONS, DAY_SHORT } from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -171,8 +171,8 @@ function OggiPage() {
             >
               <ChevronLeft />
             </Button>
-            <div className="flex h-12 w-[12.5rem] shrink-0 flex-col justify-center px-1 text-center sm:w-[16rem]">
-              <p className="truncate font-display text-[17px] capitalize leading-tight sm:text-xl">{formatLong(date)}</p>
+            <div className="flex h-12 w-[12.5rem] shrink-0 flex-col justify-center px-1 text-center sm:w-[15rem]">
+              <p className="truncate font-display text-[17px] capitalize leading-tight sm:text-xl">{formatDayMonth(date)}</p>
               <p className="truncate text-[12px] text-muted-foreground">{data.settings.schoolName}</p>
             </div>
             <Button
