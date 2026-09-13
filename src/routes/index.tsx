@@ -38,7 +38,7 @@ import { dailySheetText, substitutionsXlsx } from "@/lib/export";
 import { copyText, isCoarsePointer, shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { textToPdf } from "@/lib/pdf";
 import { bachecaJpeg } from "@/lib/sheet-image";
-import { formatLong, isWeekend, shiftSchoolDay, weekDaysIso, toSchoolDay } from "@/lib/dates";
+import { formatLong, isWeekend, shiftSchoolDay, weekDaysIso, toSchoolDay, todayIso } from "@/lib/dates";
 import { ABSENCE_REASONS, DAY_SHORT } from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -160,34 +160,47 @@ function OggiPage() {
       />
 
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Giorno precedente"
-            onClick={() => store.setSelectedDate(shiftSchoolDay(date, -1, data.settings.days))}
-          >
-            <ChevronLeft />
-          </Button>
-          <div className="min-w-0 px-1 text-center">
-            <p className="font-display text-xl capitalize leading-tight md:text-2xl">{formatLong(date)}</p>
-            <p className="text-[12px] text-muted-foreground">{data.settings.schoolName}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="shrink-0"
+              aria-label="Giorno precedente"
+              onClick={() => store.setSelectedDate(shiftSchoolDay(date, -1, data.settings.days))}
+            >
+              <ChevronLeft />
+            </Button>
+            <div className="flex h-12 w-[12.5rem] shrink-0 flex-col justify-center px-1 text-center sm:w-[16rem]">
+              <p className="truncate font-display text-[17px] capitalize leading-tight sm:text-xl">{formatLong(date)}</p>
+              <p className="truncate text-[12px] text-muted-foreground">{data.settings.schoolName}</p>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="shrink-0"
+              aria-label="Giorno successivo"
+              onClick={() => store.setSelectedDate(shiftSchoolDay(date, 1, data.settings.days))}
+            >
+              <ChevronRight />
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Giorno successivo"
-            onClick={() => store.setSelectedDate(shiftSchoolDay(date, 1, data.settings.days))}
-          >
-            <ChevronRight />
-          </Button>
           <input
             type="date"
             value={date}
             onChange={(e) => store.setSelectedDate(e.target.value)}
-            className="ml-1 h-10 rounded-md border border-input bg-card px-2 text-sm"
+            className="h-10 rounded-md border border-input bg-card px-2 text-sm"
             aria-label="Scegli data"
           />
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={date === todayIso()}
+            onClick={() => store.setSelectedDate(todayIso())}
+          >
+            Oggi
+          </Button>
         </div>
         <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-print-hide>
           <Button variant="outline" size="sm" className="shrink-0" onClick={copySheet}>
