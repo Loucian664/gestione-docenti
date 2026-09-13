@@ -131,7 +131,7 @@ function ImpostazioniPage() {
               });
             }}
           />
-          Mensa, 7ª e 8ª per le classi a tempo prolungato
+          Fascia 14:00 per tutte le classi (mensa o lezione). 7ª e 8ª solo T.P.
         </label>
         {store.settings.tpAfternoon && (
           <ul className="mt-3 flex flex-col gap-2">

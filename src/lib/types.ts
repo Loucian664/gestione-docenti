@@ -6,7 +6,7 @@ export type Period = {
   label: string;
   start: string;
   end: string;
-  /** Mensa / 7ª / 8ª: solo classi a tempo prolungato. */
+  /** 7ª / 8ª: solo classi a tempo prolungato. La fascia 14:00 è per tutte. */
   tpOnly?: boolean;
 };
 
@@ -179,6 +179,8 @@ export const SUBJECTS = [
   "Educazione civica",
   "Sostegno",
   "Potenziamento",
+  "Progetto",
+  "Mensa",
 ];
 
 export const DAY_LABELS: Record<DayOfWeek, string> = {
