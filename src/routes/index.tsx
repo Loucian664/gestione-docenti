@@ -9,7 +9,7 @@ import {
   UserPlus,
   ExternalLink,
   Share2,
-  Image as ImageIcon,
+  Images as ImageIcon,
   FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
