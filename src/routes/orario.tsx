@@ -20,7 +20,7 @@ import {
 import { DAY_SHORT, SUBJECTS, type DayOfWeek } from "@/lib/types";
 import { toSchoolDay } from "@/lib/dates";
 import { Download, Images as ImageIcon, FileText, Archive, BookOpen, LayoutGrid, Users, StretchHorizontal } from "lucide-react";
-import { docentiPdfZip, timetableXlsx } from "@/lib/export";
+import { docentiPdfZip, schoolFileTag, timetableXlsx } from "@/lib/export";
 import { shareJpeg, shareOrSaveFile, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
 import {
@@ -94,18 +94,24 @@ function OrarioPage() {
   const weekGaps = useMemo(() => gapsRanking(data, data.slots, true), [data]);
   const className = data.classes.find((c) => c.id === classId)?.name ?? "classe";
 
+  const schoolTag = schoolFileTag(data.settings.schoolName);
+
+  function fileStem(stem: string) {
+    return `${stem}-${schoolTag}`;
+  }
+
   async function currentOrarioJpeg(): Promise<{ blob: Blob; base: string }> {
     if (view === "settimana") {
-      return { blob: await orarioWeekJpeg(data), base: "orario-settimanale" };
+      return { blob: await orarioWeekJpeg(data), base: fileStem("orario-settimanale") };
     }
     if (view === "class") {
-      return { blob: await orarioClassJpeg(data, classId), base: `orario-${className}` };
+      return { blob: await orarioClassJpeg(data, classId), base: fileStem(`orario-${className}`) };
     }
     if (view === "teacher") {
       const name = currentTeacher ? teacherShort(currentTeacher, data.teachers) : "docente";
-      return { blob: await orarioTeacherJpeg(data, teacherId), base: `orario-${name}` };
+      return { blob: await orarioTeacherJpeg(data, teacherId), base: fileStem(`orario-${name}`) };
     }
-    return { blob: await orarioQuadroJpeg(data, quadroDay), base: `orario-${DAY_SHORT[quadroDay]}` };
+    return { blob: await orarioQuadroJpeg(data, quadroDay), base: fileStem(`orario-${DAY_SHORT[quadroDay]}`) };
   }
 
   function saveJpegAsPdf(makeJpeg: () => Promise<Blob>, filename: string) {
@@ -222,7 +228,7 @@ function OrarioPage() {
                 size="sm"
                 variant="outline"
                 className="col-span-2 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
-                onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, "materie"), "orario-materie.pdf")}
+                onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, "materie"), `${fileStem("orario-materie")}.pdf`)}
               >
                 <BookOpen />
                 Materie
@@ -231,7 +237,7 @@ function OrarioPage() {
                 size="sm"
                 variant="outline"
                 className="col-span-2 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
-                onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data), "orario-classi.pdf")}
+                onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data), `${fileStem("orario-classi")}.pdf`)}
               >
                 <LayoutGrid />
                 Per classe
@@ -241,7 +247,7 @@ function OrarioPage() {
                 variant="outline"
                 className="col-span-2 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
                 title="Per classe + docenti"
-                onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, true), "orario-classi-docenti.pdf")}
+                onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, true), `${fileStem("orario-classi-docenti")}.pdf`)}
               >
                 <Users />
                 <span className="md:hidden">+ docenti</span>
@@ -251,7 +257,7 @@ function OrarioPage() {
                 size="sm"
                 variant="outline"
                 className="col-span-3 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
-                onClick={() => saveJpegAsPdf(() => orarioOrizzontaleJpeg(data), "orario-orizzontale.pdf")}
+                onClick={() => saveJpegAsPdf(() => orarioOrizzontaleJpeg(data), `${fileStem("orario-orizzontale")}.pdf`)}
               >
                 <StretchHorizontal />
                 Orizzontale
