@@ -482,31 +482,3 @@ export function requestPersistentStorage(): void {
   if (typeof navigator === "undefined") return;
   void navigator.storage?.persist?.();
 }
-
-export function readSideKey(key: string): string | null {
-  return lsGet(key) ?? ssGet(key);
-}
-
-export function writeSideKey(key: string, value: string): void {
-  lsSet(key, value);
-  ssSet(key, value);
-  void idbSet(key, value);
-}
-
-export async function readSideKeyAsync(key: string): Promise<string | null> {
-  try {
-    return (await idbGet(key)) ?? lsGet(key) ?? ssGet(key);
-  } catch {
-    return lsGet(key) ?? ssGet(key);
-  }
-}
-
-export function removeSideKey(key: string): void {
-  lsRemove(key);
-  try {
-    sessionStorage.removeItem(key);
-  } catch {
-    // ignore
-  }
-  void idbRemove(key);
-}
