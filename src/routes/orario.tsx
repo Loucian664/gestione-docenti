@@ -19,7 +19,7 @@ import {
 } from "@/lib/coverage";
 import { DAY_SHORT, SUBJECTS, type DayOfWeek } from "@/lib/types";
 import { toSchoolDay } from "@/lib/dates";
-import { Download, Images as ImageIcon, FileText, Archive } from "lucide-react";
+import { Download, Images as ImageIcon, FileText, Archive, BookOpen, LayoutGrid, Users, StretchHorizontal } from "lucide-react";
 import { docentiPdfZip, timetableXlsx } from "@/lib/export";
 import { shareJpeg, shareOrSaveFile, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
@@ -224,7 +224,7 @@ function OrarioPage() {
                 className="col-span-2 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
                 onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, "materie"), "orario-materie.pdf")}
               >
-                <FileText className="max-md:hidden" />
+                <BookOpen />
                 Materie
               </Button>
               <Button
@@ -233,7 +233,7 @@ function OrarioPage() {
                 className="col-span-2 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
                 onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data), "orario-classi.pdf")}
               >
-                <FileText className="max-md:hidden" />
+                <LayoutGrid />
                 Per classe
               </Button>
               <Button
@@ -243,7 +243,7 @@ function OrarioPage() {
                 title="Per classe + docenti"
                 onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, true), "orario-classi-docenti.pdf")}
               >
-                <FileText className="max-md:hidden" />
+                <Users />
                 <span className="md:hidden">+ docenti</span>
                 <span className="hidden md:inline">Per classe + docenti</span>
               </Button>
@@ -253,7 +253,7 @@ function OrarioPage() {
                 className="col-span-3 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
                 onClick={() => saveJpegAsPdf(() => orarioOrizzontaleJpeg(data), "orario-orizzontale.pdf")}
               >
-                <FileText className="max-md:hidden" />
+                <StretchHorizontal />
                 Orizzontale
               </Button>
               <Button
@@ -272,7 +272,7 @@ function OrarioPage() {
                   })();
                 }}
               >
-                <Archive className="max-md:hidden" />
+                <Archive />
                 PDF docenti
               </Button>
             </div>
