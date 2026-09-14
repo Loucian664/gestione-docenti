@@ -558,6 +558,40 @@ function schoolSubjectLabel(subject: string): string {
   return SCHOOL_SUBJECT[subject] ?? subject.toUpperCase();
 }
 
+function plessoHeading(data: PersistedData): string {
+  const name = (data.settings.schoolName || "").trim();
+  return name ? `Plesso di ${name}` : "Plesso";
+}
+
+function asYearLine(data: PersistedData): string {
+  const kind = (data.settings.plesso || "").trim();
+  const raw = (data.settings.schoolYear || "").trim();
+  const year = raw ? (/a\.?\s*s\.?/i.test(raw) ? raw : `a.s. ${raw}`) : "";
+  if (kind && year) return `${kind}  ·  ${year}`;
+  return kind || year;
+}
+
+function drawSheetHeading(
+  ctx: CanvasRenderingContext2D,
+  data: PersistedData,
+  width: number,
+  pad: number,
+  title: string,
+) {
+  ctx.fillStyle = "#111";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = "600 12px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillText(plessoHeading(data), width / 2, pad + 14);
+  ctx.font = "700 15px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillText(title, width / 2, pad + 34);
+  ctx.font = "500 10px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillStyle = "#444";
+  ctx.fillText(asYearLine(data), width / 2, pad + 50);
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#111";
+}
+
 function classHeader(c: { name: string; grade: number; section: string }): string {
   return `${c.grade}${c.section}`;
 }
@@ -643,16 +677,7 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
-  ctx.fillStyle = "#111";
-  ctx.textAlign = "center";
-  ctx.font = "600 12px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillText(data.settings.schoolName || "Scuola secondaria", width / 2, pad + 14);
-  ctx.font = "700 15px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillText("ORARIO SETTIMANALE DELLE LEZIONI", width / 2, pad + 34);
-  ctx.font = "500 10px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillStyle = "#444";
-  ctx.fillText(data.settings.schoolYear || "", width / 2, pad + 50);
-  ctx.textAlign = "left";
+  drawSheetHeading(ctx, data, width, pad, "ORARIO SETTIMANALE DELLE LEZIONI");
 
   let y = pad + titleH;
   const x0 = pad;
@@ -799,17 +824,10 @@ export async function orarioOrizzontaleJpeg(data: PersistedData): Promise<Blob> 
   g.fillStyle = "#fff";
   g.fillRect(0, 0, width, height);
 
-  g.fillStyle = "#111";
-  g.textAlign = "center";
-  g.font = "600 12px 'Source Sans 3', system-ui, sans-serif";
-  g.fillText(data.settings.schoolName || "Orario", width / 2, pad + 14);
-  g.font = "700 15px 'Source Sans 3', system-ui, sans-serif";
-  g.fillText("ORARIO SETTIMANALE — DOCENTI", width / 2, pad + 34);
-  g.font = "500 10px 'Source Sans 3', system-ui, sans-serif";
-  g.fillStyle = "#444";
-  g.fillText(data.settings.schoolYear || "", width / 2, pad + 50);
+  drawSheetHeading(g, data, width, pad, "ORARIO SETTIMANALE DEI DOCENTI");
   g.font = "500 9px 'Source Sans 3', system-ui, sans-serif";
   g.fillStyle = "#333";
+  g.textAlign = "center";
   g.fillText("D nera = a disposizione     righe = ora buca", width / 2, pad + 64);
   g.textAlign = "left";
 
@@ -988,24 +1006,7 @@ export async function orarioClassiGridJpeg(
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, width, height);
 
-  ctx.fillStyle = "#111";
-  ctx.textAlign = "center";
-  ctx.font = "600 12px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillText(data.settings.schoolName || "Orario", width / 2, pad + 16);
-  ctx.font = "700 15px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillText(
-    subjectsOnly
-      ? "ORARIO SETTIMANALE DELLE LEZIONI"
-      : withSubjects
-        ? "ORARIO SETTIMANALE DELLE CLASSI — DOCENTI"
-        : "ORARIO SETTIMANALE DELLE CLASSI",
-    width / 2,
-    pad + 36,
-  );
-  ctx.font = "500 10px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillStyle = "#444";
-  ctx.fillText(data.settings.schoolYear || "", width / 2, pad + 52);
-  ctx.textAlign = "left";
+  drawSheetHeading(ctx, data, width, pad, "ORARIO SETTIMANALE DELLE LEZIONI");
 
   const x0 = pad;
   let y = pad + titleH;
