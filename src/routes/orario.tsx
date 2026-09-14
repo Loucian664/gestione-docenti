@@ -220,10 +220,10 @@ function OrarioPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => saveJpegAsPdf(() => orarioOrizzontaleJpeg(data), "orario-orizzontale.pdf")}
+              onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, "materie"), "orario-materie.pdf")}
             >
               <FileText />
-              Orizzontale
+              Materie
             </Button>
             <Button
               size="sm"
@@ -240,6 +240,14 @@ function OrarioPage() {
             >
               <FileText />
               Per classe + docenti
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => saveJpegAsPdf(() => orarioOrizzontaleJpeg(data), "orario-orizzontale.pdf")}
+            >
+              <FileText />
+              Orizzontale
             </Button>
             <Button
               size="sm"
