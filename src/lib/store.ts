@@ -21,7 +21,6 @@ import {
   withOrigin,
   writePersistSync,
 } from "./persist-storage";
-import { clearOrarioVersions } from "./orario-versions";
 
 type Actions = {
   hydrateDefaultDate: () => void;
@@ -47,7 +46,6 @@ type Actions = {
   importData: (data: PersistedData, fileName?: string) => void;
   resetDemo: () => void;
   clearAll: () => void;
-  replaceSlots: (slots: TimetableSlot[]) => number;
 };
 
 export type AppStore = PersistedData & Actions;
@@ -241,17 +239,8 @@ export const useAppStore = create<AppStore>()(
 
         clearAll: () => {
           noteUserMutation();
-          clearOrarioVersions();
           set({ ...EMPTY_DATA, savedAt: Date.now(), origin: "user", importedBackupName: undefined });
           writePersistSync(snapshot(get()), { force: true });
-        },
-
-        replaceSlots: (slots) => {
-          const teacherIds = new Set(get().teachers.map((t) => t.id));
-          const classIds = new Set(get().classes.map((c) => c.id));
-          const next = slots.filter((s) => teacherIds.has(s.teacherId) && classIds.has(s.classId));
-          save({ slots: next, cattedraBackup: undefined });
-          return slots.length - next.length;
         },
       };
     },
