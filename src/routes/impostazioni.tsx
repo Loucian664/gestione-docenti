@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,15 @@ import { shareOrSave, shareOrSaveFile, toastSave } from "@/lib/share-file";
 import type { DayOfWeek } from "@/lib/types";
 import { ensureTpPeriods } from "@/lib/periods";
 import { toast } from "sonner";
+import {
+  deleteOrarioVersion,
+  hydrateOrarioVersions,
+  matchingVersionId,
+  renameOrarioVersion,
+  saveOrarioVersion,
+  setActiveOrarioVersion,
+  type OrarioVersion,
+} from "@/lib/orario-versions";
 
 export const Route = createFileRoute("/impostazioni")({ component: ImpostazioniPage });
 
@@ -25,6 +34,20 @@ function ImpostazioniPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearStep, setClearStep] = useState<1 | 2>(1);
+  const [versions, setVersions] = useState<OrarioVersion[]>([]);
+  const [versionName, setVersionName] = useState("");
+  const [loadId, setLoadId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState("");
+
+  useEffect(() => {
+    void hydrateOrarioVersions().then((file) => setVersions(file.versions));
+  }, []);
+
+  const inUseId = matchingVersionId(store.slots, versions);
+  const loadTarget = versions.find((v) => v.id === loadId);
+  const deleteTarget = versions.find((v) => v.id === deleteId);
 
   function importFile(file: File) {
     const reader = new FileReader();
@@ -239,6 +262,84 @@ function ImpostazioniPage() {
       </section>
 
       <section className="paper-panel mb-4 rounded-xl p-5">
+        <h2 className="font-display text-lg">Versioni orario</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Salva l’orario attuale (solo le caselle). Docenti, classi e assenze restano fuori. Il backup .json
+          esporta sempre e solo l’orario in uso.
+        </p>
+        {inUseId ? (
+          <p className="mt-2 text-[13px] text-foreground">
+            In uso: {versions.find((v) => v.id === inUseId)?.name}
+          </p>
+        ) : (
+          <p className="mt-2 text-[13px] text-muted-foreground">Nessuna versione coincide con l’orario attuale.</p>
+        )}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Input
+            className="min-w-40 flex-1"
+            placeholder="Nome, es. Claudio 1"
+            value={versionName}
+            onChange={(e) => setVersionName(e.target.value)}
+            maxLength={80}
+          />
+          <Button
+            variant="outline"
+            onClick={() => {
+              try {
+                const file = saveOrarioVersion(versionName, store.slots);
+                setVersions(file.versions);
+                setVersionName("");
+                toast.success(`Salvata «${file.versions[0]?.name ?? "versione"}»`);
+              } catch {
+                toast.error("Massimo 30 versioni. Eliminane una e riprova.");
+              }
+            }}
+          >
+            Salva versione
+          </Button>
+        </div>
+        {versions.length > 0 ? (
+          <ul className="mt-4 divide-y divide-border">
+            {versions.map((v) => (
+              <li key={v.id} className="flex flex-wrap items-center gap-2 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">
+                    {v.name}
+                    {v.id === inUseId ? (
+                      <span className="ml-2 text-[12px] font-normal text-muted-foreground">in uso</span>
+                    ) : null}
+                  </p>
+                  <p className="text-[13px] text-muted-foreground">
+                    {new Date(v.savedAt).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })}
+                    {" · "}
+                    {v.slots.length} ore
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setLoadId(v.id)}>
+                  Carica
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setRenameId(v.id);
+                    setRenameText(v.name);
+                  }}
+                >
+                  Rinomina
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setDeleteId(v.id)}>
+                  Elimina
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-[13px] text-muted-foreground">Ancora nessuna versione salvata.</p>
+        )}
+      </section>
+
+      <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Copia su GitHub</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Scarica il programma (non i tuoi dati). Sul Mac scompatta lo zip e carica i file su GitHub.
@@ -335,6 +436,7 @@ function ImpostazioniPage() {
                 className="min-h-11"
                 onClick={() => {
                   store.clearAll();
+                  setVersions([]);
                   setClearOpen(false);
                   setClearStep(1);
                   toast.message("Registro vuoto");
@@ -343,6 +445,98 @@ function ImpostazioniPage() {
                 Svuota ora
               </Button>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(loadId)} onOpenChange={(open) => !open && setLoadId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Caricare «{loadTarget?.name}»?</DialogTitle>
+            <DialogDescription>
+              Sostituisce le caselle dell’orario. Docenti, classi e assenze restano quelli attuali.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" className="min-h-11" onClick={() => setLoadId(null)}>
+              Annulla
+            </Button>
+            <Button
+              className="min-h-11"
+              onClick={() => {
+                if (!loadTarget) return;
+                const dropped = store.replaceSlots(loadTarget.slots);
+                setActiveOrarioVersion(loadTarget.id);
+                setLoadId(null);
+                if (dropped > 0) {
+                  toast.message(`Orario «${loadTarget.name}» caricato. ${dropped} ore ignorate: docenti o classi non più presenti.`);
+                } else {
+                  toast.success(`Orario «${loadTarget.name}» caricato`);
+                }
+              }}
+            >
+              Carica
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(renameId)} onOpenChange={(open) => !open && setRenameId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rinomina versione</DialogTitle>
+            <DialogDescription>Il nome serve solo a te, per riconoscerla in elenco.</DialogDescription>
+          </DialogHeader>
+          <Input
+            value={renameText}
+            onChange={(e) => setRenameText(e.target.value)}
+            maxLength={80}
+            autoFocus
+          />
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" className="min-h-11" onClick={() => setRenameId(null)}>
+              Annulla
+            </Button>
+            <Button
+              className="min-h-11"
+              onClick={() => {
+                if (!renameId) return;
+                const file = renameOrarioVersion(renameId, renameText);
+                setVersions(file.versions);
+                setRenameId(null);
+              }}
+            >
+              Salva
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteId)} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminare «{deleteTarget?.name}»?</DialogTitle>
+            <DialogDescription>
+              Si toglie solo questa copia salvata. L’orario in uso non cambia.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" className="min-h-11" onClick={() => setDeleteId(null)}>
+              Annulla
+            </Button>
+            <Button
+              variant="destructive"
+              className="min-h-11"
+              onClick={() => {
+                if (!deleteId) return;
+                const file = deleteOrarioVersion(deleteId);
+                setVersions(file.versions);
+                setDeleteId(null);
+                toast.message("Versione eliminata");
+              }}
+            >
+              Elimina
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
