@@ -13,6 +13,19 @@ function typeLabel(t: SubstitutionType | null): string {
   return SUBSTITUTION_TYPES.find((x) => x.value === t)?.label ?? t;
 }
 
+/** Nome scuola per i file: «Rombiolo», senza caratteri che i sistemi non accettano. */
+export function schoolFileTag(name: string): string {
+  const tag = name
+    .trim()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  return tag || "scuola";
+}
+
+export function orarioDownloadName(schoolName: string, stem: string, ext: string): string {
+  return `${stem}-${schoolFileTag(schoolName)}.${ext}`;
+}
+
 function findTeacher(data: PersistedData, id: string | null) {
   if (!id) return null;
   return data.teachers.find((t) => t.id === id) ?? null;
@@ -204,7 +217,7 @@ export function timetableXlsx(data: PersistedData): File {
       n > 1 ? "sì" : "",
     ]);
   }
-  return xlsxFile("orario.xlsx", rows, "Orario");
+  return xlsxFile(orarioDownloadName(data.settings.schoolName, "orario", "xlsx"), rows, "Orario");
 }
 
 function padEnd(s: string, n: number): string {
@@ -285,5 +298,5 @@ export async function docentiPdfZip(data: PersistedData): Promise<File> {
       data: new Uint8Array(await pdf.arrayBuffer()),
     });
   }
-  return zipFile("orari-docenti.zip", entries);
+  return zipFile(orarioDownloadName(data.settings.schoolName, "orari-docenti", "zip"), entries);
 }
