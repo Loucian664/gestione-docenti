@@ -604,9 +604,24 @@ function dispNamesAt(data: PersistedData, day: DayOfWeek, periodId: string): str
 }
 
 function sostegnoTeachers(data: PersistedData) {
+  const rank = new Map(classOrder(data).map((c, i) => [c.id, i]));
+  const firstClass = (t: { assignedClassIds?: string[] }) => {
+    const ids = t.assignedClassIds ?? [];
+    let best = 999;
+    for (const id of ids) {
+      const i = rank.get(id);
+      if (i !== undefined && i < best) best = i;
+    }
+    return best;
+  };
   return data.teachers
     .filter((t) => t.role === "sostegno")
-    .sort((a, b) => a.lastName.localeCompare(b.lastName, "it") || a.firstName.localeCompare(b.firstName, "it"));
+    .sort((a, b) => {
+      const ca = firstClass(a);
+      const cb = firstClass(b);
+      if (ca !== cb) return ca - cb;
+      return a.lastName.localeCompare(b.lastName, "it") || a.firstName.localeCompare(b.firstName, "it");
+    });
 }
 
 function sostegnoClassLabel(
