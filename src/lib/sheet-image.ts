@@ -921,8 +921,14 @@ export async function orarioOrizzontaleJpeg(data: PersistedData): Promise<Blob> 
 }
 
 /** Quadro settimanale per classe: giorni in colonna, cognomi in cella (foglio da appendere). */
-export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = false): Promise<Blob> {
+export async function orarioClassiGridJpeg(
+  data: PersistedData,
+  mode: boolean | "materie" = false,
+): Promise<Blob> {
   await document.fonts.ready.catch(() => undefined);
+  const subjectsOnly = mode === "materie";
+  const withSubjects = mode === true;
+  const showDisp = !subjectsOnly;
   const classes = classOrder(data);
   const days = data.settings.days;
   const periodsByDay = days.map((d) => periodsOnDay(data, d));
@@ -931,10 +937,13 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
   const titleH = 64;
   const dayW = 20;
   const hourW = 26;
-  const dispW = 112;
+  const dispW = showDisp ? 112 : 0;
   const colW = Math.max(
-    withSubjects ? 72 : 68,
-    Math.min(withSubjects ? 96 : 88, Math.floor((620 - dayW - hourW - dispW) / Math.max(1, classes.length))),
+    withSubjects || subjectsOnly ? 72 : 68,
+    Math.min(
+      withSubjects || subjectsOnly ? 96 : 88,
+      Math.floor((620 - dayW - hourW - dispW) / Math.max(1, classes.length)),
+    ),
   );
   const rowH = withSubjects ? 34 : 22;
   const gap = 8;
@@ -964,7 +973,11 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
   ctx.fillText(data.settings.schoolName || "Orario", width / 2, pad + 16);
   ctx.font = "700 15px 'Source Sans 3', system-ui, sans-serif";
   ctx.fillText(
-    withSubjects ? "ORARIO SETTIMANALE DELLE CLASSI — DOCENTI" : "ORARIO SETTIMANALE DELLE CLASSI",
+    subjectsOnly
+      ? "ORARIO SETTIMANALE DELLE LEZIONI"
+      : withSubjects
+        ? "ORARIO SETTIMANALE DELLE CLASSI — DOCENTI"
+        : "ORARIO SETTIMANALE DELLE CLASSI",
     width / 2,
     pad + 36,
   );
@@ -992,7 +1005,7 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
     box(x, y, colW, headH);
     ctx.fillText(classHeader(c), x + colW / 2, y + 15);
   });
-  {
+  if (showDisp) {
     const dx = x0 + dayW + hourW + classes.length * colW;
     box(dx, y, dispW, headH);
     ctx.font = "600 8px 'Source Sans 3', system-ui, sans-serif";
@@ -1037,9 +1050,14 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
         }
         if (!occupants.length) return;
         const primary = occupants[0]!;
+        ctx.fillStyle = "#111";
+        if (subjectsOnly) {
+          ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+          ctx.fillText(schoolSubjectLabel(primary.subject), x + colW / 2, yy + 16);
+          return;
+        }
         const t = data.teachers.find((x) => x.id === primary.teacherId);
         if (!t) return;
-        ctx.fillStyle = "#111";
         if (withSubjects) {
           ctx.font = "700 9px 'Source Sans 3', system-ui, sans-serif";
           ctx.fillText(teacherSheetName(t, data.teachers), x + colW / 2, yy + 14);
@@ -1050,9 +1068,11 @@ export async function orarioClassiGridJpeg(data: PersistedData, withSubjects = f
           ctx.fillText(teacherSheetName(t, data.teachers), x + colW / 2, yy + 16);
         }
       });
-      const dx = x0 + dayW + hourW + classes.length * colW;
-      box(dx, yy, dispW, rowH);
-      drawDispNames(ctx, dispNamesAt(data, day, p.id), dx, yy, dispW, rowH);
+      if (showDisp) {
+        const dx = x0 + dayW + hourW + classes.length * colW;
+        box(dx, yy, dispW, rowH);
+        drawDispNames(ctx, dispNamesAt(data, day, p.id), dx, yy, dispW, rowH);
+      }
     });
     y += blockH;
   });
