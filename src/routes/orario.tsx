@@ -213,60 +213,69 @@ function OrarioPage() {
           Mensa, 7ª e 8ª per le classi a tempo prolungato
         </label>
         {view !== "costruisci" && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div>
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               Fogli
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, "materie"), "orario-materie.pdf")}
-            >
-              <FileText />
-              Materie
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data), "orario-classi.pdf")}
-            >
-              <FileText />
-              Per classe
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, true), "orario-classi-docenti.pdf")}
-            >
-              <FileText />
-              Per classe + docenti
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => saveJpegAsPdf(() => orarioOrizzontaleJpeg(data), "orario-orizzontale.pdf")}
-            >
-              <FileText />
-              Orizzontale
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                toast.message("Preparo lo zip dei PDF…");
-                void (async () => {
-                  try {
-                    const file = await docentiPdfZip(data);
-                    toastSave(await shareOrSaveFile(file), "zip");
-                  } catch {
-                    toast.error("Non sono riuscito a creare lo zip dei docenti.");
-                  }
-                })();
-              }}
-            >
-              <Archive />
-              PDF docenti
-            </Button>
+            </p>
+            <div className="grid grid-cols-6 gap-1.5 md:flex md:flex-wrap md:items-center">
+              <Button
+                size="sm"
+                variant="outline"
+                className="col-span-2 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
+                onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, "materie"), "orario-materie.pdf")}
+              >
+                <FileText className="max-md:hidden" />
+                Materie
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="col-span-2 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
+                onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data), "orario-classi.pdf")}
+              >
+                <FileText className="max-md:hidden" />
+                Per classe
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="col-span-2 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
+                title="Per classe + docenti"
+                onClick={() => saveJpegAsPdf(() => orarioClassiGridJpeg(data, true), "orario-classi-docenti.pdf")}
+              >
+                <FileText className="max-md:hidden" />
+                <span className="md:hidden">+ docenti</span>
+                <span className="hidden md:inline">Per classe + docenti</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="col-span-3 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
+                onClick={() => saveJpegAsPdf(() => orarioOrizzontaleJpeg(data), "orario-orizzontale.pdf")}
+              >
+                <FileText className="max-md:hidden" />
+                Orizzontale
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="col-span-3 h-9 min-w-0 w-full px-1.5 text-[12px] md:h-8 md:w-auto md:px-3 md:text-[13px]"
+                onClick={() => {
+                  toast.message("Preparo lo zip dei PDF…");
+                  void (async () => {
+                    try {
+                      const file = await docentiPdfZip(data);
+                      toastSave(await shareOrSaveFile(file), "zip");
+                    } catch {
+                      toast.error("Non sono riuscito a creare lo zip dei docenti.");
+                    }
+                  })();
+                }}
+              >
+                <Archive className="max-md:hidden" />
+                PDF docenti
+              </Button>
+            </div>
           </div>
         )}
         {view === "quadro" && (
