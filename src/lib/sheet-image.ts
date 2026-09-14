@@ -609,6 +609,85 @@ function sostegnoTeachers(data: PersistedData) {
     .sort((a, b) => a.lastName.localeCompare(b.lastName, "it") || a.firstName.localeCompare(b.firstName, "it"));
 }
 
+function sostegnoClassLabel(
+  data: PersistedData,
+  t: { assignedClassIds?: string[] },
+): string {
+  const ids = new Set(t.assignedClassIds ?? []);
+  const labels = classOrder(data)
+    .filter((c) => ids.has(c.id))
+    .map(classHeader);
+  if (labels.length === 0) return "";
+  if (labels.length === 1) return labels[0]!;
+  if (labels.length === 2) return `${labels[0]} e ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")} e ${labels[labels.length - 1]}`;
+}
+
+function sostegnoCaptionItems(
+  data: PersistedData,
+  sos: ReturnType<typeof sostegnoTeachers>,
+): string[] {
+  return sos.map((t) => {
+    const name = teacherSheetName(t, data.teachers);
+    const cl = sostegnoClassLabel(data, t);
+    return cl ? `${name} ${cl}` : name;
+  });
+}
+
+/** Riga sotto il quadro: Sostegno · DE VITA 1A e 3B · MANTEGNA 3A … */
+function drawSostegnoCaption(
+  ctx: CanvasRenderingContext2D,
+  data: PersistedData,
+  sos: ReturnType<typeof sostegnoTeachers>,
+  x: number,
+  y: number,
+  w: number,
+) {
+  if (sos.length === 0) return;
+  ctx.strokeStyle = "#111";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + w, y);
+  ctx.stroke();
+
+  const items = sostegnoCaptionItems(data, sos);
+  const prefix = "Sostegno";
+  const sep = "  ·  ";
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+  ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+  const prefixW = ctx.measureText(prefix).width;
+  ctx.font = "500 9px 'Source Sans 3', system-ui, sans-serif";
+  const sepW = ctx.measureText(sep).width;
+  const firstMax = w - prefixW - sepW;
+  const nextMax = w;
+  const lines: string[] = [];
+  let cur = "";
+  let max = firstMax;
+  for (const item of items) {
+    const trial = cur ? `${cur}${sep}${item}` : item;
+    if (!cur || ctx.measureText(trial).width <= max) {
+      cur = trial;
+    } else {
+      lines.push(cur);
+      cur = item;
+      max = nextMax;
+    }
+  }
+  if (cur) lines.push(cur);
+
+  ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillStyle = "#111";
+  ctx.fillText(prefix, x, y + 14);
+  ctx.font = "500 9px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillStyle = "#444";
+  ctx.fillText(sep + (lines[0] ?? ""), x + prefixW, y + 14);
+  for (let i = 1; i < lines.length; i++) {
+    ctx.fillText(lines[i]!, x, y + 14 + i * 12);
+  }
+}
+
 function isSostegnoOnSite(
   data: PersistedData,
   teacherId: string,
@@ -987,6 +1066,7 @@ export async function orarioClassiGridJpeg(
   const rowH = withSubjects ? 34 : 22;
   const gap = 8;
   const headH = sos.length > 0 ? 68 : 22;
+  const footH = sos.length > 0 ? 36 : 0;
   const tableW = dayW + hourW + classes.length * colW + dispW + sos.length * sosW;
   const width = pad * 2 + tableW;
   const height =
@@ -995,6 +1075,7 @@ export async function orarioClassiGridJpeg(
     headH +
     periodsByDay.reduce((n, ps) => n + ps.length * rowH, 0) +
     (days.length - 1) * gap +
+    footH +
     pad;
 
   const canvas = document.createElement("canvas");
@@ -1121,6 +1202,10 @@ export async function orarioClassiGridJpeg(
     });
     y += blockH;
   });
+
+  if (sos.length > 0) {
+    drawSostegnoCaption(ctx, data, sos, x0, y + 12, tableW);
+  }
 
   return canvasToJpeg(canvas, 0.92);
 }
