@@ -1136,7 +1136,8 @@ function CattedrePanel({
                 teacherId: prev?.teacherId ?? "",
               };
             });
-            onWrite([...rest, ...next]);
+            const extras = rows.filter((r) => !MONTE_ORE.some((m) => m.subject === r.subject));
+            onWrite([...rest, ...next, ...extras]);
             toast.message("Questa classe: quadro ministeriale (30 ore).");
           }}
         >

@@ -14,7 +14,7 @@ import {
 import { useAppStore, snapshot } from "@/lib/store";
 import { backupJson, parseBackupJson } from "@/lib/export";
 import { shareOrSave, shareOrSaveFile, toastSave } from "@/lib/share-file";
-import type { DayOfWeek } from "@/lib/types";
+import type { DayOfWeek, PersistedData } from "@/lib/types";
 import { ensureTpPeriods } from "@/lib/periods";
 import { toast } from "sonner";
 
@@ -25,14 +25,29 @@ function ImpostazioniPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearStep, setClearStep] = useState<1 | 2>(1);
+  const [pendingImport, setPendingImport] = useState<{ data: PersistedData; name: string } | null>(null);
+
+  function applyImport(parsed: PersistedData, name: string) {
+    store.importData(parsed, name);
+    toast.success("Registro importato e salvato su questo dispositivo");
+  }
 
   function importFile(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const parsed = parseBackupJson(String(reader.result));
-        store.importData(parsed, file.name);
-        toast.success("Registro importato e salvato su questo dispositivo");
+        const current = snapshot(store);
+        const curAt = Number(current.savedAt) || 0;
+        const incAt = Number(parsed.savedAt) || 0;
+        const hasWork =
+          current.origin === "user" &&
+          ((current.teachers?.length ?? 0) > 0 || (current.slots?.length ?? 0) > 0);
+        if (hasWork && curAt > 0 && incAt > 0 && incAt < curAt) {
+          setPendingImport({ data: parsed, name: file.name });
+          return;
+        }
+        applyImport(parsed, file.name);
       } catch {
         toast.error("File non riconosciuto. Serve il backup .json, non il file Excel.");
       }
@@ -343,6 +358,33 @@ function ImpostazioniPage() {
                 Svuota ora
               </Button>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(pendingImport)} onOpenChange={(o) => !o && setPendingImport(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Questo file è più vecchio</DialogTitle>
+            <DialogDescription>
+              Il registro su questo dispositivo ha modifiche successive (anche ore di mensa o laboratorio in
+              scheda). Importando quel JSON si torna al file e si perdono i cambiamenti fatti dopo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" className="min-h-11" onClick={() => setPendingImport(null)}>
+              Annulla
+            </Button>
+            <Button
+              className="min-h-11"
+              onClick={() => {
+                if (!pendingImport) return;
+                applyImport(pendingImport.data, pendingImport.name);
+                setPendingImport(null);
+              }}
+            >
+              Importa comunque
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
