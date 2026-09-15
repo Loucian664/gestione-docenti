@@ -408,6 +408,7 @@ const SUBJECT_ABBR: Record<string, string> = {
   Potenziamento: "POT",
   Altro: "ALT",
   Mensa: "MEN",
+  Laboratorio: "LAB",
 };
 
 export function subjectAbbr(subject: string): string {
@@ -552,6 +553,7 @@ const SCHOOL_SUBJECT: Record<string, string> = {
   "Educazione civica": "CIVICA",
   Altro: "ALTRO",
   Mensa: "MENSA",
+  Laboratorio: "LABORATORIO",
 };
 
 function schoolSubjectLabel(subject: string): string {

@@ -17,7 +17,7 @@ import {
   teacherShort,
   teacherSlotAt,
 } from "@/lib/coverage";
-import { DAY_SHORT, SUBJECTS, type DayOfWeek } from "@/lib/types";
+import { ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, DAY_SHORT, SUBJECTS, type DayOfWeek } from "@/lib/types";
 import { toSchoolDay } from "@/lib/dates";
 import { Download, Images as ImageIcon, FileText, Archive, BookOpen, LayoutGrid, Users, StretchHorizontal } from "lucide-react";
 import { docentiPdfZip, schoolFileTag, timetableXlsx } from "@/lib/export";
@@ -736,11 +736,21 @@ function CellEditor({
           <div className="flex flex-col gap-1.5">
             <Label>Materia</Label>
             <NativeSelect value={subject} onChange={(e) => setSubject(e.target.value)}>
-              {SUBJECTS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
+              <optgroup label="Materie">
+                {CURRICULAR_SUBJECTS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Altre attività">
+                {ACTIVITY_SUBJECTS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </optgroup>
+              {subject && !SUBJECTS.includes(subject) && <option value={subject}>{subject}</option>}
             </NativeSelect>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
           </div>
@@ -880,11 +890,21 @@ function TeacherHourEditor({
           <div className="flex flex-col gap-1.5">
             <Label>Materia / attività</Label>
             <NativeSelect value={subject} onChange={(e) => setSubject(e.target.value)}>
-              {SUBJECTS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
+              <optgroup label="Materie">
+                {CURRICULAR_SUBJECTS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Altre attività">
+                {ACTIVITY_SUBJECTS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </optgroup>
+              {subject && !SUBJECTS.includes(subject) && <option value={subject}>{subject}</option>}
             </NativeSelect>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
           </div>

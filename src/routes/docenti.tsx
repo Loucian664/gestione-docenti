@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useAppStore, snapshot } from "@/lib/store";
 import { monthSubCounts, teacherName } from "@/lib/coverage";
 import { applyTeacherCattedre, cattedreOfTeacher } from "@/lib/build-timetable";
-import { DAY_SHORT, ROLE_LABELS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole } from "@/lib/types";
+import { DAY_SHORT, ROLE_LABELS, ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole } from "@/lib/types";
 import { Plus, Search, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -181,6 +181,18 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
         }))
       : [] as { classId: string; subject: string; hours: string }[],
   );
+  const assignedHours = rows.reduce((n, r) => n + (Number(r.hours) || 0), 0);
+
+  function addRow(subject?: string) {
+    setRows((all) => [
+      ...all,
+      {
+        classId: data.classes[0]?.id ?? "",
+        subject: subject ?? subjects.split(",")[0]?.trim() ?? "",
+        hours: "1",
+      },
+    ]);
+  }
 
   function save() {
     const payload = {
@@ -204,14 +216,15 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
       mustSlots: current?.mustSlots ?? [],
     };
     if (!payload.lastName) return;
-    const id = isNew ? store.addTeacher(payload) : current!.id;
-    if (!isNew && current) store.updateTeacher(current.id, payload);
     const parsed =
       payload.role === "potenziamento"
         ? []
         : rows
             .map((r) => ({ classId: r.classId, subject: r.subject.trim(), hours: Number(r.hours) || 0 }))
             .filter((r) => r.classId && r.subject && r.hours > 0);
+    payload.subjects = [...new Set([...payload.subjects, ...parsed.map((r) => r.subject)])];
+    const id = isNew ? store.addTeacher(payload) : current!.id;
+    if (!isNew && current) store.updateTeacher(current.id, payload);
     store.setCattedre(applyTeacherCattedre(snapshot(store), id, parsed));
     toast.success(
       payload.role === "potenziamento"
@@ -239,7 +252,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             </Field>
           </div>
           <Field label="Materie (separate da virgola)">
-            <Input value={subjects} onChange={(e) => setSubjects(e.target.value)} list="subjects-list" />
+            <Input value={subjects} onChange={(e) => setSubjects(e.target.value)} list="subjects-list" placeholder="Matematica, Mensa, Laboratorio" />
             <datalist id="subjects-list">
               {SUBJECTS.map((s) => (
                 <option key={s} value={s} />
@@ -295,7 +308,8 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
           {role !== "potenziamento" && (
           <Field label="Classi e materie su questo plesso">
             <p className="text-[12px] text-muted-foreground">
-              Quante ore in quale classe. Il totale può essere minore delle ore di organico se insegna anche altrove.
+              Come per le materie: classe, attività e ore. Puoi mettere anche Mensa e Laboratorio. Il totale può
+              essere minore delle ore di organico se insegna anche altrove.
             </p>
             <div className="mt-2 flex flex-col gap-2">
               {rows.map((row, i) => (
@@ -317,14 +331,32 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                         </option>
                       ))}
                   </NativeSelect>
-                  <Input
-                    list="docente-subjects"
-                    placeholder="Materia"
+                  <NativeSelect
                     value={row.subject}
                     onChange={(e) =>
                       setRows((all) => all.map((r, j) => (j === i ? { ...r, subject: e.target.value } : r)))
                     }
-                  />
+                    aria-label="Materia"
+                  >
+                    <option value="">Materia</option>
+                    <optgroup label="Materie">
+                      {CURRICULAR_SUBJECTS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Altre attività">
+                      {ACTIVITY_SUBJECTS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {row.subject && !SUBJECTS.includes(row.subject) && (
+                      <option value={row.subject}>{row.subject}</option>
+                    )}
+                  </NativeSelect>
                   <Input
                     type="number"
                     min={1}
@@ -347,30 +379,21 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                   </button>
                 </div>
               ))}
-              <datalist id="docente-subjects">
-                {(subjects.split(",").map((s) => s.trim()).filter(Boolean).length
-                  ? subjects.split(",").map((s) => s.trim()).filter(Boolean)
-                  : SUBJECTS
-                ).map((s) => (
-                  <option key={s} value={s} />
-                ))}
-              </datalist>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  setRows((all) => [
-                    ...all,
-                    {
-                      classId: data.classes[0]?.id ?? "",
-                      subject: subjects.split(",")[0]?.trim() ?? "",
-                      hours: "1",
-                    },
-                  ])
-                }
-              >
-                Aggiungi classe
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => addRow()}>
+                  Aggiungi classe
+                </Button>
+                <Button type="button" variant="outline" onClick={() => addRow("Mensa")}>
+                  Aggiungi mensa
+                </Button>
+                <Button type="button" variant="outline" onClick={() => addRow("Laboratorio")}>
+                  Aggiungi laboratorio
+                </Button>
+              </div>
+              <p className="text-[12px] tabular-nums text-muted-foreground">
+                Totale su questo plesso: {assignedHours} h
+                {Number(weeklyHours) > 0 ? ` su ${weeklyHours} h di organico` : ""}
+              </p>
             </div>
           </Field>
           )}

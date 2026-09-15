@@ -227,9 +227,11 @@ export function timetableDemand(data: PersistedData): DemandResult {
   const lessons: LessonDemand[] = [];
   const unassigned: DemandResult["unassigned"] = [];
   let fromOrganico = Boolean(data.cattedre && data.cattedre.length > 0);
+  const skipBuild = /^(Mensa|Laboratorio|Sostegno|Potenziamento|Altro)$/i;
 
   for (const row of resolveCattedre(data)) {
     if (row.hours <= 0) continue;
+    if (skipBuild.test(row.subject)) continue;
     const cls = data.classes.find((c) => c.id === row.classId);
     if (!row.teacherId || !pool.has(row.teacherId)) {
       unassigned.push({
