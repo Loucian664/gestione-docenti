@@ -512,6 +512,7 @@ export function applyOrganicoFixes(data: PersistedData): PersistedData {
 
   teachers = teachers.map((x) => {
     if (x.role === "sostegno") return x;
+    if ((x.weeklyHours ?? 0) > 0) return x;
     const hours = slots.filter((s) => s.teacherId === x.id).length;
     return hours > 0 ? { ...x, weeklyHours: hours } : x;
   });

@@ -12,7 +12,7 @@ import type {
 } from "./types";
 import { buildSeed, EMPTY_DATA, applyOrganicoFixes } from "./seed";
 import { uid } from "./utils";
-import { isTimetableTeacher } from "./build-timetable";
+import { isTimetableTeacher, applyTeacherCattedre } from "./build-timetable";
 import { isTpPeriodId } from "./periods";
 import {
   createDurableStorage,
@@ -28,6 +28,11 @@ type Actions = {
   updateSettings: (patch: Partial<Settings>) => void;
   addTeacher: (t: Omit<Teacher, "id">) => string;
   updateTeacher: (id: string, patch: Partial<Teacher>) => void;
+  saveTeacherCard: (
+    id: string | null,
+    patch: Omit<Teacher, "id">,
+    rows: { classId: string; subject: string; hours: number }[],
+  ) => string;
   removeTeacher: (id: string) => void;
   addClass: (c: Omit<SchoolClass, "id">) => void;
   updateClass: (id: string, patch: Partial<SchoolClass>) => void;
@@ -99,6 +104,20 @@ export const useAppStore = create<AppStore>()(
 
         updateTeacher: (id, patch) =>
           save({ teachers: get().teachers.map((t) => (t.id === id ? { ...t, ...patch } : t)) }),
+
+        saveTeacherCard: (
+          id: string | null,
+          patch: Omit<Teacher, "id">,
+          rows: { classId: string; subject: string; hours: number }[],
+        ) => {
+          const teacherId = id ?? uid("t");
+          const teachers = id
+            ? get().teachers.map((t) => (t.id === id ? { ...t, ...patch } : t))
+            : [...get().teachers, { ...patch, id: teacherId }];
+          const cattedre = applyTeacherCattedre({ ...snapshot(get()), teachers }, teacherId, rows);
+          save({ teachers, cattedre });
+          return teacherId;
+        },
 
         removeTeacher: (id) =>
           save({
@@ -261,6 +280,8 @@ export const useAppStore = create<AppStore>()(
         absences: state.absences,
         substitutions: state.substitutions,
         selectedDate: state.selectedDate,
+        cattedre: state.cattedre,
+        cattedraBackup: state.cattedraBackup,
         savedAt: state.savedAt,
         origin: state.origin,
         importedBackupName: state.importedBackupName,
