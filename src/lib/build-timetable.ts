@@ -202,6 +202,10 @@ export function resolveCattedre(data: PersistedData): Cattedra[] {
 }
 
 export function cattedreOfTeacher(data: PersistedData, teacherId: string): Cattedra[] {
+  const saved = data.cattedre ?? [];
+  if (saved.length > 0) {
+    return saved.filter((c) => c.teacherId === teacherId && c.hours > 0);
+  }
   return resolveCattedre(data).filter((c) => c.teacherId === teacherId && c.hours > 0);
 }
 
@@ -210,9 +214,8 @@ export function applyTeacherCattedre(
   teacherId: string,
   rows: { classId: string; subject: string; hours: number }[],
 ): Cattedra[] {
-  const next = resolveCattedre(data).map((r) =>
-    r.teacherId === teacherId ? { ...r, teacherId: "" } : r,
-  );
+  const base = (data.cattedre && data.cattedre.length > 0) ? data.cattedre : resolveCattedre(data);
+  const next = base.map((r) => (r.teacherId === teacherId ? { ...r, teacherId: "" } : r));
   for (const row of rows) {
     if (!row.classId || !row.subject || row.hours <= 0) continue;
     const i = next.findIndex((r) => r.classId === row.classId && r.subject === row.subject);

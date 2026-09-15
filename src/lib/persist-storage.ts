@@ -397,6 +397,12 @@ export function shouldAcceptWrite(incoming: string, existing: string | null, for
   if (incSeed && !exSeed) return false;
   if (!incSeed && exSeed) return true;
   if (incAt < persistSavedAt(existing)) return false;
+  if (
+    incAt === persistSavedAt(existing) &&
+    (ex.cattedre?.length ?? 0) > (inc.cattedre?.length ?? 0)
+  ) {
+    return false;
+  }
   return true;
 }
 

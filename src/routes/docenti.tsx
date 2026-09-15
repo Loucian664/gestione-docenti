@@ -10,13 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAppStore, snapshot } from "@/lib/store";
 import { monthSubCounts, teacherName } from "@/lib/coverage";
-import { applyTeacherCattedre, cattedreOfTeacher } from "@/lib/build-timetable";
-import { DAY_SHORT, ROLE_LABELS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole } from "@/lib/types";
+import { cattedreOfTeacher } from "@/lib/build-timetable";
+import { DAY_SHORT, ROLE_LABELS, ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole } from "@/lib/types";
 import { Plus, Search, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { corePeriods } from "@/lib/periods";
-import { SubjectSelect } from "@/components/subject-select";
 
 export const Route = createFileRoute("/docenti")({ component: DocentiPage });
 
@@ -224,9 +223,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             .map((r) => ({ classId: r.classId, subject: r.subject.trim(), hours: Number(r.hours) || 0 }))
             .filter((r) => r.classId && r.subject && r.hours > 0);
     payload.subjects = [...new Set([...payload.subjects, ...parsed.map((r) => r.subject)])];
-    const id = isNew ? store.addTeacher(payload) : current!.id;
-    if (!isNew && current) store.updateTeacher(current.id, payload);
-    store.setCattedre(applyTeacherCattedre(snapshot(store), id, parsed));
+    store.saveTeacherCard(isNew ? null : current!.id, payload, parsed);
     toast.success(
       payload.role === "potenziamento"
         ? "Docente salvato. L’orario in sede è senza classe: copre dove serve."
@@ -309,12 +306,12 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
           {role !== "potenziamento" && (
           <Field label="Classi e materie su questo plesso">
             <p className="text-[12px] text-muted-foreground">
-              Come per le materie: classe, attività e ore. Puoi mettere anche Mensa e Laboratorio. Il totale può
-              essere minore delle ore di organico se insegna anche altrove.
+              Classe, materia (anche Mensa o Laboratorio) e ore. Il totale può essere minore dell’organico se insegna
+              anche altrove.
             </p>
             <div className="mt-2 flex flex-col gap-2">
               {rows.map((row, i) => (
-                <div key={i} className="flex flex-col gap-1.5 rounded-lg bg-muted/50 p-2">
+                <div key={i} className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.15fr)_3.75rem_2rem] items-center gap-1.5">
                   <NativeSelect
                     value={row.classId}
                     onChange={(e) =>
@@ -332,35 +329,52 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                         </option>
                       ))}
                   </NativeSelect>
-                  <SubjectSelect
+                  <NativeSelect
                     value={row.subject}
-                    onChange={(subject) =>
-                      setRows((all) => all.map((r, j) => (j === i ? { ...r, subject } : r)))
+                    onChange={(e) =>
+                      setRows((all) => all.map((r, j) => (j === i ? { ...r, subject: e.target.value } : r)))
                     }
+                    aria-label="Materia"
+                  >
+                    <option value="">Materia</option>
+                    <optgroup label="Materie">
+                      {CURRICULAR_SUBJECTS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Altre attività">
+                      {ACTIVITY_SUBJECTS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {row.subject && !SUBJECTS.includes(row.subject) && (
+                      <option value={row.subject}>{row.subject}</option>
+                    )}
+                  </NativeSelect>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={18}
+                    inputMode="numeric"
+                    className="text-right tabular-nums"
+                    value={row.hours}
+                    onChange={(e) =>
+                      setRows((all) => all.map((r, j) => (j === i ? { ...r, hours: e.target.value } : r)))
+                    }
+                    aria-label="Ore"
                   />
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      type="number"
-                      min={1}
-                      max={18}
-                      inputMode="numeric"
-                      className="w-20 text-right tabular-nums"
-                      value={row.hours}
-                      onChange={(e) =>
-                        setRows((all) => all.map((r, j) => (j === i ? { ...r, hours: e.target.value } : r)))
-                      }
-                      aria-label="Ore"
-                    />
-                    <span className="text-[13px] text-muted-foreground">ore</span>
-                    <button
-                      type="button"
-                      className="ml-auto inline-flex size-11 items-center justify-center text-muted-foreground"
-                      aria-label="Togli riga"
-                      onClick={() => setRows((all) => all.filter((_, j) => j !== i))}
-                    >
-                      ×
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex size-10 items-center justify-center text-muted-foreground"
+                    aria-label="Togli riga"
+                    onClick={() => setRows((all) => all.filter((_, j) => j !== i))}
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
               <div className="flex flex-wrap gap-2">
@@ -368,10 +382,10 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                   Aggiungi classe
                 </Button>
                 <Button type="button" variant="outline" onClick={() => addRow("Mensa")}>
-                  Aggiungi mensa
+                  + Mensa
                 </Button>
                 <Button type="button" variant="outline" onClick={() => addRow("Laboratorio")}>
-                  Aggiungi laboratorio
+                  + Laboratorio
                 </Button>
               </div>
               <p className="text-[12px] tabular-nums text-muted-foreground">
