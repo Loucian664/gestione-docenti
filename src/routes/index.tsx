@@ -160,8 +160,8 @@ function OggiPage() {
       />
 
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex items-center justify-center gap-2">
+        <div className="mx-auto flex w-[18.5rem] flex-col items-stretch gap-2 sm:mx-0 sm:w-[21rem]">
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="icon"
@@ -171,7 +171,7 @@ function OggiPage() {
             >
               <ChevronLeft />
             </Button>
-            <div className="flex h-12 w-[12.5rem] shrink-0 flex-col justify-center px-1 text-center sm:w-[15rem]">
+            <div className="flex h-12 min-w-0 flex-1 flex-col justify-center px-1 text-center">
               <p className="truncate font-display text-[17px] capitalize leading-tight sm:text-xl">{formatDayMonth(date)}</p>
               <p className="truncate text-[12px] text-muted-foreground">{data.settings.schoolName}</p>
             </div>
@@ -185,23 +185,22 @@ function OggiPage() {
               <ChevronRight />
             </Button>
           </div>
-          <div className="flex items-center justify-center gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => store.setSelectedDate(e.target.value)}
+              className="h-10 min-w-0 w-full rounded-md border border-input bg-card px-3 text-sm"
+              aria-label="Scegli data"
+            />
             <Button
               variant="outline"
-              size="sm"
-              className="shrink-0"
+              className="h-10 min-w-0 w-full border-input"
               disabled={date === todayIso()}
               onClick={() => store.setSelectedDate(todayIso())}
             >
               Oggi
             </Button>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => store.setSelectedDate(e.target.value)}
-              className="h-10 rounded-md border border-input bg-card px-2 text-sm"
-              aria-label="Scegli data"
-            />
           </div>
         </div>
         <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-print-hide>
