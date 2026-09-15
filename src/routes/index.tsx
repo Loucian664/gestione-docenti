@@ -160,8 +160,8 @@ function OggiPage() {
       />
 
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex items-center justify-center gap-2">
             <Button
               variant="outline"
               size="icon"
@@ -185,22 +185,24 @@ function OggiPage() {
               <ChevronRight />
             </Button>
           </div>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => store.setSelectedDate(e.target.value)}
-            className="h-10 rounded-md border border-input bg-card px-2 text-sm"
-            aria-label="Scegli data"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            disabled={date === todayIso()}
-            onClick={() => store.setSelectedDate(todayIso())}
-          >
-            Oggi
-          </Button>
+          <div className="flex items-center justify-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={date === todayIso()}
+              onClick={() => store.setSelectedDate(todayIso())}
+            >
+              Oggi
+            </Button>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => store.setSelectedDate(e.target.value)}
+              className="h-10 rounded-md border border-input bg-card px-2 text-sm"
+              aria-label="Scegli data"
+            />
+          </div>
         </div>
         <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-print-hide>
           <Button variant="outline" size="sm" className="shrink-0" onClick={copySheet}>
