@@ -202,6 +202,12 @@ export function resolveCattedre(data: PersistedData): Cattedra[] {
 }
 
 export function cattedreOfTeacher(data: PersistedData, teacherId: string): Cattedra[] {
+  const t = data.teachers.find((x) => x.id === teacherId);
+  if (t && Array.isArray(t.cardRows)) {
+    return t.cardRows
+      .filter((r) => r.classId && r.subject && r.hours > 0)
+      .map((r) => ({ classId: r.classId, subject: r.subject, hours: r.hours, teacherId }));
+  }
   const saved = data.cattedre ?? [];
   if (saved.length > 0) {
     return saved.filter((c) => c.teacherId === teacherId && c.hours > 0);

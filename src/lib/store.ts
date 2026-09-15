@@ -111,9 +111,10 @@ export const useAppStore = create<AppStore>()(
           rows: { classId: string; subject: string; hours: number }[],
         ) => {
           const teacherId = id ?? uid("t");
+          const nextPatch = { ...patch, cardRows: rows };
           const teachers = id
-            ? get().teachers.map((t) => (t.id === id ? { ...t, ...patch } : t))
-            : [...get().teachers, { ...patch, id: teacherId }];
+            ? get().teachers.map((t) => (t.id === id ? { ...t, ...nextPatch } : t))
+            : [...get().teachers, { ...nextPatch, id: teacherId }];
           const cattedre = applyTeacherCattedre({ ...snapshot(get()), teachers }, teacherId, rows);
           save({ teachers, cattedre });
           return teacherId;

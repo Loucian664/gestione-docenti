@@ -37,6 +37,8 @@ export type Teacher = {
   preferSlots?: { day: DayOfWeek; periodId: string }[];
   /** Obbligo: in quell’ora, in una delle classi indicate. */
   mustSlots?: { day: DayOfWeek; periodId: string; classId?: string; classIds?: string[] }[];
+  /** Righe della scheda (classe, materia, ore). Restano sul docente anche se le cattedre globali si perdono. */
+  cardRows?: { classId: string; subject: string; hours: number }[];
 };
 
 export type SchoolClass = {
