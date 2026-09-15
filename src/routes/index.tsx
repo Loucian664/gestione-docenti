@@ -159,7 +159,7 @@ function OggiPage() {
         }
       />
 
-      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mb-5 flex flex-col items-center gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col items-center gap-2">
           <div className="flex items-center justify-center gap-2">
             <Button
@@ -171,7 +171,7 @@ function OggiPage() {
             >
               <ChevronLeft />
             </Button>
-            <div className="flex h-12 w-[12.5rem] shrink-0 flex-col justify-center px-1 text-center sm:w-[15rem]">
+            <div className="flex h-12 w-[13.5rem] shrink-0 flex-col justify-center px-1 text-center sm:w-[16rem]">
               <p className="truncate font-display text-[17px] capitalize leading-tight sm:text-xl">{formatDayMonth(date)}</p>
               <p className="truncate text-[12px] text-muted-foreground">{data.settings.schoolName}</p>
             </div>
@@ -186,13 +186,6 @@ function OggiPage() {
             </Button>
           </div>
           <div className="flex items-center justify-center gap-2">
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => store.setSelectedDate(e.target.value)}
-              className="h-10 rounded-md border border-input bg-card px-2 text-sm"
-              aria-label="Scegli data"
-            />
             <Button
               variant="outline"
               className="h-10 shrink-0 px-4"
@@ -201,9 +194,16 @@ function OggiPage() {
             >
               Oggi
             </Button>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => store.setSelectedDate(e.target.value)}
+              className="h-10 appearance-none rounded-md border border-input bg-card px-3 text-sm leading-10 [-webkit-appearance:none]"
+              aria-label="Scegli data"
+            />
           </div>
         </div>
-        <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-print-hide>
+        <div className="flex flex-wrap justify-center gap-2 lg:justify-end" data-print-hide>
           <Button variant="outline" size="sm" className="shrink-0" onClick={copySheet}>
             <Copy />
             Copia foglio
@@ -221,7 +221,7 @@ function OggiPage() {
             PDF
           </Button>
         </div>
-        <p className="text-[12px] text-muted-foreground md:hidden" data-print-hide>
+        <p className="text-center text-[12px] text-muted-foreground md:hidden" data-print-hide>
           Su iPhone, Foto si salva in Foto; PDF apre Condividi, File o Stampa.
         </p>
       </div>
