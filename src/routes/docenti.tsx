@@ -11,11 +11,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useAppStore, snapshot } from "@/lib/store";
 import { monthSubCounts, teacherName } from "@/lib/coverage";
 import { applyTeacherCattedre, cattedreOfTeacher } from "@/lib/build-timetable";
-import { DAY_SHORT, ROLE_LABELS, ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole } from "@/lib/types";
+import { DAY_SHORT, ROLE_LABELS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole } from "@/lib/types";
 import { Plus, Search, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { corePeriods } from "@/lib/periods";
+import { SubjectSelect } from "@/components/subject-select";
 
 export const Route = createFileRoute("/docenti")({ component: DocentiPage });
 
@@ -313,7 +314,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             </p>
             <div className="mt-2 flex flex-col gap-2">
               {rows.map((row, i) => (
-                <div key={i} className="grid grid-cols-[1fr_1fr_4.5rem_2.5rem] items-center gap-1.5">
+                <div key={i} className="flex flex-col gap-1.5 rounded-lg bg-muted/50 p-2">
                   <NativeSelect
                     value={row.classId}
                     onChange={(e) =>
@@ -331,52 +332,35 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                         </option>
                       ))}
                   </NativeSelect>
-                  <NativeSelect
+                  <SubjectSelect
                     value={row.subject}
-                    onChange={(e) =>
-                      setRows((all) => all.map((r, j) => (j === i ? { ...r, subject: e.target.value } : r)))
+                    onChange={(subject) =>
+                      setRows((all) => all.map((r, j) => (j === i ? { ...r, subject } : r)))
                     }
-                    aria-label="Materia"
-                  >
-                    <option value="">Materia</option>
-                    <optgroup label="Materie">
-                      {CURRICULAR_SUBJECTS.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Altre attività">
-                      {ACTIVITY_SUBJECTS.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </optgroup>
-                    {row.subject && !SUBJECTS.includes(row.subject) && (
-                      <option value={row.subject}>{row.subject}</option>
-                    )}
-                  </NativeSelect>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={18}
-                    inputMode="numeric"
-                    className="text-right tabular-nums"
-                    value={row.hours}
-                    onChange={(e) =>
-                      setRows((all) => all.map((r, j) => (j === i ? { ...r, hours: e.target.value } : r)))
-                    }
-                    aria-label="Ore"
                   />
-                  <button
-                    type="button"
-                    className="inline-flex size-10 items-center justify-center text-muted-foreground"
-                    aria-label="Togli riga"
-                    onClick={() => setRows((all) => all.filter((_, j) => j !== i))}
-                  >
-                    ×
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={18}
+                      inputMode="numeric"
+                      className="w-20 text-right tabular-nums"
+                      value={row.hours}
+                      onChange={(e) =>
+                        setRows((all) => all.map((r, j) => (j === i ? { ...r, hours: e.target.value } : r)))
+                      }
+                      aria-label="Ore"
+                    />
+                    <span className="text-[13px] text-muted-foreground">ore</span>
+                    <button
+                      type="button"
+                      className="ml-auto inline-flex size-11 items-center justify-center text-muted-foreground"
+                      aria-label="Togli riga"
+                      onClick={() => setRows((all) => all.filter((_, j) => j !== i))}
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
               ))}
               <div className="flex flex-wrap gap-2">
