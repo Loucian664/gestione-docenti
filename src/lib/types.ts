@@ -162,7 +162,7 @@ export const SUBSTITUTION_TYPES: { value: SubstitutionType; label: string; hint:
   { value: "altro", label: "Altro", hint: "" },
 ];
 
-export const SUBJECTS = [
+export const CURRICULAR_SUBJECTS = [
   "Italiano",
   "Storia",
   "Geografia",
@@ -177,11 +177,17 @@ export const SUBJECTS = [
   "Scienze Motorie",
   "Religione",
   "Educazione civica",
+];
+
+export const ACTIVITY_SUBJECTS = [
   "Sostegno",
   "Potenziamento",
-  "Altro",
   "Mensa",
+  "Laboratorio",
+  "Altro",
 ];
+
+export const SUBJECTS = [...CURRICULAR_SUBJECTS, ...ACTIVITY_SUBJECTS];
 
 export const DAY_LABELS: Record<DayOfWeek, string> = {
   1: "Lunedì",
