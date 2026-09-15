@@ -17,7 +17,8 @@ import {
   teacherShort,
   teacherSlotAt,
 } from "@/lib/coverage";
-import { ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, DAY_SHORT, SUBJECTS, type DayOfWeek } from "@/lib/types";
+import { SubjectSelect } from "@/components/subject-select";
+import { DAY_SHORT, type DayOfWeek } from "@/lib/types";
 import { toSchoolDay } from "@/lib/dates";
 import { Download, Images as ImageIcon, FileText, Archive, BookOpen, LayoutGrid, Users, StretchHorizontal } from "lucide-react";
 import { docentiPdfZip, schoolFileTag, timetableXlsx } from "@/lib/export";
@@ -735,24 +736,8 @@ function CellEditor({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Materia</Label>
-            <NativeSelect value={subject} onChange={(e) => setSubject(e.target.value)}>
-              <optgroup label="Materie">
-                {CURRICULAR_SUBJECTS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Altre attività">
-                {ACTIVITY_SUBJECTS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </optgroup>
-              {subject && !SUBJECTS.includes(subject) && <option value={subject}>{subject}</option>}
-            </NativeSelect>
-            <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
+            <SubjectSelect value={subject} onChange={setSubject} />
+            <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" placeholder="O scrivi un nome" />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose}>
@@ -889,24 +874,8 @@ function TeacherHourEditor({
           )}
           <div className="flex flex-col gap-1.5">
             <Label>Materia / attività</Label>
-            <NativeSelect value={subject} onChange={(e) => setSubject(e.target.value)}>
-              <optgroup label="Materie">
-                {CURRICULAR_SUBJECTS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Altre attività">
-                {ACTIVITY_SUBJECTS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </optgroup>
-              {subject && !SUBJECTS.includes(subject) && <option value={subject}>{subject}</option>}
-            </NativeSelect>
-            <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" />
+            <SubjectSelect value={subject} onChange={setSubject} />
+            <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" placeholder="O scrivi un nome" />
           </div>
           <div className="flex flex-wrap justify-end gap-2 pt-2">
             {existing && (
