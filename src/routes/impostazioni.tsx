@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useRef, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/layout";
+import { ThemePicker } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,6 +62,14 @@ function ImpostazioniPage() {
         title="Impostazioni"
         description="Strumento personale per le sostituzioni. Intestazione, orario e backup."
       />
+
+      <section className="paper-panel mb-4 rounded-xl p-5">
+        <h2 className="font-display text-lg">Aspetto</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Night mode a mano, oppure automatica quando il telefono o il computer passano al buio.
+        </p>
+        <ThemePicker />
+      </section>
 
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Plesso</h2>

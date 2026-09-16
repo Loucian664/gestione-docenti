@@ -385,7 +385,7 @@ function OrarioPage() {
                           type="button"
                           onClick={() => setCellEdit({ day: quadroDay, periodId: p.id, classId: c.id })}
                           className="flex min-h-[4.25rem] w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
-                          style={t ? { background: `${t.color}1f` } : undefined}
+                          style={t ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` } : undefined}
                         >
                           {occupants.length === 0 ? (
                             <span className="text-[11px] text-ink-faint">—</span>
@@ -504,7 +504,7 @@ function OrarioPage() {
                           type="button"
                           onClick={() => setCellEdit({ day: d, periodId: p.id, classId })}
                           className="flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
-                          style={t ? { background: `${t.color}18` } : undefined}
+                          style={t ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` } : undefined}
                         >
                           {occupants.length === 0 ? (
                             <span className="text-[12px] text-ink-faint">Vuoto</span>
@@ -578,7 +578,7 @@ function OrarioPage() {
                           className="flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
                           style={
                             slot && currentTeacher
-                              ? { background: `${currentTeacher.color}18` }
+                              ? { background: `color-mix(in srgb, ${currentTeacher.color} var(--teacher-wash), transparent)` }
                               : disp
                                 ? { background: "color-mix(in oklab, var(--color-accent) 45%, transparent)" }
                                 : undefined

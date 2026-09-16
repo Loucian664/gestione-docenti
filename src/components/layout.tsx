@@ -28,6 +28,7 @@ import {
   writePersistSync,
 } from "@/lib/persist-storage";
 import type { PersistedData } from "@/lib/types";
+import { ThemeCycleButton, ThemePicker } from "@/components/theme-toggle";
 
 const NAV = [
   { to: "/", label: "Oggi", icon: CalendarDays },
@@ -167,7 +168,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="mt-auto px-3 pb-4">
-          <p className="px-2 text-[11px] leading-snug text-sidebar-muted">
+          <ThemePicker compact />
+          <p className="mt-3 px-2 text-[11px] leading-snug text-sidebar-muted">
             Strumento personale
             <br />
             Salvato su questo dispositivo
@@ -192,6 +194,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 {uncovered} scoperte
               </span>
             )}
+            <ThemeCycleButton />
             <Link
               to="/report"
               className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"

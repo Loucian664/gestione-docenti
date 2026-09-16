@@ -896,7 +896,7 @@ function ClassPreview({
                   <td key={d} className="p-1.5 align-top">
                     <div
                       className="flex min-h-16 w-full flex-col rounded-md px-2 py-1.5"
-                      style={t ? { background: `${t.color}18` } : undefined}
+                      style={t ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` } : undefined}
                     >
                       <CellBody occupants={occupants} teachers={teachers} />
                     </div>
@@ -956,7 +956,7 @@ function DayPreview({
                   <td key={c.id} className="p-1 align-top">
                     <div
                       className="flex min-h-[4.25rem] w-full flex-col rounded-md px-2 py-1.5"
-                      style={t ? { background: `${t.color}1f` } : undefined}
+                      style={t ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` } : undefined}
                     >
                       <CellBody occupants={occupants} teachers={teachers} />
                     </div>
