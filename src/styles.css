@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Fraunces", ui-serif, Georgia, "Times New Roman", serif;
@@ -51,12 +53,63 @@
     0px 0px 0px 1px rgba(28, 25, 21, 0.1),
     0px 1px 2px -1px rgba(28, 25, 21, 0.08),
     0px 4px 10px 0px rgba(28, 25, 21, 0.06);
+
+  --teacher-wash: 12%;
+  --shell-glow: rgba(31, 74, 60, 0.05);
+}
+
+.dark {
+  --color-background: #111614;
+  --color-foreground: #ece7dc;
+  --color-card: #1a201c;
+  --color-card-foreground: #ece7dc;
+  --color-popover: #1f2622;
+  --color-popover-foreground: #ece7dc;
+  --color-primary: #9dc4b3;
+  --color-primary-foreground: #0e1613;
+  --color-secondary: #242c28;
+  --color-secondary-foreground: #ece7dc;
+  --color-muted: #242c28;
+  --color-muted-foreground: #a39c90;
+  --color-accent: #24332c;
+  --color-accent-foreground: #c5ddd2;
+  --color-destructive: #e07a6c;
+  --color-destructive-foreground: #1a100e;
+  --color-border: #2f3833;
+  --color-input: #2f3833;
+  --color-ring: #9dc4b3;
+  --color-sidebar: #0c1411;
+  --color-sidebar-foreground: #e6e0d2;
+  --color-sidebar-muted: #9aada4;
+  --color-sidebar-hover: #17382e;
+  --color-warning: #e0b066;
+  --color-warning-soft: #3a2e18;
+  --color-success: #9dc4b3;
+  --color-success-soft: #1c322c;
+  --color-danger-soft: #3a221e;
+  --color-ink-faint: #8f8a80;
+  --color-paper-rule: #2a322e;
+  --shadow-border:
+    0px 0px 0px 1px rgba(236, 231, 220, 0.06),
+    0px 1px 2px -1px rgba(0, 0, 0, 0.45),
+    0px 8px 18px -12px rgba(0, 0, 0, 0.55);
+  --shadow-border-hover:
+    0px 0px 0px 1px rgba(236, 231, 220, 0.1),
+    0px 1px 2px -1px rgba(0, 0, 0, 0.5),
+    0px 10px 22px -10px rgba(0, 0, 0, 0.6);
+  --teacher-wash: 28%;
+  --shell-glow: rgba(157, 196, 179, 0.06);
 }
 
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   button:not(:disabled),
@@ -106,7 +159,7 @@
 .app-shell {
   min-height: 100dvh;
   background:
-    radial-gradient(1200px 500px at 0% 0%, rgba(31, 74, 60, 0.05), transparent 55%),
+    radial-gradient(1200px 500px at 0% 0%, var(--shell-glow), transparent 55%),
     var(--color-background);
 }
 

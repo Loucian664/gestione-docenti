@@ -2,7 +2,9 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-r
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { AppLayout } from "@/components/layout";
+import { ThemeProvider, useTheme } from "@/components/theme-provider";
 import { Toaster } from "sonner";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Gestione Docenti";
@@ -16,6 +18,7 @@ export const Route = createRootRoute({
         { name: "viewport", content: "width=device-width, initial-scale=1" },
         { title: APP_NAME },
         { name: "theme-color", content: "#1F4A3C" },
+        { name: "color-scheme", content: "light dark" },
         {
           name: "description",
           content:
@@ -37,20 +40,28 @@ export const Route = createRootRoute({
   component: RootComponent,
 });
 
+function ThemedToaster() {
+  const { resolved } = useTheme();
+  return <Toaster position="bottom-right" richColors closeButton theme={resolved} />;
+}
+
 function RootComponent() {
   return (
     <html lang="it" className="antialiased" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
         <HeadContent />
       </head>
       <body>
         <PreviewHostBridge />
-        <AuthProvider>
-          <AppLayout>
-            <Outlet />
-          </AppLayout>
-          <Toaster position="bottom-right" richColors closeButton />
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <AppLayout>
+              <Outlet />
+            </AppLayout>
+            <ThemedToaster />
+          </AuthProvider>
+        </ThemeProvider>
         <Scripts />
       </body>
     </html>
