@@ -29,7 +29,37 @@ function triggerDownload(blob: Blob, filename: string): boolean {
   }
 }
 
+function copyViaSelection(html: string): boolean {
+  const el = document.createElement("div");
+  el.setAttribute("contenteditable", "true");
+  el.innerHTML = html;
+  el.style.position = "fixed";
+  el.style.left = "0";
+  el.style.top = "0";
+  el.style.width = "1px";
+  el.style.height = "1px";
+  el.style.opacity = "0.01";
+  el.style.pointerEvents = "none";
+  document.body.appendChild(el);
+  el.focus();
+  const sel = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  sel?.removeAllRanges();
+  el.remove();
+  return ok;
+}
+
 export async function copyText(text: string, html?: string): Promise<boolean> {
+  if (html && copyViaSelection(html)) return true;
   if (html && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
     try {
       await navigator.clipboard.write([
@@ -40,7 +70,7 @@ export async function copyText(text: string, html?: string): Promise<boolean> {
       ]);
       return true;
     } catch {
-      /* fall through to plain text */
+      /* fall through */
     }
   }
   try {

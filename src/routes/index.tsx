@@ -35,7 +35,7 @@ import {
   type CoverageNeed,
 } from "@/lib/coverage";
 import { dailySheetHeading, dailySheetHtml, dailySheetText, substitutionsXlsx } from "@/lib/export";
-import { copyText, isCoarsePointer, shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
+import { copyText, shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { textToPdf } from "@/lib/pdf";
 import { bachecaJpeg } from "@/lib/sheet-image";
 import { formatDayMonth, formatLong, isWeekend, shiftSchoolDay, weekDaysIso, toSchoolDay, todayIso } from "@/lib/dates";
@@ -85,17 +85,8 @@ function OggiPage() {
   }
 
   async function copySheet() {
-    const shareText = dailySheetText(data, date, needs, { whatsappBold: true });
-    if (isCoarsePointer() && typeof navigator.share === "function") {
-      try {
-        await navigator.share({ title: dailySheetHeading(date), text: shareText });
-        toast.success("Scegli WhatsApp, Mail o un’altra app");
-        return;
-      } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") return;
-      }
-    }
-    const ok = await copyText(shareText, dailySheetHtml(data, date, needs));
+    const text = dailySheetText(data, date, needs);
+    const ok = await copyText(text, dailySheetHtml(data, date, needs));
     toastSave(ok ? "copied" : "failed", "copy");
   }
 

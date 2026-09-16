@@ -267,15 +267,8 @@ function dailySheetBody(data: PersistedData, needs: CoverageNeed[]): string[] {
   return lines;
 }
 
-export function dailySheetText(
-  data: PersistedData,
-  date: string,
-  needs: CoverageNeed[],
-  opts?: { whatsappBold?: boolean },
-): string {
-  const heading = dailySheetHeading(date);
-  const title = opts?.whatsappBold ? `*${heading}*` : heading;
-  return [title, ...dailySheetBody(data, needs)].join("\n");
+export function dailySheetText(data: PersistedData, date: string, needs: CoverageNeed[]): string {
+  return [dailySheetHeading(date), ...dailySheetBody(data, needs)].join("\n");
 }
 
 function escapeHtml(s: string): string {
@@ -287,11 +280,11 @@ function escapeHtml(s: string): string {
 }
 
 export function dailySheetHtml(data: PersistedData, date: string, needs: CoverageNeed[]): string {
-  const heading = dailySheetHeading(date);
+  const heading = escapeHtml(dailySheetHeading(date));
   const body = dailySheetBody(data, needs)
-    .map((line) => escapeHtml(line) || "<br>")
+    .map((line) => escapeHtml(line))
     .join("<br>\n");
-  return `<div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.45"><p style="margin:0 0 8px;font-weight:700">${escapeHtml(heading)}</p><p style="margin:0;white-space:pre-wrap">${body}</p></div>`;
+  return `<html><body><p><b>${heading}</b></p><p>${body}</p></body></html>`;
 }
 
 export function backupJson(data: PersistedData): string {
