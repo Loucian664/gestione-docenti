@@ -34,7 +34,7 @@ import {
   teacherShort,
   type CoverageNeed,
 } from "@/lib/coverage";
-import { dailySheetText, substitutionsXlsx } from "@/lib/export";
+import { dailySheetHeading, dailySheetHtml, dailySheetText, substitutionsXlsx } from "@/lib/export";
 import { copyText, isCoarsePointer, shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { textToPdf } from "@/lib/pdf";
 import { bachecaJpeg } from "@/lib/sheet-image";
@@ -86,16 +86,17 @@ function OggiPage() {
 
   async function copySheet() {
     const text = dailySheetText(data, date, needs);
+    const shareText = dailySheetText(data, date, needs, { whatsappBold: true });
     if (isCoarsePointer() && typeof navigator.share === "function") {
       try {
-        await navigator.share({ title: `Sostituzioni ${date}`, text });
+        await navigator.share({ title: dailySheetHeading(date), text: shareText });
         toast.success("Scegli WhatsApp, Mail o un’altra app");
         return;
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
       }
     }
-    const ok = await copyText(text);
+    const ok = await copyText(text, dailySheetHtml(data, date, needs));
     toastSave(ok ? "copied" : "failed", "copy");
   }
 
@@ -473,10 +474,15 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: "ok
 function PrintSheet({ date, needs }: { date: string; needs: CoverageNeed[] }) {
   const store = useAppStore();
   const data = snapshot(store);
-  const text = dailySheetText(data, date, needs);
+  const heading = dailySheetHeading(date);
+  const body = dailySheetText(data, date, needs)
+    .split("\n")
+    .slice(1)
+    .join("\n");
   return (
-    <section data-print-only className="print-sheet mt-10 hidden whitespace-pre-wrap font-sans text-sm leading-relaxed">
-      {text}
+    <section data-print-only className="print-sheet mt-10 hidden font-sans text-sm leading-relaxed">
+      <p className="font-bold uppercase">{heading}</p>
+      <pre className="mt-2 whitespace-pre-wrap font-sans">{body}</pre>
       <p className="mt-10 text-[12px]">Firma del responsabile di plesso ________________________________</p>
     </section>
   );
