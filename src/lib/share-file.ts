@@ -29,7 +29,20 @@ function triggerDownload(blob: Blob, filename: string): boolean {
   }
 }
 
-export async function copyText(text: string): Promise<boolean> {
+export async function copyText(text: string, html?: string): Promise<boolean> {
+  if (html && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/plain": new Blob([text], { type: "text/plain" }),
+          "text/html": new Blob([html], { type: "text/html" }),
+        }),
+      ]);
+      return true;
+    } catch {
+      /* fall through to plain text */
+    }
+  }
   try {
     await navigator.clipboard.writeText(text);
     return true;

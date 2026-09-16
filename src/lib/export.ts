@@ -228,9 +228,12 @@ function classCode(name: string): string {
   return name.replace(/ª\s*/g, "").replace(/\s+/g, "");
 }
 
-export function dailySheetText(data: PersistedData, date: string, needs: CoverageNeed[]): string {
+export function dailySheetHeading(date: string): string {
+  return formatLong(date).toLocaleUpperCase("it-IT");
+}
+
+function dailySheetBody(data: PersistedData, needs: CoverageNeed[]): string[] {
   const lines: string[] = [];
-  lines.push(`SOSTITUZIONI - ${formatLong(date)}`);
   const head = [data.settings.schoolName, data.settings.plesso, data.settings.schoolYear]
     .map((s) => s.trim())
     .filter(Boolean);
@@ -238,8 +241,7 @@ export function dailySheetText(data: PersistedData, date: string, needs: Coverag
 
   if (needs.length === 0) {
     lines.push("Nessuna sostituzione.");
-    lines.push("Coperture: 0/0.");
-    return lines.join("\n");
+    return lines;
   }
 
   const rows = needs.map((n) => {
@@ -266,11 +268,34 @@ export function dailySheetText(data: PersistedData, date: string, needs: Coverag
       `${padEnd(r.ora, oraW)}  -  ${padEnd(r.cls, clsW)}  |  assente ${padEnd(r.absent, absW)}  |  copre ${r.who}`,
     );
   }
+  return lines;
+}
 
-  const uncovered = needs.filter((n) => !isCovered(n)).length;
-  const covered = needs.length - uncovered;
-  lines.push(`Coperture: ${covered}/${needs.length}.`);
-  return lines.join("\n");
+export function dailySheetText(
+  data: PersistedData,
+  date: string,
+  needs: CoverageNeed[],
+  opts?: { whatsappBold?: boolean },
+): string {
+  const heading = dailySheetHeading(date);
+  const title = opts?.whatsappBold ? `*${heading}*` : heading;
+  return [title, ...dailySheetBody(data, needs)].join("\n");
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function dailySheetHtml(data: PersistedData, date: string, needs: CoverageNeed[]): string {
+  const heading = dailySheetHeading(date);
+  const body = dailySheetBody(data, needs)
+    .map((line) => escapeHtml(line) || "<br>")
+    .join("<br>\n");
+  return `<div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.45"><p style="margin:0 0 8px;font-weight:700">${escapeHtml(heading)}</p><p style="margin:0;white-space:pre-wrap">${body}</p></div>`;
 }
 
 export function backupJson(data: PersistedData): string {
