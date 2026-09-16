@@ -234,10 +234,6 @@ export function dailySheetHeading(date: string): string {
 
 function dailySheetBody(data: PersistedData, needs: CoverageNeed[]): string[] {
   const lines: string[] = [];
-  const head = [data.settings.schoolName, data.settings.plesso, data.settings.schoolYear]
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (head.length) lines.push(head.join(" - "));
 
   if (needs.length === 0) {
     lines.push("Nessuna sostituzione.");
