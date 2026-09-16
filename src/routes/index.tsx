@@ -85,7 +85,6 @@ function OggiPage() {
   }
 
   async function copySheet() {
-    const text = dailySheetText(data, date, needs);
     const shareText = dailySheetText(data, date, needs, { whatsappBold: true });
     if (isCoarsePointer() && typeof navigator.share === "function") {
       try {
@@ -96,7 +95,7 @@ function OggiPage() {
         if (err instanceof Error && err.name === "AbortError") return;
       }
     }
-    const ok = await copyText(text, dailySheetHtml(data, date, needs));
+    const ok = await copyText(shareText, dailySheetHtml(data, date, needs));
     toastSave(ok ? "copied" : "failed", "copy");
   }
 
