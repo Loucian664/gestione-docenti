@@ -271,6 +271,44 @@ export function dailySheetText(data: PersistedData, date: string, needs: Coverag
   return [dailySheetHeading(date), ...dailySheetBody(data, needs)].join("\n");
 }
 
+const BOLD_ACCENT: Record<string, string> = {
+  "\u00c0": String.fromCodePoint(0x1d5d4) + "\u0300",
+  "\u00c8": String.fromCodePoint(0x1d5d8) + "\u0300",
+  "\u00c9": String.fromCodePoint(0x1d5d8) + "\u0301",
+  "\u00cc": String.fromCodePoint(0x1d5dc) + "\u0300",
+  "\u00d2": String.fromCodePoint(0x1d5e2) + "\u0300",
+  "\u00d9": String.fromCodePoint(0x1d5e8) + "\u0300",
+};
+
+/** Grassetto visibile anche dove si incolla solo testo (Note di Apple). */
+export function toPlainBold(s: string): string {
+  let out = "";
+  for (const ch of s) {
+    if (BOLD_ACCENT[ch]) {
+      out += BOLD_ACCENT[ch];
+      continue;
+    }
+    if (ch >= "A" && ch <= "Z") {
+      out += String.fromCodePoint(0x1d5d4 + (ch.charCodeAt(0) - 65));
+      continue;
+    }
+    if (ch >= "a" && ch <= "z") {
+      out += String.fromCodePoint(0x1d5ee + (ch.charCodeAt(0) - 97));
+      continue;
+    }
+    if (ch >= "0" && ch <= "9") {
+      out += String.fromCodePoint(0x1d7ec + (ch.charCodeAt(0) - 48));
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+export function dailySheetCopyPlain(data: PersistedData, date: string, needs: CoverageNeed[]): string {
+  return [toPlainBold(dailySheetHeading(date)), ...dailySheetBody(data, needs)].join("\n");
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -281,10 +319,10 @@ function escapeHtml(s: string): string {
 
 export function dailySheetHtml(data: PersistedData, date: string, needs: CoverageNeed[]): string {
   const heading = escapeHtml(dailySheetHeading(date));
-  const body = dailySheetBody(data, needs)
-    .map((line) => escapeHtml(line))
-    .join("<br>\n");
-  return `<html><body><p><b>${heading}</b></p><p>${body}</p></body></html>`;
+  const rows = dailySheetBody(data, needs)
+    .map((line) => `<div>${escapeHtml(line) || "&nbsp;"}</div>`)
+    .join("");
+  return `<b>${heading}</b>${rows}`;
 }
 
 export function backupJson(data: PersistedData): string {

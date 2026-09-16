@@ -34,7 +34,7 @@ import {
   teacherShort,
   type CoverageNeed,
 } from "@/lib/coverage";
-import { dailySheetHeading, dailySheetHtml, dailySheetText, substitutionsXlsx } from "@/lib/export";
+import { dailySheetCopyPlain, dailySheetHeading, dailySheetHtml, dailySheetText, substitutionsXlsx } from "@/lib/export";
 import { copyText, shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { textToPdf } from "@/lib/pdf";
 import { bachecaJpeg } from "@/lib/sheet-image";
@@ -85,8 +85,7 @@ function OggiPage() {
   }
 
   async function copySheet() {
-    const text = dailySheetText(data, date, needs);
-    const ok = await copyText(text, dailySheetHtml(data, date, needs));
+    const ok = await copyText(dailySheetCopyPlain(data, date, needs), dailySheetHtml(data, date, needs));
     toastSave(ok ? "copied" : "failed", "copy");
   }
 

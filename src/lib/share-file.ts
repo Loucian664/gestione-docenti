@@ -29,43 +29,35 @@ function triggerDownload(blob: Blob, filename: string): boolean {
   }
 }
 
-function copyViaSelection(html: string): boolean {
-  const el = document.createElement("div");
-  el.setAttribute("contenteditable", "true");
-  el.innerHTML = html;
-  el.style.position = "fixed";
-  el.style.left = "0";
-  el.style.top = "0";
-  el.style.width = "1px";
-  el.style.height = "1px";
-  el.style.opacity = "0.01";
-  el.style.pointerEvents = "none";
-  document.body.appendChild(el);
-  el.focus();
-  const sel = window.getSelection();
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  sel?.removeAllRanges();
-  sel?.addRange(range);
+function copyRich(html: string, text: string): boolean {
+  let wrote = false;
+  const onCopy = (e: ClipboardEvent) => {
+    e.preventDefault();
+    e.clipboardData?.setData("text/html", html);
+    e.clipboardData?.setData("text/plain", text);
+    wrote = true;
+  };
+  document.addEventListener("copy", onCopy);
   let ok = false;
   try {
     ok = document.execCommand("copy");
   } catch {
     ok = false;
   }
-  sel?.removeAllRanges();
-  el.remove();
-  return ok;
+  document.removeEventListener("copy", onCopy);
+  return ok && wrote;
 }
 
 export async function copyText(text: string, html?: string): Promise<boolean> {
-  if (html && copyViaSelection(html)) return true;
+  if (html && copyRich(html, text)) return true;
   if (html && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
     try {
+      const htmlBlob = new Blob([html], { type: "text/html" });
+      const textBlob = new Blob([text], { type: "text/plain" });
       await navigator.clipboard.write([
         new ClipboardItem({
-          "text/plain": new Blob([text], { type: "text/plain" }),
-          "text/html": new Blob([html], { type: "text/html" }),
+          "text/html": Promise.resolve(htmlBlob),
+          "text/plain": Promise.resolve(textBlob),
         }),
       ]);
       return true;
