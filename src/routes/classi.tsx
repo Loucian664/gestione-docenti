@@ -118,9 +118,9 @@ function ClassDialog({ value, onClose }: { value: SchoolClass | "new"; onClose: 
         <DialogHeader>
           <DialogTitle>{isNew ? "Nuova classe" : "Modifica classe"}</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3">
+        <div className="grid min-w-0 gap-3">
           <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1.5">
               <Label>Anno</Label>
               <NativeSelect value={String(grade)} onChange={(e) => setGrade(Number(e.target.value) as 1 | 2 | 3)}>
                 <option value="1">1ª</option>
@@ -128,7 +128,7 @@ function ClassDialog({ value, onClose }: { value: SchoolClass | "new"; onClose: 
                 <option value="3">3ª</option>
               </NativeSelect>
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1.5">
               <Label>Sezione</Label>
               <Input value={section} onChange={(e) => setSection(e.target.value)} maxLength={2} />
             </div>

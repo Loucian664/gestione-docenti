@@ -71,8 +71,8 @@ export function AbsenceDialog({
             Le ore del docente in orario compariranno nella bacheca del giorno da coprire.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
+        <form onSubmit={submit} className="flex min-w-0 flex-col gap-3">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="teacher">Docente</Label>
             <NativeSelect id="teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} required>
               {teachers
@@ -86,16 +86,16 @@ export function AbsenceDialog({
             </NativeSelect>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1.5">
               <Label htmlFor="from">Dal</Label>
               <Input id="from" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} required />
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1.5">
               <Label htmlFor="to">Al</Label>
               <Input id="to" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} required />
             </div>
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="reason">Motivo</Label>
             <NativeSelect
               id="reason"

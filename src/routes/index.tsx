@@ -188,7 +188,7 @@ function OggiPage() {
               type="date"
               value={date}
               onChange={(e) => store.setSelectedDate(e.target.value)}
-              className="h-10 appearance-none rounded-md border border-input bg-card px-3 text-sm leading-10 [-webkit-appearance:none]"
+              className="h-10 w-[10.5rem] min-w-0 appearance-none rounded-md border border-input bg-card text-center text-sm leading-10 [-webkit-appearance:none]"
               aria-label="Scegli data"
             />
           </div>
