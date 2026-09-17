@@ -66,7 +66,7 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Aspetto</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Night mode a mano, oppure automatica quando il telefono o il computer passano al buio.
+          Night mode a mano, oppure automatica con l’ora di inizio e di fine che scegli tu.
         </p>
         <ThemePicker />
       </section>
