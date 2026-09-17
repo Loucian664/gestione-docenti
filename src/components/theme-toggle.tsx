@@ -132,6 +132,7 @@ export function ThemePicker({ compact = false }: { compact?: boolean }) {
               <Input
                 id="theme-dark-from"
                 type="time"
+                className="h-11 text-center text-base"
                 value={schedule.from}
                 onChange={(e) => setSchedule({ ...schedule, from: e.target.value })}
               />
@@ -141,6 +142,7 @@ export function ThemePicker({ compact = false }: { compact?: boolean }) {
               <Input
                 id="theme-dark-until"
                 type="time"
+                className="h-11 text-center text-base"
                 value={schedule.until}
                 onChange={(e) => setSchedule({ ...schedule, until: e.target.value })}
               />
