@@ -14,6 +14,7 @@ import { buildSeed, EMPTY_DATA, applyOrganicoFixes } from "./seed";
 import { uid } from "./utils";
 import { isTimetableTeacher, applyTeacherCattedre } from "./build-timetable";
 import { isTpPeriodId } from "./periods";
+import { todayIso } from "./dates";
 import {
   createDurableStorage,
   noteUserMutation,
@@ -23,7 +24,8 @@ import {
 } from "./persist-storage";
 
 type Actions = {
-  hydrateDefaultDate: () => void;
+  snapToToday: () => void;
+  resumeTodayIfStale: () => void;
   setSelectedDate: (date: string) => void;
   updateSettings: (patch: Partial<Settings>) => void;
   addTeacher: (t: Omit<Teacher, "id">) => string;
@@ -85,11 +87,13 @@ export const useAppStore = create<AppStore>()(
       return {
         ...seed,
 
-        hydrateDefaultDate: () => {
-          const { selectedDate, absences } = get();
-          if (absences.some((a) => a.dateFrom <= selectedDate && a.dateTo >= selectedDate)) return;
-          const first = [...absences].sort((a, b) => a.dateFrom.localeCompare(b.dateFrom))[0];
-          if (first) set({ selectedDate: first.dateFrom });
+        snapToToday: () => {
+          const today = todayIso();
+          if (get().selectedDate !== today) set({ selectedDate: today });
+        },
+        resumeTodayIfStale: () => {
+          const today = todayIso();
+          if (get().selectedDate < today) set({ selectedDate: today });
         },
 
         setSelectedDate: (selectedDate) => save({ selectedDate }),
