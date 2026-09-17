@@ -125,6 +125,16 @@ export function todayIso(): string {
   return isoDate(new Date());
 }
 
+/** A new opening of the app always lands on today. */
+export function dateOnLaunch(today = todayIso()): string {
+  return today;
+}
+
+/** App left open overnight: if the chosen day is in the past, jump to today. */
+export function dateOnResume(saved: string, today = todayIso()): string {
+  return saved < today ? today : saved;
+}
+
 /** Anno scolastico italiano: 1 settembre → 31 agosto. Accetta "2026/2027". */
 export function schoolYearRange(label: string, fallbackIso = todayIso()): { from: string; to: string } {
   const m = label.match(/(20\d{2})\s*[/\-–]\s*(20\d{2})/);

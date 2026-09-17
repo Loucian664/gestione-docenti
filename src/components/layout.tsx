@@ -73,6 +73,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       finished = true;
       markHydrated();
       requestPersistentStorage();
+      useAppStore.getState().snapToToday();
       const snap = snapshot(useAppStore.getState());
       if (persistUser && !isSeedLike(snap)) {
         writePersistSync({ ...snap, origin: "user" });
@@ -89,6 +90,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         if (cancelled || didUserMutate() || !idb) return;
         const extra = parsePersist(idb);
         if (extra) applySlice(extra);
+        useAppStore.getState().snapToToday();
         const snap = snapshot(useAppStore.getState());
         if (!isSeedLike(snap)) writePersistSync({ ...snap, origin: "user" });
       });
@@ -120,6 +122,19 @@ export function AppLayout({ children }: { children: ReactNode }) {
     if ((LEGACY_SCHOOL_NAMES as readonly string[]).includes(name)) {
       useAppStore.getState().updateSettings({ schoolName: DEFAULT_SCHOOL_NAME });
     }
+  }, [persistReady]);
+
+  useEffect(() => {
+    if (!persistReady) return;
+    const onWake = () => useAppStore.getState().resumeTodayIfStale();
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("pageshow", onWake);
+    window.addEventListener("focus", onWake);
+    return () => {
+      document.removeEventListener("visibilitychange", onWake);
+      window.removeEventListener("pageshow", onWake);
+      window.removeEventListener("focus", onWake);
+    };
   }, [persistReady]);
 
   const snap = snapshot(data);
