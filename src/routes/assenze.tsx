@@ -70,11 +70,11 @@ function AssenzePage() {
       />
 
       <div className="paper-panel mb-4 flex flex-col gap-3 rounded-xl p-4 sm:flex-row sm:flex-wrap sm:items-end">
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="ass-from">Dal</Label>
           <Input id="ass-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="ass-to">Al</Label>
           <Input id="ass-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>

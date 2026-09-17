@@ -139,12 +139,12 @@ function ReportPage() {
         }
       />
 
-      <div className="mb-5 flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1.5">
+      <div className="mb-5 flex min-w-0 flex-wrap items-end gap-3">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="from">Dal</Label>
           <Input id="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="to">Al</Label>
           <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>

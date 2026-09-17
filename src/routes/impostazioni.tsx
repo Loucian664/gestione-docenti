@@ -108,7 +108,7 @@ function ImpostazioniPage() {
           {store.settings.periods.filter((p) => !p.tpOnly).map((p) => {
             const i = store.settings.periods.findIndex((x) => x.id === p.id);
             return (
-            <li key={p.id} className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-2">
+            <li key={p.id} className="grid min-w-0 grid-cols-[1fr_5.5rem_5.5rem] gap-2">
               <Input
                 value={p.label}
                 onChange={(e) => {
@@ -162,7 +162,7 @@ function ImpostazioniPage() {
             {store.settings.periods.filter((p) => p.tpOnly).map((p) => {
               const i = store.settings.periods.findIndex((x) => x.id === p.id);
               return (
-                <li key={p.id} className="grid grid-cols-[1fr_5.5rem_5.5rem] gap-2">
+                <li key={p.id} className="grid min-w-0 grid-cols-[1fr_5.5rem_5.5rem] gap-2">
                   <Input
                     value={p.label}
                     onChange={(e) => {
@@ -403,7 +403,7 @@ function ImpostazioniPage() {
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <Label>{label}</Label>
       {children}
     </div>

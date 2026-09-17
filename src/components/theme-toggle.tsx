@@ -127,22 +127,22 @@ export function ThemePicker({ compact = false }: { compact?: boolean }) {
             Alle ore di inizio passa allo scuro, alle ore di fine torna al chiaro. Funziona anche a mezzanotte.
           </p>
           <div className="mt-3 grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1.5">
               <Label htmlFor="theme-dark-from">Inizio</Label>
               <Input
                 id="theme-dark-from"
                 type="time"
-                className="h-11 text-center text-base"
+                className="h-10 text-center"
                 value={schedule.from}
                 onChange={(e) => setSchedule({ ...schedule, from: e.target.value })}
               />
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1.5">
               <Label htmlFor="theme-dark-until">Fine</Label>
               <Input
                 id="theme-dark-until"
                 type="time"
-                className="h-11 text-center text-base"
+                className="h-10 text-center"
                 value={schedule.until}
                 onChange={(e) => setSchedule({ ...schedule, until: e.target.value })}
               />

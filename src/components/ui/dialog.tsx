@@ -31,7 +31,7 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
           <X className="size-5" />
           <span className="sr-only">Chiudi</span>
         </DialogPrimitive.Close>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
           {children}
         </div>
       </DialogPrimitive.Content>
