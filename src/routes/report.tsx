@@ -83,8 +83,8 @@ function ReportPage() {
   return (
     <div>
       <PageHeader
-        title="Equità e monte ore"
-        description="Coperture e assenze nel periodo. In fondo, lo storico di tutto l’anno scolastico."
+        title="Equit\u00e0 e monte ore"
+        description="Coperture e assenze nel periodo. In fondo, lo storico di tutto l\u2019anno scolastico."
         actions={
           <>
             <Button
@@ -157,7 +157,7 @@ function ReportPage() {
 
       {chartData.length > 0 && (
         <div className="paper-panel mb-5 rounded-xl p-4">
-          <h2 className="mb-3 font-display text-lg">Chi ha coperto di più</h2>
+          <h2 className="mb-3 font-display text-lg">Chi ha coperto di pi\u00f9</h2>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
@@ -221,7 +221,7 @@ function ReportPage() {
 
       <h2 className="mt-8 mb-3 font-display text-lg">Assenze per motivo</h2>
       <p className="mb-3 text-sm text-muted-foreground">
-        Giorni scolastici nel periodo. Permesso breve conta i giorni in cui è stato preso, non le ore.
+        Giorni scolastici nel periodo. Permesso breve conta i giorni in cui \u00e8 stato preso, non le ore.
       </p>
       <div className="paper-panel overflow-x-auto rounded-xl">
         {absenceRows.length === 0 ? (
@@ -241,7 +241,11 @@ function ReportPage() {
             </thead>
             <tbody>
               {absenceRows.map((row) => {
-                <td className="px-4 py-2.5 font-medium">
+                const t = data.teachers.find((x) => x.id === row.teacherId);
+                if (!t) return null;
+                return (
+                  <tr key={row.teacherId} className="border-b border-border last:border-0">
+                    <td className="px-4 py-2.5 font-medium">
                       {t.lastName} {t.firstName}
                     </td>
                     {ABSENCE_REASONS.map((r) => (
@@ -262,7 +266,7 @@ function ReportPage() {
       </p>
       {yearStatCards.length === 0 ? (
         <p className="mb-5 text-sm text-muted-foreground">
-          Nessuna assenza né ora eccedente in anagrafe per quest’anno.
+          Nessuna assenza n\u00e9 ora eccedente in anagrafe per quest\u2019anno.
         </p>
       ) : (
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -336,7 +340,7 @@ const REASON_CARD: Record<string, string> = {
 function Cell({ n, warn }: { n: number; warn?: boolean }) {
   return (
     <td className={warn && n > 0 ? "px-3 py-2.5 tabular-nums text-warning" : "px-3 py-2.5 tabular-nums text-muted-foreground"}>
-      {n || "—"}
+      {n || "\u2014"}
     </td>
   );
 }
