@@ -70,17 +70,15 @@ function ReportPage() {
     [data, yearRange],
   );
   const yearLoads = useMemo(() => loadByTeacher(data, yearRange.from, yearRange.to), [data, yearRange]);
-  const yearAbsenceTotals = yearAbsenceRows.reduce(
-    (acc, r) => {
-      acc.days += r.total;
-      acc.assemblea += r.byReason.assemblea_sindacale;
-      acc.breve += r.byReason.permesso_breve;
-      acc.malattia += r.byReason.malattia;
-      return acc;
-    },
-    { days: 0, assemblea: 0, breve: 0, malattia: 0 },
-  );
   const yearEccedenti = yearLoads.reduce((n, r) => n + r.eccedente, 0);
+  const yearStatCards = [
+    ...ABSENCE_REASONS.map((reason) => ({
+      key: reason.value,
+      label: REASON_CARD[reason.value] ?? reason.label,
+      value: yearAbsenceRows.reduce((n, row) => n + (row.byReason[reason.value] ?? 0), 0),
+    })),
+    { key: "eccedenti", label: "Ore eccedenti", value: yearEccedenti },
+  ].filter((card) => card.value > 0);
 
   return (
     <div>
@@ -243,11 +241,7 @@ function ReportPage() {
             </thead>
             <tbody>
               {absenceRows.map((row) => {
-                const t = data.teachers.find((x) => x.id === row.teacherId);
-                if (!t) return null;
-                return (
-                  <tr key={row.teacherId} className="border-b border-border last:border-0">
-                    <td className="px-4 py-2.5 font-medium">
+                <td className="px-4 py-2.5 font-medium">
                       {t.lastName} {t.firstName}
                     </td>
                     {ABSENCE_REASONS.map((r) => (
@@ -266,12 +260,17 @@ function ReportPage() {
       <p className="mb-3 text-sm text-muted-foreground">
         Dal {yearRange.from} al {yearRange.to}. Non dipende dal periodo sopra.
       </p>
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MiniStat label="Assemblee" value={yearAbsenceTotals.assemblea} />
-        <MiniStat label="Permessi brevi" value={yearAbsenceTotals.breve} />
-        <MiniStat label="Malattia" value={yearAbsenceTotals.malattia} />
-        <MiniStat label="Ore eccedenti" value={yearEccedenti} />
-      </div>
+      {yearStatCards.length === 0 ? (
+        <p className="mb-5 text-sm text-muted-foreground">
+          Nessuna assenza né ora eccedente in anagrafe per quest’anno.
+        </p>
+      ) : (
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {yearStatCards.map((card) => (
+            <MiniStat key={card.key} label={card.label} value={card.value} />
+          ))}
+        </div>
+      )}
       <div className="paper-panel overflow-x-auto rounded-xl">
         {yearAbsenceRows.length === 0 ? (
           <p className="px-4 py-6 text-sm text-muted-foreground">Nessuna assenza registrata in questo anno.</p>
@@ -320,6 +319,17 @@ const REASON_COL: Record<string, string> = {
   assemblea_sindacale: "Assemblea",
   visita: "Visita",
   permesso_breve: "P. breve",
+  altro: "Altro",
+};
+
+const REASON_CARD: Record<string, string> = {
+  malattia: "Malattia",
+  permesso: "Permesso personale",
+  l104: "L.104",
+  formazione: "Formazione",
+  assemblea_sindacale: "Assemblea sindacale",
+  visita: "Visita medica",
+  permesso_breve: "Permesso breve",
   altro: "Altro",
 };
 
