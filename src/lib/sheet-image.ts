@@ -3,6 +3,7 @@ import {
   coverageNeeds,
   isCovered,
   isDispHour,
+  classShifts,
   loadByTeacher,
   absencesByReason,
   teacherDayWindow,
@@ -11,9 +12,10 @@ import {
   teacherSlotAt,
 } from "./coverage";
 import { formatLong } from "./dates";
-import { ABSENCE_REASONS, DAY_SHORT, type DayOfWeek, type PersistedData } from "./types";
+import { ABSENCE_REASONS, dayNameUpper, DAY_SHORT, SUBSTITUTION_TYPES, type DayOfWeek, type PersistedData } from "./types";
 import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "./periods";
 import { teacherSheetName } from "./teacher-print";
+import { sideMark } from "./class-grid";
 
 
 const PAPER = "#F3EFE6";
@@ -22,9 +24,26 @@ const GREEN = "#1F4A3C";
 const CREAM = "#F4EFE4";
 const MUTED = "#6B6458";
 const LINE = "#D8CFC0";
+const SHEET_DPR = 3;
+const JPEG_Q = 0.95;
 
 type Col = { title: string; sub?: string };
 type Row = { title: string; sub?: string; cells: string[] };
+
+function fillCentered(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  cx: number,
+  cy: number,
+  font = "600 9px 'Source Sans 3', system-ui, sans-serif",
+) {
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#111";
+  ctx.font = font;
+  ctx.fillText(text, cx, cy + 0.6);
+}
+
 
 function wrap(ctx: CanvasRenderingContext2D, text: string, max: number): string[] {
   const lines: string[] = [];
@@ -48,7 +67,7 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, max: number): string[
   return lines.slice(0, 4);
 }
 
-function canvasToJpeg(canvas: HTMLCanvasElement, quality = 0.88): Promise<Blob> {
+function canvasToJpeg(canvas: HTMLCanvasElement, quality = JPEG_Q): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("jpeg"))), "image/jpeg", quality);
   });
@@ -82,7 +101,7 @@ async function paintTable(spec: {
   rows: Row[];
 }): Promise<Blob> {
   await document.fonts.ready.catch(() => undefined);
-  const dpr = 2;
+  const dpr = SHEET_DPR;
   const pad = 36;
   const headH = 92;
   const labelW = 108;
@@ -162,37 +181,137 @@ function classOrder(data: PersistedData) {
   return [...data.classes].sort((a, b) => a.grade - b.grade || a.section.localeCompare(b.section));
 }
 
+type ExcelCell = { lines?: string[]; disp?: boolean };
+
+async function paintExcelGrid(opts: {
+  data: PersistedData;
+  who: string;
+  columns: string[];
+  rows: { mark: string; cells: ExcelCell[] }[];
+}): Promise<Blob> {
+  await document.fonts.ready.catch(() => undefined);
+  const pageW = 842;
+  const pageH = 595;
+  const padX = 18;
+  const padY = 14;
+  const titleH = 72;
+  const x0 = padX;
+  const headY = padY + titleH;
+  const tableW = pageW - padX * 2;
+  const tableH = pageH - padY * 2 - titleH;
+  const headH = 22;
+  const hourW = 28;
+  const nRows = Math.max(1, opts.rows.length);
+  const nCols = Math.max(1, opts.columns.length);
+  const rowH = (tableH - headH) / nRows;
+  const colW = (tableW - hourW) / nCols;
+  const dpr = SHEET_DPR;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(pageW * dpr);
+  canvas.height = Math.round(pageH * dpr);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas");
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, pageW, pageH);
+
+  drawSheetHeading(ctx, opts.data, pageW, padY, "ORARIO SETTIMANALE DELLE LEZIONI");
+  ctx.fillStyle = "#111";
+  ctx.font = "700 13px 'Source Sans 3', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(opts.who, pageW / 2, padY + 66);
+
+  function stroke(x: number, y: number, w: number, h: number) {
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 0.7;
+    ctx.strokeRect(x, y, w, h);
+  }
+
+  ctx.fillStyle = "#eee8dc";
+  ctx.fillRect(x0, headY, tableW, headH);
+  stroke(x0, headY, hourW, headH);
+  ctx.fillStyle = "#111";
+  ctx.font = "700 10px 'Source Sans 3', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("H", x0 + hourW / 2, headY + headH / 2);
+  opts.columns.forEach((col, i) => {
+    const x = x0 + hourW + i * colW;
+    stroke(x, headY, colW, headH);
+    ctx.font = col.length > 16 ? "600 8px 'Source Sans 3', system-ui, sans-serif" : "700 10px 'Source Sans 3', system-ui, sans-serif";
+    ctx.fillText(col, x + colW / 2, headY + headH / 2);
+  });
+
+  opts.rows.forEach((row, ri) => {
+    const y = headY + headH + ri * rowH;
+    stroke(x0, y, hourW, rowH);
+    ctx.fillStyle = "#f7f4ee";
+    ctx.fillRect(x0 + 0.4, y + 0.4, hourW - 0.8, rowH - 0.8);
+    ctx.fillStyle = "#111";
+    ctx.font = "700 11px 'Source Sans 3', system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(row.mark, x0 + hourW / 2, y + rowH / 2);
+    row.cells.forEach((cell, i) => {
+      const x = x0 + hourW + i * colW;
+      stroke(x, y, colW, rowH);
+      if (cell.disp) {
+        ctx.fillStyle = "#111";
+        ctx.fillRect(x + 0.5, y + 0.5, colW - 1, rowH - 1);
+        ctx.fillStyle = "#fff";
+        ctx.font = "700 16px 'Source Sans 3', system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("D", x + colW / 2, y + rowH / 2);
+        return;
+      }
+      const lines = (cell.lines ?? []).filter(Boolean);
+      if (!lines.length) return;
+      const lineH = 11;
+      const block = lines.length * lineH;
+      let ty = y + (rowH - block) / 2 + lineH / 2;
+      for (const line of lines) {
+        fillCentered(ctx, line, x + colW / 2, ty);
+        ty += lineH;
+      }
+    });
+  });
+
+  ctx.strokeStyle = "#111";
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(x0, headY, tableW, tableH);
+
+  return canvasToJpeg(canvas);
+}
+
 export function orarioQuadroJpeg(data: PersistedData, day: DayOfWeek): Promise<Blob> {
   const classes = classOrder(data);
-  const rows: Row[] = visiblePeriods(data.settings).map((p) => ({
-    title: p.label,
-    sub: `${p.start}–${p.end}`,
-    cells: classes.map((c) => {
-      if (isRestrictedTpPeriod(p) && c.tempo !== "TP") return "";
-      const occupants = cellSlots(data, c.id, day, p.id);
-      if (occupants.length === 0) return "—";
-      if (isMensaPeriod(p) && occupants.every((s) => isMensaLesson(s))) {
-        return occupants
-          .map((s, i) => {
-            const t = data.teachers.find((x) => x.id === s.teacherId);
-            return `Mensa\n${t ? teacherShort(t, data.teachers) : ""}${i > 0 ? " · compr." : ""}`.trim();
-          })
-          .join("\n");
-      }
-      return occupants
-        .map((s, i) => {
-          const t = data.teachers.find((x) => x.id === s.teacherId);
-          return `${t ? teacherShort(t, data.teachers) : ""}\n${s.subject}${i > 0 ? " · compr." : ""}`.trim();
-        })
-        .join("\n");
-    }),
-  }));
-  return paintTable({
-    kicker: `${data.settings.schoolName} · ${data.settings.schoolYear}`,
-    title: `Orario · ${DAY_SHORT[day]}`,
-    corner: "Ora",
-    columns: classes.map((c) => ({ title: c.name, sub: c.tempo })),
-    rows,
+  const periods = periodsOnDay(data, day);
+  return paintExcelGrid({
+    data,
+    who: dayNameUpper(day),
+    columns: [...classes.map(classHeader), "Ore a disposizione"],
+    rows: periods.map((p) => ({
+      mark: hourMark(p),
+      cells: [
+        ...classes.map((c) => {
+          if (isRestrictedTpPeriod(p) && c.tempo !== "TP") return {};
+          const occupants = cellSlots(data, c.id, day, p.id);
+          if (isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
+            return { lines: ["MENSA"] };
+          }
+          if (!occupants.length) return {};
+          const t = data.teachers.find((x) => x.id === occupants[0]!.teacherId);
+          return t ? { lines: [teacherSheetName(t, data.teachers)] } : {};
+        }),
+        (() => {
+          const names = dispNamesAt(data, day, p.id);
+          return names.length ? { lines: [names.join(" / ")] } : {};
+        })(),
+      ],
+    })),
   });
 }
 
@@ -200,62 +319,66 @@ export function orarioClassJpeg(data: PersistedData, classId: string): Promise<B
   const cls = data.classes.find((c) => c.id === classId);
   const days = data.settings.days;
   const slots = data.slots.filter((s) => s.classId === classId);
-  const rows: Row[] = visiblePeriods(data.settings, cls?.tempo).map((p) => ({
-    title: p.label,
-    sub: `${p.start}–${p.end}`,
-    cells: days.map((d) => {
-      const occupants = slots.filter((s) => s.day === d && s.periodId === p.id);
-      if (occupants.length === 0) return "—";
-      return occupants
-        .map((s, i) => {
-          const t = data.teachers.find((x) => x.id === s.teacherId);
-          return `${s.subject}\n${t ? teacherShort(t, data.teachers) : ""}${i > 0 ? " · compr." : ""}`.trim();
-        })
-        .join("\n");
-    }),
-  }));
-  return paintTable({
-    kicker: `${data.settings.schoolName} · ${data.settings.schoolYear}`,
-    title: `Orario ${cls?.name ?? ""}`,
-    corner: "Ora",
-    columns: days.map((d) => ({ title: DAY_SHORT[d] })),
-    rows,
+  return paintExcelGrid({
+    data,
+    who: `CLASSE ${cls ? classHeader(cls) : ""}`,
+    columns: days.map((d) => dayNameUpper(d)),
+    rows: visiblePeriods(data.settings, cls?.tempo).map((p) => ({
+      mark: hourMark(p),
+      cells: days.map((d) => {
+        const occupants = slots.filter((s) => s.day === d && s.periodId === p.id);
+        if (isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
+          return { lines: ["MENSA"] };
+        }
+        if (!occupants.length) return {};
+        const t = data.teachers.find((x) => x.id === occupants[0]!.teacherId);
+        return {
+          lines: [t ? teacherSheetName(t, data.teachers) : "", schoolSubjectLabel(occupants[0]!.subject)].filter(
+            Boolean,
+          ),
+        };
+      }),
+    })),
   });
 }
 
 export function orarioTeacherJpeg(data: PersistedData, teacherId: string): Promise<Blob> {
   const t = data.teachers.find((x) => x.id === teacherId);
   const days = data.settings.days;
-  const rows: Row[] = visiblePeriods(data.settings).map((p) => ({
-    title: p.label,
-    sub: `${p.start}–${p.end}`,
-    cells: days.map((d) => {
-      const slot = teacherSlotAt(data, teacherId, d, p.id);
-      if (!slot) return "—";
-      const cls = data.classes.find((c) => c.id === slot.classId);
-      return `${cls?.name ?? ""}\n${slot.subject}`;
-    }),
-  }));
-  return paintTable({
-    kicker: `${data.settings.schoolName} · ${data.settings.schoolYear}`,
-    title: t ? teacherName(t) : "Docente",
-    corner: "Ora",
-    columns: days.map((d) => ({ title: DAY_SHORT[d] })),
-    rows,
+  return paintExcelGrid({
+    data,
+    who: t ? teacherSheetName(t, data.teachers) : "DOCENTE",
+    columns: days.map((d) => dayNameUpper(d)),
+    rows: visiblePeriods(data.settings).map((p) => ({
+      mark: hourMark(p),
+      cells: days.map((d) => {
+        if (t && isDispHour(t, d, p.id)) return { disp: true };
+        const slot = teacherSlotAt(data, teacherId, d, p.id);
+        if (!slot) return {};
+        if (isMensaLesson(slot) || isMensaPeriod(p)) return { lines: ["MENSA"] };
+        const cls = data.classes.find((c) => c.id === slot.classId);
+        return {
+          lines: [cls ? classHeader(cls) : "", schoolSubjectLabel(slot.subject)].filter(Boolean),
+        };
+      }),
+    })),
   });
 }
 
 export async function bachecaJpeg(data: PersistedData, date: string): Promise<Blob> {
   await document.fonts.ready.catch(() => undefined);
   const needs = coverageNeeds(data, date);
-  const dpr = 2;
+  const applied = classShifts(data, date).filter((s) => s.applied);
+  const taken = new Set(applied.flatMap((s) => s.needs.map((n) => n.key)));
+  const openNeeds = needs.filter((n) => !taken.has(n.key));
+  const dpr = SHEET_DPR;
   const width = 1080;
   const pad = 40;
   const rowH = 72;
   const groups = data.settings.periods
-    .map((p) => ({ period: p, items: needs.filter((n) => n.slot.periodId === p.id) }))
+    .map((p) => ({ period: p, items: openNeeds.filter((n) => n.slot.periodId === p.id) }))
     .filter((g) => g.items.length > 0);
-  const bodyRows = groups.reduce((n, g) => n + 1 + g.items.length, 0);
+  const bodyRows = applied.length + groups.reduce((n, g) => n + 1 + g.items.length, 0);
   const height = Math.max(640, pad + 100 + bodyRows * rowH + pad);
 
   const canvas = document.createElement("canvas");
@@ -277,7 +400,29 @@ export async function bachecaJpeg(data: PersistedData, date: string): Promise<Bl
   ctx.fillText(dayTitle.charAt(0).toUpperCase() + dayTitle.slice(1), pad, 78);
 
   let y = 140;
-  if (groups.length === 0) {
+  if (applied.length > 0) {
+    ctx.fillStyle = GREEN;
+    ctx.font = "600 16px Fraunces, Georgia, serif";
+    ctx.fillText("Orario variato", pad, y);
+    y += 28;
+    for (const shift of applied) {
+      const cls = data.classes.find((c) => c.id === shift.classId);
+      const code = (cls?.name ?? "?").replace(/ª\s*/g, "").replace(/\s+/g, "");
+      const names = [...new Set(shift.needs.map((n) => {
+        const t = data.teachers.find((x) => x.id === n.absence.teacherId);
+        return t ? teacherShort(t, data.teachers) : "?";
+      }))].sort((a, b) => a.localeCompare(b, "it"));
+      ctx.fillStyle = INK;
+      ctx.font = "600 16px 'Source Sans 3', system-ui, sans-serif";
+      ctx.fillText(`${code} ${shift.phrase}`, pad, y);
+      ctx.fillStyle = MUTED;
+      ctx.font = "500 14px 'Source Sans 3', system-ui, sans-serif";
+      ctx.fillText(`Assente ${names.join(", ")}`, pad, y + 22);
+      y += rowH - 8;
+    }
+    y += 12;
+  }
+  if (groups.length === 0 && applied.length === 0) {
     ctx.fillStyle = MUTED;
     ctx.font = "500 18px 'Source Sans 3', system-ui, sans-serif";
     ctx.fillText("Nessuna ora da coprire.", pad, y);
@@ -299,12 +444,20 @@ export async function bachecaJpeg(data: PersistedData, date: string): Promise<Bl
           : sub
             ? teacherShort(sub, data.teachers)
             : "da assegnare";
+      const tipo =
+        n.substitution?.type && n.substitution.type !== "divisione"
+          ? (SUBSTITUTION_TYPES.find((x) => x.value === n.substitution?.type)?.short ?? "")
+          : "";
       ctx.fillStyle = INK;
       ctx.font = "600 16px 'Source Sans 3', system-ui, sans-serif";
       ctx.fillText(`${cls?.name ?? "?"}  ·  ${n.slot.subject}`, pad, y);
       ctx.fillStyle = MUTED;
       ctx.font = "500 14px 'Source Sans 3', system-ui, sans-serif";
-      ctx.fillText(`Assente ${absent ? teacherShort(absent, data.teachers) : "—"}   →   Copre ${copre}`, pad, y + 22);
+      ctx.fillText(
+        `Assente ${absent ? teacherShort(absent, data.teachers) : "—"}   →   Copre ${copre}${tipo ? ` (${tipo})` : ""}`,
+        pad,
+        y + 22,
+      );
       ctx.strokeStyle = LINE;
       ctx.beginPath();
       ctx.moveTo(pad, y + 36);
@@ -314,11 +467,12 @@ export async function bachecaJpeg(data: PersistedData, date: string): Promise<Bl
     }
     y += 12;
   }
-  const uncovered = needs.filter((n) => !isCovered(n)).length;
+  const uncovered = openNeeds.filter((n) => !isCovered(n)).length;
+  const listed = openNeeds.length;
   ctx.fillStyle = GREEN;
   ctx.font = "600 14px 'Source Sans 3', system-ui, sans-serif";
   ctx.fillText(
-    `Coperture ${needs.length - uncovered}/${needs.length}` +
+    `Coperture ${listed - uncovered}/${listed}` +
       (uncovered ? `  ·  ${uncovered} scoperte` : "  ·  giornata completa"),
     pad,
     Math.min(y + 8, height - 28),
@@ -445,96 +599,116 @@ export async function orarioWeekJpeg(data: PersistedData): Promise<Blob> {
   await document.fonts.ready.catch(() => undefined);
   const classes = classOrder(data);
   const days = data.settings.days;
-  const periods = visiblePeriods(data.settings);
-  const dpr = 2;
-  const pad = 28;
-  const headH = 86;
-  const labelW = 86;
-  const colW = Math.max(168, Math.min(210, Math.floor(1180 / Math.max(1, days.length))));
-  const lineH = 15;
-  const rowH = 22 + periods.length * lineH;
-  const width = pad * 2 + labelW + days.length * colW;
-  const height = pad + headH + 28 + classes.length * rowH + pad;
+  const periodsByDay = days.map((d) => periodsOnDay(data, d));
+  const nRows = Math.max(1, periodsByDay.reduce((n, ps) => n + ps.length, 0));
+
+  const pageW = 842;
+  const pageH = 595;
+  const padX = 16;
+  const padY = 14;
+  const titleH = 56;
+  const x0 = padX;
+  const headY = padY + titleH;
+  const tableW = pageW - padX * 2;
+  const tableH = pageH - padY * 2 - titleH;
+  const headH = 20;
+  const rowH = (tableH - headH) / nRows;
+  const dayW = 18;
+  const hourW = 20;
+  const dispW = Math.min(118, Math.max(72, tableW * 0.16));
+  const colW = (tableW - dayW - hourW - dispW) / Math.max(1, classes.length);
+  const dpr = SHEET_DPR;
 
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(width * dpr);
-  canvas.height = Math.round(height * dpr);
+  canvas.width = Math.round(pageW * dpr);
+  canvas.height = Math.round(pageH * dpr);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("canvas");
   ctx.scale(dpr, dpr);
-  ctx.fillStyle = PAPER;
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = GREEN;
-  ctx.fillRect(0, 0, width, headH);
-  ctx.fillStyle = "rgba(244,239,228,0.7)";
-  ctx.font = "600 13px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillText(`${data.settings.schoolName} · ${data.settings.schoolYear}`, pad, 32);
-  ctx.fillStyle = CREAM;
-  ctx.font = "600 26px Fraunces, Georgia, serif";
-  ctx.fillText("Orario settimanale", pad, 66);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, pageW, pageH);
 
-  const tableTop = headH + 16;
-  ctx.fillStyle = MUTED;
-  ctx.font = "600 12px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillText("Classe", pad + 8, tableTop + 16);
-  days.forEach((d, i) => {
-    ctx.fillStyle = INK;
-    ctx.font = "600 13px 'Source Sans 3', system-ui, sans-serif";
-    ctx.fillText(DAY_SHORT[d], pad + labelW + i * colW + 8, tableTop + 16);
+  drawSheetHeading(ctx, data, pageW, padY, "ORARIO SETTIMANALE DELLE LEZIONI");
+
+  function stroke(x: number, y: number, w: number, h: number, width = 0.7) {
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = width;
+    ctx.strokeRect(x, y, w, h);
+  }
+
+  ctx.fillStyle = "#eee8dc";
+  ctx.fillRect(x0, headY, tableW, headH);
+  stroke(x0, headY, dayW + hourW, headH);
+  ctx.fillStyle = "#111";
+  ctx.font = "700 10px 'Source Sans 3', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("H", x0 + (dayW + hourW) / 2, headY + headH / 2);
+  classes.forEach((c, i) => {
+    const x = x0 + dayW + hourW + i * colW;
+    stroke(x, headY, colW, headH);
+    ctx.fillText(classHeader(c), x + colW / 2, headY + headH / 2);
   });
+  const dispX = x0 + dayW + hourW + classes.length * colW;
+  stroke(dispX, headY, dispW, headH);
+  ctx.font = "600 8px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillText("Ore a disposizione", dispX + dispW / 2, headY + headH / 2);
 
-  ctx.strokeStyle = LINE;
-  ctx.lineWidth = 1;
-  classes.forEach((c, r) => {
-    const y = tableTop + 26 + r * rowH;
-    ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(pad + labelW + days.length * colW, y);
-    ctx.stroke();
-    ctx.fillStyle = INK;
-    ctx.font = "600 13px 'Source Sans 3', system-ui, sans-serif";
-    ctx.fillText(c.name, pad + 8, y + 20);
-    ctx.fillStyle = MUTED;
-    ctx.font = "500 11px 'Source Sans 3', system-ui, sans-serif";
-    ctx.fillText(c.tempo, pad + 8, y + 36);
-    days.forEach((d, i) => {
-      const x = pad + labelW + i * colW;
-      const lines = weekCellLines(data, c.id, d);
-      lines.forEach((line, li) => {
-        const ty = y + 18 + li * lineH;
-        if (line.subject === "Mensa") {
-          ctx.fillStyle = INK;
-          ctx.font = "500 11px 'Source Sans 3', system-ui, sans-serif";
-          ctx.fillText("Mensa", x + 8, ty);
+  let y = headY + headH;
+  days.forEach((day, di) => {
+    const periods = periodsByDay[di] ?? [];
+    const blockH = periods.length * rowH;
+    const dayTop = y;
+    stroke(x0, y, dayW, blockH);
+    ctx.save();
+    ctx.fillStyle = "#111";
+    ctx.font = "700 9px 'Source Sans 3', system-ui, sans-serif";
+    ctx.translate(x0 + dayW / 2, y + blockH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(dayNameUpper(day), 0, 0.6);
+    ctx.restore();
+
+    periods.forEach((p, pi) => {
+      const yy = y + pi * rowH;
+      const mid = yy + rowH / 2;
+      stroke(x0 + dayW, yy, hourW, rowH);
+      fillCentered(ctx, hourMark(p), x0 + dayW + hourW / 2, mid, "700 9px 'Source Sans 3', system-ui, sans-serif");
+      classes.forEach((c, i) => {
+        const x = x0 + dayW + hourW + i * colW;
+        stroke(x, yy, colW, rowH);
+        if (isRestrictedTpPeriod(p) && c.tempo !== "TP") return;
+        const occupants = cellSlots(data, c.id, day, p.id);
+        if (isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
+          fillCentered(ctx, "MENSA", x + colW / 2, mid);
           return;
         }
-        if (!line.teacher) {
-          ctx.fillStyle = MUTED;
-          ctx.font = "500 11px 'Source Sans 3', system-ui, sans-serif";
-          ctx.fillText(`${line.mark}  —`, x + 8, ty);
-          return;
-        }
-        ctx.fillStyle = INK;
-        ctx.font = "500 11px 'Source Sans 3', system-ui, sans-serif";
-        const prefix = `${line.mark}  ${line.subject}  `;
-        ctx.fillText(prefix, x + 8, ty);
-        const px = x + 8 + ctx.measureText(prefix).width;
-        ctx.font = "700 11px 'Source Sans 3', system-ui, sans-serif";
-        ctx.fillText(`${line.teacher}${line.extra}`, px, ty);
+        if (!occupants.length) return;
+        const t = data.teachers.find((x) => x.id === occupants[0]!.teacherId);
+        if (!t) return;
+        fillCentered(ctx, teacherSheetName(t, data.teachers), x + colW / 2, mid);
       });
+      stroke(dispX, yy, dispW, rowH);
+      const onDisp = dispNamesAt(data, day, p.id);
+      if (onDisp.length) fillCentered(ctx, onDisp.join(" / "), dispX + dispW / 2, mid);
     });
+
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = di === 0 ? 0.9 : 1.25;
+    ctx.beginPath();
+    ctx.moveTo(x0, dayTop);
+    ctx.lineTo(x0 + tableW, dayTop);
+    ctx.stroke();
+    y += blockH;
   });
+
+  ctx.strokeStyle = "#111";
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(x0, headY, tableW, tableH);
+
   return canvasToJpeg(canvas);
 }
-
-const DAY_SCHOOL: Record<DayOfWeek, string> = {
-  1: "LUNEDI'",
-  2: "MARTEDI'",
-  3: "MERCOLEDI'",
-  4: "GIOVEDI'",
-  5: "VENERDI'",
-  6: "SABATO",
-};
 
 const SCHOOL_SUBJECT: Record<string, string> = {
   Italiano: "ITALIANO",
@@ -689,19 +863,6 @@ function drawLabeledCaption(
   return y + 16 + Math.max(1, lines.length) * 12;
 }
 
-function isSideTeacherOnSite(
-  data: PersistedData,
-  teacherId: string,
-  day: DayOfWeek,
-  periodId: string,
-): boolean {
-  const t = data.teachers.find((x) => x.id === teacherId);
-  if (!t) return false;
-  if (t.awaySlots?.some((s) => s.day === day && s.periodId === periodId)) return false;
-  if (isDispHour(t, day, periodId)) return true;
-  return data.slots.some((s) => s.teacherId === teacherId && s.day === day && s.periodId === periodId);
-}
-
 function drawDispNames(
   ctx: CanvasRenderingContext2D,
   names: string[],
@@ -711,22 +872,7 @@ function drawDispNames(
   h: number,
 ) {
   if (!names.length) return;
-  ctx.fillStyle = "#111";
-  ctx.textAlign = "center";
-  const joined = names.join(" / ");
-  ctx.font =
-    names.length > 1
-      ? "600 8px 'Source Sans 3', system-ui, sans-serif"
-      : "600 9px 'Source Sans 3', system-ui, sans-serif";
-  const lines = wrap(ctx, joined, w - 8);
-  const lineH = names.length > 1 ? 10 : 12;
-  const block = lines.length * lineH;
-  let ty = y + (h - block) / 2 + lineH - 2;
-  for (const line of lines) {
-    ctx.fillText(line, x + w / 2, ty);
-    ty += lineH;
-  }
-  ctx.textAlign = "left";
+  fillCentered(ctx, names.join(" / "), x + w / 2, y + h / 2);
 }
 
 /** Foglio ufficiale da appendere: giorni in colonna, classi in riga. Non sostituisce orarioWeekJpeg. */
@@ -735,7 +881,7 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
   const classes = classOrder(data);
   const days = data.settings.days;
   const periodsByDay = days.map((d) => periodsOnDay(data, d));
-  const dpr = 2;
+  const dpr = SHEET_DPR;
   const pad = 18;
   const titleH = 64;
   const hourW = 28;
@@ -791,7 +937,7 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
     ctx.fillStyle = "#111";
     ctx.font = "700 11px 'Source Sans 3', system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(DAY_SCHOOL[day] ?? "", x0 + tableW / 2, y + 14);
+    ctx.fillText(dayNameUpper(day), x0 + tableW / 2, y + 14);
     ctx.textAlign = "left";
     y += dayHeadH;
 
@@ -840,7 +986,7 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
     });
   });
 
-  return canvasToJpeg(canvas, 0.92);
+  return canvasToJpeg(canvas);
 }
 
 function sheetPeriods(data: PersistedData) {
@@ -881,7 +1027,7 @@ export async function orarioOrizzontaleJpeg(data: PersistedData): Promise<Blob> 
   const days = data.settings.days;
   const periodsByDay = days.map((d) => periodsOnDay(data, d));
   const teachers = teachersOnTimetable(data);
-  const dpr = 2;
+  const dpr = SHEET_DPR;
   const pad = 18;
   const titleH = 72;
   const nameW = 128;
@@ -959,7 +1105,7 @@ export async function orarioOrizzontaleJpeg(data: PersistedData): Promise<Blob> 
     ctx.fillStyle = "#111";
     ctx.font = "700 10px 'Source Sans 3', system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(DAY_SCHOOL[day] ?? "", dayX + dayW / 2, y + 14);
+    ctx.fillText(dayNameUpper(day), dayX + dayW / 2, y + 14);
     periods.forEach((p, pi) => {
       const hx = dayX + pi * hourW;
       box(hx, y + dayHeadH, hourW, hourHeadH);
@@ -1034,10 +1180,10 @@ export async function orarioOrizzontaleJpeg(data: PersistedData): Promise<Blob> 
   g.lineTo(dx, gridBottom);
   g.stroke();
 
-  return canvasToJpeg(canvas, 0.92);
+  return canvasToJpeg(canvas);
 }
 
-/** Quadro settimanale per classe: giorni in colonna, cognomi in cella (foglio da appendere). */
+/** Quadro settimanale per classe: giorni in colonna, cognomi o materie in cella (foglio da appendere). */
 export async function orarioClassiGridJpeg(
   data: PersistedData,
   mode: boolean | "materie" = false,
@@ -1045,31 +1191,30 @@ export async function orarioClassiGridJpeg(
   await document.fonts.ready.catch(() => undefined);
   const subjectsOnly = mode === "materie";
   const withSubjects = mode === true;
-  const showDisp = !subjectsOnly;
   const classes = classOrder(data);
   const days = data.settings.days;
   const periodsByDay = days.map((d) => periodsOnDay(data, d));
-  const sos = showDisp ? teachersByRole(data, "sostegno") : [];
-  const pot = showDisp ? teachersByRole(data, "potenziamento") : [];
+  const sos = teachersByRole(data, "sostegno");
+  const pot = teachersByRole(data, "potenziamento");
   const side = [...sos, ...pot];
-  const dpr = 2;
+  const dpr = SHEET_DPR;
   const pad = 12;
   const titleH = 64;
   const dayW = 20;
   const hourW = 26;
-  const dispW = showDisp ? 112 : 0;
-  const sosW = 22;
+  const dispW = 112;
+  const sosW = 26;
   const colW = Math.max(
-    withSubjects || subjectsOnly ? 72 : 68,
+    withSubjects ? 72 : 68,
     Math.min(
-      withSubjects || subjectsOnly ? 96 : 88,
+      withSubjects ? 96 : 88,
       Math.floor((620 - dayW - hourW - dispW) / Math.max(1, classes.length)),
     ),
   );
   const rowH = withSubjects ? 34 : 22;
   const gap = 8;
   const headH = side.length > 0 ? 68 : 22;
-  const footH = sos.length || pot.length ? 16 + (sos.length ? 24 : 0) + (pot.length ? 24 : 0) : 0;
+  const footH = subjectsOnly || !(sos.length || pot.length) ? 0 : 16 + (sos.length ? 24 : 0) + (pot.length ? 24 : 0);
   const tableW = dayW + hourW + classes.length * colW + dispW + side.length * sosW;
   const width = pad * 2 + tableW;
   const height =
@@ -1113,22 +1258,27 @@ export async function orarioClassiGridJpeg(
     ctx.fillText(classHeader(c), x + colW / 2, y + headH - 8);
   });
   const dispX = x0 + dayW + hourW + classes.length * colW;
-  if (showDisp) {
-    box(dispX, y, dispW, headH);
-    ctx.font = "600 8px 'Source Sans 3', system-ui, sans-serif";
-    ctx.fillText("Ore a disposizione", dispX + dispW / 2, y + headH - 8);
-  }
+  box(dispX, y, dispW, headH);
+  ctx.font = "600 8px 'Source Sans 3', system-ui, sans-serif";
+  ctx.fillText("Ore a disposizione", dispX + dispW / 2, y + headH - 8);
   side.forEach((t, i) => {
     const x = dispX + dispW + i * sosW;
     box(x, y, sosW, headH);
     ctx.save();
     ctx.translate(x + sosW / 2, y + headH / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#111";
-    ctx.fillText(teacherSheetName(t, data.teachers), 0, 0);
+    const sideLabel = subjectsOnly
+      ? t.role === "sostegno"
+        ? "SOSTEGNO"
+        : "POTENZIAMENTO"
+      : teacherSheetName(t, data.teachers);
+    ctx.font = subjectsOnly
+      ? "600 8px 'Source Sans 3', system-ui, sans-serif"
+      : "600 9px 'Source Sans 3', system-ui, sans-serif";
+    ctx.fillText(sideLabel, 0, 0);
     ctx.restore();
   });
   ctx.textAlign = "left";
@@ -1147,7 +1297,7 @@ export async function orarioClassiGridJpeg(
     ctx.rotate(-Math.PI / 2);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(DAY_SCHOOL[day] ?? "", 0, 0);
+    ctx.fillText(dayNameUpper(day), 0, 0);
     ctx.restore();
 
     periods.forEach((p, pi) => {
@@ -1171,43 +1321,57 @@ export async function orarioClassiGridJpeg(
         }
         if (!occupants.length) return;
         const primary = occupants[0]!;
-        ctx.fillStyle = "#111";
-        if (subjectsOnly) {
-          ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
-          ctx.fillText(schoolSubjectLabel(primary.subject), x + colW / 2, yy + 16);
-          return;
-        }
         const t = data.teachers.find((x) => x.id === primary.teacherId);
-        if (!t) return;
-        if (withSubjects) {
+        ctx.fillStyle = "#111";
+        ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+        if (subjectsOnly) {
+          ctx.fillText(schoolSubjectLabel(primary.subject), x + colW / 2, yy + 16);
+        } else if (withSubjects && t) {
           ctx.font = "700 9px 'Source Sans 3', system-ui, sans-serif";
           ctx.fillText(teacherSheetName(t, data.teachers), x + colW / 2, yy + 14);
           ctx.font = "500 9px 'Source Sans 3', system-ui, sans-serif";
           ctx.fillText(subjectAbbr(primary.subject), x + colW / 2, yy + 28);
-        } else {
-          ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+        } else if (t) {
           ctx.fillText(teacherSheetName(t, data.teachers), x + colW / 2, yy + 16);
         }
       });
-      if (showDisp) {
-        const dx = x0 + dayW + hourW + classes.length * colW;
-        box(dx, yy, dispW, rowH);
-        drawDispNames(ctx, dispNamesAt(data, day, p.id), dx, yy, dispW, rowH);
-        side.forEach((t, i) => {
-          const sx = dx + dispW + i * sosW;
-          box(sx, yy, sosW, rowH);
-          if (!isSideTeacherOnSite(data, t.id, day, p.id)) return;
+      const dx = x0 + dayW + hourW + classes.length * colW;
+      box(dx, yy, dispW, rowH);
+      const onDisp = dispNamesAt(data, day, p.id);
+      if (subjectsOnly) {
+        if (onDisp.length) {
+          ctx.fillStyle = "#111";
+          ctx.font = "700 11px 'Source Sans 3', system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "alphabetic";
+          ctx.fillText("X", dx + dispW / 2, yy + 16);
+        }
+      } else {
+        drawDispNames(ctx, onDisp, dx, yy, dispW, rowH);
+      }
+      side.forEach((t, i) => {
+        const sx = dx + dispW + i * sosW;
+        box(sx, yy, sosW, rowH);
+        const mark = sideMark(data, t.id, day, p.id);
+        if (!mark) return;
+        if (mark === "block") {
           ctx.fillStyle = "#111";
           const m = 4;
           ctx.fillRect(sx + m, yy + m, sosW - m * 2, rowH - m * 2);
-        });
-      }
+          return;
+        }
+        ctx.fillStyle = "#111";
+        ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillText(mark, sx + sosW / 2, yy + (withSubjects ? 22 : 16));
+      });
     });
     y += blockH;
   });
 
   let fy = y + 12;
-  if (sos.length > 0) {
+  if (!subjectsOnly && sos.length > 0) {
     fy = drawLabeledCaption(
       ctx,
       "Sostegno",
@@ -1222,7 +1386,7 @@ export async function orarioClassiGridJpeg(
       true,
     );
   }
-  if (pot.length > 0) {
+  if (!subjectsOnly && pot.length > 0) {
     drawLabeledCaption(
       ctx,
       "Potenziamento",
@@ -1234,7 +1398,7 @@ export async function orarioClassiGridJpeg(
     );
   }
 
-  return canvasToJpeg(canvas, 0.92);
+  return canvasToJpeg(canvas);
 }
 
 export { teachersOnTimetable };

@@ -88,7 +88,10 @@ export type SubstitutionType =
   | "sostegno"
   | "compresenza"
   | "divisione"
-  | "altro";
+  | "altro"
+  | "entra"
+  | "esce"
+  | "non_entra";
 
 export type Substitution = {
   id: string;
@@ -153,15 +156,15 @@ export const ABSENCE_REASONS: { value: AbsenceReason; label: string }[] = [
   { value: "altro", label: "Altro" },
 ];
 
-export const SUBSTITUTION_TYPES: { value: SubstitutionType; label: string; hint: string }[] = [
-  { value: "disposizione", label: "Ora a disposizione", hint: "Docente libero in orario di servizio" },
-  { value: "potenziamento", label: "Potenziamento", hint: "Organico di potenziamento" },
-  { value: "recupero", label: "Recupero", hint: "Recupero ore non prestate" },
-  { value: "eccedente", label: "Ora eccedente", hint: "Retribuita oltre orario" },
-  { value: "sostegno", label: "Sostegno", hint: "Docente di sostegno disponibile" },
-  { value: "compresenza", label: "Compresenza", hint: "Docente già in classe" },
-  { value: "divisione", label: "Divisione classe", hint: "Alunni suddivisi in altre classi" },
-  { value: "altro", label: "Altro", hint: "" },
+export const SUBSTITUTION_TYPES: { value: SubstitutionType; label: string; short: string; hint: string }[] = [
+  { value: "disposizione", label: "Ora a disposizione", short: "DISP", hint: "Docente libero in orario di servizio" },
+  { value: "potenziamento", label: "Potenziamento", short: "POT", hint: "Organico di potenziamento" },
+  { value: "recupero", label: "Recupero", short: "REC", hint: "Recupero ore non prestate" },
+  { value: "eccedente", label: "Ora eccedente", short: "ECC", hint: "Retribuita oltre orario" },
+  { value: "sostegno", label: "Sostegno", short: "SOS", hint: "Docente di sostegno disponibile" },
+  { value: "compresenza", label: "Compresenza", short: "COMP", hint: "Docente già in classe" },
+  { value: "divisione", label: "Divisione classe", short: "DIV", hint: "Alunni suddivisi in altre classi" },
+  { value: "altro", label: "Altro", short: "ALT", hint: "" },
 ];
 
 export const CURRICULAR_SUBJECTS = [
@@ -199,6 +202,10 @@ export const DAY_LABELS: Record<DayOfWeek, string> = {
   5: "Venerdì",
   6: "Sabato",
 };
+
+export function dayNameUpper(day: DayOfWeek): string {
+  return DAY_LABELS[day].toLocaleUpperCase("it-IT");
+}
 
 export const DAY_SHORT: Record<DayOfWeek, string> = {
   1: "Lun",

@@ -38,6 +38,14 @@ export function formatDayName(iso: string): string {
   return format(parseDate(iso), "EEEE", { locale: it });
 }
 
+export function formatItDate(iso: string): string {
+  return format(parseDate(iso), "dd/MM/yyyy");
+}
+
+export function formatItFileDate(iso: string): string {
+  return format(parseDate(iso), "dd-MM-yyyy");
+}
+
 export function formatMonthYear(iso: string): string {
   return format(parseDate(iso), "MMMM yyyy", { locale: it });
 }

@@ -27,11 +27,14 @@ import {
 import { useAppStore, snapshot } from "@/lib/store";
 import {
   autoAssignPlan,
+  classShifts,
   coverageNeeds,
   dayCoverage,
   isCovered,
+  isShiftType,
   teacherName,
   teacherShort,
+  type ClassShift,
   type CoverageNeed,
 } from "@/lib/coverage";
 import { dailySheetCopyPlain, dailySheetHeading, dailySheetHtml, dailySheetText, substitutionsXlsx } from "@/lib/export";
@@ -39,7 +42,7 @@ import { copyText, shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/l
 import { textToPdf } from "@/lib/pdf";
 import { bachecaJpeg } from "@/lib/sheet-image";
 import { formatDayMonth, formatLong, isWeekend, shiftSchoolDay, weekDaysIso, toSchoolDay, todayIso } from "@/lib/dates";
-import { ABSENCE_REASONS, DAY_SHORT } from "@/lib/types";
+import { ABSENCE_REASONS, DAY_SHORT, SUBSTITUTION_TYPES } from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -55,8 +58,10 @@ function OggiPage() {
     () => data.absences.filter((a) => a.dateFrom <= date && a.dateTo >= date),
     [data.absences, date],
   );
-  const covered = needs.filter(isCovered).length;
-  const uncovered = needs.length - covered;
+  const shifts = useMemo(() => classShifts(data, date), [data, date]);
+  const varied = needs.filter((n) => isShiftType(n.substitution?.type)).length;
+  const covered = needs.filter((n) => isCovered(n) && !isShiftType(n.substitution?.type)).length;
+  const uncovered = needs.length - covered - varied;
 
   const [absenceOpen, setAbsenceOpen] = useState(false);
   const [assignNeed, setAssignNeed] = useState<CoverageNeed | null>(null);
@@ -73,6 +78,33 @@ function OggiPage() {
       .map((p) => ({ period: p, items: map.get(p.id) ?? [] }))
       .filter((g) => g.items.length > 0);
   }, [needs, data.settings.periods]);
+
+  function applyShift(shift: ClassShift) {
+    for (const n of shift.needs) {
+      store.saveSubstitution({
+        id: n.substitution?.id,
+        date: n.date,
+        periodId: n.slot.periodId,
+        classId: n.slot.classId,
+        absentTeacherId: n.absence.teacherId,
+        substituteId: null,
+        type: shift.kind,
+        activity: "",
+        notes: "",
+        subject: n.slot.subject,
+      });
+    }
+    const cls = data.classes.find((c) => c.id === shift.classId);
+    const code = (cls?.name ?? "Classe").replace(/ª\s*/g, "").replace(/\s+/g, "");
+    toast.success(`${code} ${shift.phrase}`);
+  }
+
+  function undoShift(shift: ClassShift) {
+    for (const n of shift.needs) {
+      if (n.substitution?.id && isShiftType(n.substitution.type)) store.removeSubstitution(n.substitution.id);
+    }
+    toast.message("Ore di nuovo da coprire");
+  }
 
   function autoFill() {
     const plan = autoAssignPlan(data, date);
@@ -250,10 +282,32 @@ function OggiPage() {
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Assenti" value={absences.length} />
-        <Stat label="Ore da coprire" value={needs.length} />
+        <Stat label="Ore da coprire" value={needs.length - varied} />
         <Stat label="Coperte" value={covered} tone="ok" />
         <Stat label="Scoperte" value={uncovered} tone={uncovered ? "warn" : "ok"} />
       </div>
+
+      {shifts.length > 0 && (
+        <div className="mb-5 rounded-xl border border-border bg-card px-4 py-3" data-print-hide>
+          <p className="font-display text-lg">Orario variato</p>
+          <ul className="mt-2 flex flex-col gap-2">
+            {shifts.map((s) => {
+              const cls = data.classes.find((c) => c.id === s.classId);
+              const code = (cls?.name ?? "?").replace(/ª\s*/g, "").replace(/\s+/g, "");
+              return (
+                <li key={`${s.classId}-${s.kind}`} className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium">
+                    {code} {s.phrase}
+                  </span>
+                  <Button size="sm" variant={s.applied ? "outline" : "default"} onClick={() => (s.applied ? undoShift(s) : applyShift(s))}>
+                    {s.applied ? "Annulla" : "Conferma"}
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {uncovered > 0 && (
         <div className="mb-5 rounded-xl border border-destructive/25 bg-danger-soft px-4 py-3">
@@ -369,6 +423,11 @@ function OggiPage() {
                 const absent = data.teachers.find((t) => t.id === n.absence.teacherId);
                 const sub = data.teachers.find((t) => t.id === n.substitution?.substituteId);
                 const ok = isCovered(n);
+                const shift = shifts.find((s) => s.applied && s.needs.some((x) => x.key === n.key));
+                const tipo =
+                  n.substitution?.type && n.substitution.type !== "divisione"
+                    ? SUBSTITUTION_TYPES.find((x) => x.value === n.substitution?.type)?.short
+                    : "";
                 return (
                   <li key={n.key}>
                     <button
@@ -376,26 +435,33 @@ function OggiPage() {
                       onClick={() => setAssignNeed(n)}
                       className={cn(
                         "paper-panel flex min-h-[7.5rem] w-full flex-col items-start rounded-xl p-4 text-left transition-[box-shadow] duration-150 hover:shadow-border-hover",
-                        !ok && "border border-destructive/30 bg-danger-soft",
+                        !ok && !shift && "border border-destructive/30 bg-danger-soft",
                       )}
                     >
                       <div className="flex w-full items-center justify-between gap-2">
                         <span className="font-display text-lg">{cls?.name}</span>
-                        <Badge variant={ok ? "success" : "danger"}>{ok ? "Coperta" : "Scoperta"}</Badge>
+                        <Badge variant={shift ? "warning" : ok ? "success" : "danger"}>
+                          {shift ? shift.phrase : ok ? "Coperta" : "Scoperta"}
+                        </Badge>
                       </div>
                       <p className="mt-1 text-[13px] text-muted-foreground">{n.slot.subject}</p>
                       <p className="mt-3 text-sm">
                         <span className="text-muted-foreground">Assente </span>
                         {absent ? teacherShort(absent, data.teachers) : "—"}
                       </p>
-                      <p className="text-sm">
-                        <span className="text-muted-foreground">Copre </span>
-                        {n.substitution?.type === "divisione"
-                          ? "classe divisa"
-                          : sub
-                            ? teacherShort(sub, data.teachers)
-                            : "Tocca per assegnare"}
-                      </p>
+                      {shift ? (
+                        <p className="text-sm">{shift.phrase}</p>
+                      ) : (
+                        <p className="text-sm">
+                          <span className="text-muted-foreground">Copre </span>
+                          {n.substitution?.type === "divisione"
+                            ? "classe divisa"
+                            : sub
+                              ? teacherShort(sub, data.teachers)
+                              : "Tocca per assegnare"}
+                          {tipo ? <span className="text-muted-foreground"> · {tipo}</span> : null}
+                        </p>
+                      )}
                     </button>
                   </li>
                 );

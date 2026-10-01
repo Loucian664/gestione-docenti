@@ -9,6 +9,7 @@ import { useAppStore, snapshot } from "@/lib/store";
 import { dayCoverage, teacherName, teacherShort } from "@/lib/coverage";
 import { ABSENCE_REASONS, type Absence } from "@/lib/types";
 import {
+  formatItFileDate,
   formatMedium,
   formatMonthYear,
   monthCalendarDays,
@@ -97,7 +98,7 @@ function AssenzePage() {
               try {
                 const text = absencesRangeText(data, from, to);
                 const blob = textToPdf(text);
-                toastSave(tab.show(`assenze-${from}-${to}.pdf`, blob), "pdf");
+                toastSave(tab.show(`assenze-${formatItFileDate(from)}-${formatItFileDate(to)}.pdf`, blob), "pdf");
               } catch {
                 tab.cancel();
                 toast.error("Non sono riuscito a creare il PDF.");
