@@ -76,6 +76,8 @@ export function coverageNeeds(data: PersistedData, date: string): CoverageNeed[]
   const needs: CoverageNeed[] = [];
 
   for (const absence of absences) {
+    const teacher = data.teachers.find((t) => t.id === absence.teacherId);
+    if (teacher?.role === "sostegno") continue;
     const slots = data.slots.filter((s) => {
       if (s.day !== day || s.teacherId !== absence.teacherId) return false;
       if (!absence.allDay && !absence.periodIds.includes(s.periodId)) return false;
@@ -110,11 +112,112 @@ export function coverageNeeds(data: PersistedData, date: string): CoverageNeed[]
   return needs;
 }
 
+export function isShiftType(type: SubstitutionType | null | undefined): boolean {
+  return type === "entra" || type === "esce" || type === "non_entra";
+}
+
 export function isCovered(need: CoverageNeed): boolean {
   const sub = need.substitution;
   if (!sub) return false;
-  if (sub.type === "divisione") return true;
+  if (sub.type === "divisione" || isShiftType(sub.type)) return true;
   return Boolean(sub.substituteId);
+}
+
+export type ClassShift = {
+  classId: string;
+  kind: "entra" | "esce" | "non_entra";
+  /** «entra alla 5ª», «esce alla 3ª», «non entra». */
+  phrase: string;
+  needs: CoverageNeed[];
+  applied: boolean;
+};
+
+function periodMark(label: string): string {
+  return label.match(/\d+ª/)?.[0] ?? label;
+}
+
+/** Ore vuote di fila in testa o in coda: la classe entra dopo, esce prima, o non entra. */
+export function classShifts(data: PersistedData, date: string): ClassShift[] {
+  const day = toSchoolDay(date);
+  if (!day) return [];
+  const needs = coverageNeeds(data, date);
+
+  function holdsClass(teacherId: string): boolean {
+    const teacher = data.teachers.find((t) => t.id === teacherId);
+    return teacher?.role !== "sostegno" && teacher?.role !== "potenziamento";
+  }
+
+  function lessonSlots(classId: string, periodId: string) {
+    return cellSlots(data, classId, day!, periodId).filter((slot) => holdsClass(slot.teacherId));
+  }
+
+  function voidPeriod(classId: string, periodId: string): boolean {
+    const slots = lessonSlots(classId, periodId);
+    if (slots.length === 0) return false;
+    const hourNeeds = needs.filter((n) => n.slot.classId === classId && n.slot.periodId === periodId);
+    for (const slot of slots) {
+      const need = hourNeeds.find((n) => n.slot.teacherId === slot.teacherId);
+      if (!need) return false;
+      if (need.substitution?.substituteId) return false;
+      if (need.substitution?.type === "divisione") return false;
+    }
+    return true;
+  }
+
+  const out: ClassShift[] = [];
+  const classIds = [...new Set(data.slots.filter((s) => s.day === day).map((s) => s.classId))];
+  for (const classId of classIds) {
+    const periodIds = [
+      ...new Set(
+        data.slots
+          .filter((s) => s.day === day && s.classId === classId && lessonSlots(s.classId, s.periodId).length > 0)
+          .map((s) => s.periodId),
+      ),
+    ];
+    periodIds.sort((a, b) => periodIndex(data, a) - periodIndex(data, b));
+    const states = periodIds.map((periodId) => ({ periodId, void: voidPeriod(classId, periodId) }));
+    if (!states.some((s) => s.void)) continue;
+    let lead = 0;
+    while (lead < states.length && states[lead].void) lead += 1;
+    let trail = 0;
+    while (trail < states.length - lead && states[states.length - 1 - trail].void) trail += 1;
+
+    const push = (kind: ClassShift["kind"], slice: { periodId: string }[], phrase: string) => {
+      const ids = new Set(slice.map((s) => s.periodId));
+      const blockNeeds = needs.filter((n) => {
+        if (n.slot.classId !== classId || !ids.has(n.slot.periodId)) return false;
+        const teacher = data.teachers.find((t) => t.id === n.slot.teacherId);
+        return teacher?.role !== "sostegno" && teacher?.role !== "potenziamento";
+      });
+      if (blockNeeds.length === 0) return;
+      out.push({
+        classId,
+        kind,
+        phrase,
+        needs: blockNeeds,
+        applied: blockNeeds.every((n) => n.substitution?.type === kind),
+      });
+    };
+
+    if (lead === states.length) {
+      push("non_entra", states, "non entra");
+      continue;
+    }
+    if (lead > 0) {
+      const label = data.settings.periods.find((p) => p.id === states[lead].periodId)?.label ?? "";
+      push("entra", states.slice(0, lead), `entra alla ${periodMark(label)}`);
+    }
+    if (trail > 0) {
+      const kept = states[states.length - 1 - trail];
+      const label = data.settings.periods.find((p) => p.id === kept.periodId)?.label ?? "";
+      push("esce", states.slice(states.length - trail), `esce alla ${periodMark(label)}`);
+    }
+  }
+
+  const name = (id: string) => data.classes.find((c) => c.id === id)?.name ?? id;
+  const order = { entra: 0, esce: 1, non_entra: 2 };
+  out.sort((a, b) => name(a.classId).localeCompare(name(b.classId), "it") || order[a.kind] - order[b.kind]);
+  return out;
 }
 
 export type SubstituteBucket =
@@ -564,7 +667,15 @@ export function loadByTeacher(data: PersistedData, from: string, to: string): Te
     else if (s.type === "sostegno") row.sostegno += 1;
     else row.altro += 1;
   }
-  return [...map.values()].sort((a, b) => b.total - a.total);
+  return [...map.values()].sort((a, b) => {
+    if (b.total !== a.total) return b.total - a.total;
+    const ta = data.teachers.find((t) => t.id === a.teacherId);
+    const tb = data.teachers.find((t) => t.id === b.teacherId);
+    return (
+      (ta?.lastName ?? "").localeCompare(tb?.lastName ?? "", "it") ||
+      (ta?.firstName ?? "").localeCompare(tb?.firstName ?? "", "it")
+    );
+  });
 }
 
 export type AbsenceReasonRow = {

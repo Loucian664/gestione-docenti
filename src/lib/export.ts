@@ -1,16 +1,24 @@
-import { eachIsoInRange, formatDayName, formatLong, isWeekend } from "./dates";
-import { coverageNeeds, isCovered, teacherName, teacherShort, absencesByReason, type CoverageNeed } from "./coverage";
+import { eachIsoInRange, formatDayName, formatItDate, formatItFileDate, formatLong, isWeekend } from "./dates";
+import { coverageNeeds, isCovered, isShiftType, classShifts, teacherName, teacherShort, absencesByReason, type CoverageNeed } from "./coverage";
 import type { PersistedData, SubstitutionType } from "./types";
-import { ABSENCE_REASONS, DAY_SHORT, SUBSTITUTION_TYPES } from "./types";
-import { xlsxFile } from "./xlsx";
+import { ABSENCE_REASONS, SUBSTITUTION_TYPES } from "./types";
+import { classTimetableSheet } from "./class-grid";
+import { xlsxFile, xlsxWorkbookFile } from "./xlsx";
 import { jpegBlobToPdf } from "./pdf";
 import { orarioTeacherJpeg, teachersOnTimetable } from "./sheet-image";
 import { teacherPdfFileName } from "./teacher-print";
 import { zipFile } from "./zip";
 
-function typeLabel(t: SubstitutionType | null): string {
-  if (!t) return "";
-  return SUBSTITUTION_TYPES.find((x) => x.value === t)?.label ?? t;
+function typeLabel(t: SubstitutionType | null, short = false): string {
+  if (!t || isShiftType(t)) return "";
+  const row = SUBSTITUTION_TYPES.find((x) => x.value === t);
+  if (!row) return t;
+  return short ? row.short : row.label;
+}
+
+function shiftPhrase(data: PersistedData, date: string, key: string): string {
+  const shift = classShifts(data, date).find((s) => s.applied && s.needs.some((n) => n.key === key));
+  return shift?.phrase ?? "";
 }
 
 /** Nome scuola per i file: «Rombiolo», senza caratteri che i sistemi non accettano. */
@@ -58,7 +66,7 @@ export function substitutionsXlsx(data: PersistedData, date: string): File {
       absent ? teacherName(absent) : "",
       reason,
       n.substitution?.type === "divisione" ? "(classe divisa)" : sub ? teacherName(sub) : "",
-      typeLabel(n.substitution?.type ?? null),
+      shiftPhrase(data, date, n.key) || typeLabel(n.substitution?.type ?? null),
       n.substitution?.notes ?? "",
     ]);
   }
@@ -90,30 +98,32 @@ export function absencesRangeXlsx(data: PersistedData, from: string, to: string)
       const sub = findTeacher(data, n.substitution?.substituteId ?? null);
       const reason = ABSENCE_REASONS.find((r) => r.value === n.absence.reason)?.label ?? "";
       const stato =
-        n.substitution?.type === "divisione" ? "Classe divisa" : isCovered(n) ? "Coperta" : "Scoperta";
+        n.substitution?.type === "divisione"
+          ? "Classe divisa"
+          : shiftPhrase(data, date, n.key) || (isCovered(n) ? "Coperta" : "Scoperta");
       rows.push([
-        n.date,
+        formatItDate(n.date),
         formatDayName(n.date),
         period?.label ?? "",
-        cls?.name ?? "",
+        classCode(cls?.name ?? ""),
         n.slot.subject,
         absent ? teacherName(absent) : "",
         reason,
         n.substitution?.type === "divisione" ? "(classe divisa)" : sub ? teacherName(sub) : "",
-        typeLabel(n.substitution?.type ?? null),
+        shiftPhrase(data, date, n.key) || typeLabel(n.substitution?.type ?? null),
         n.absence.notes ?? "",
         stato,
       ]);
     }
   }
-  return xlsxFile(`assenze-${from}-${to}.xlsx`, rows, "Assenze");
+  return xlsxFile(`assenze-${formatItFileDate(from)}-${formatItFileDate(to)}.xlsx`, rows, "Assenze");
 }
 
 export function absencesRangeText(data: PersistedData, from: string, to: string): string {
   const lines: string[] = [];
   lines.push("ASSENZE");
   lines.push(`${data.settings.schoolName} - ${data.settings.schoolYear}`);
-  lines.push(`Dal ${from} al ${to}`);
+  lines.push(`Dal ${formatItDate(from)} al ${formatItDate(to)}`);
   lines.push("");
   let count = 0;
   for (const date of eachIsoInRange(from, to)) {
@@ -128,20 +138,23 @@ export function absencesRangeText(data: PersistedData, from: string, to: string)
       const absent = findTeacher(data, n.absence.teacherId);
       const sub = findTeacher(data, n.substitution?.substituteId ?? null);
       const reason = ABSENCE_REASONS.find((r) => r.value === n.absence.reason)?.label ?? "";
+      const phrase = shiftPhrase(data, date, n.key);
       const copre =
-        n.substitution?.type === "divisione"
-          ? "classe divisa"
-          : sub
-            ? teacherName(sub)
-            : "da assegnare";
+        phrase
+          ? phrase
+          : n.substitution?.type === "divisione"
+            ? "classe divisa"
+            : sub
+              ? teacherName(sub)
+              : "da assegnare";
       const stato =
-        n.substitution?.type === "divisione" ? "divisa" : isCovered(n) ? "coperta" : "scoperta";
-      const tipo = typeLabel(n.substitution?.type ?? null);
+        phrase ? phrase : n.substitution?.type === "divisione" ? "divisa" : isCovered(n) ? "coperta" : "scoperta";
+      const tipo = phrase || typeLabel(n.substitution?.type ?? null);
       lines.push(
         `  ${period?.label ?? ""}  ${cls?.name ?? "?"}  ${n.slot.subject}`,
       );
       lines.push(
-        `    Assente ${absent ? teacherName(absent) : "?"} (${reason})  |  Copre ${copre}${tipo ? ` (${tipo})` : ""}  |  ${stato}`,
+        `    Assente ${absent ? teacherName(absent) : "?"} (${reason})  |  ${phrase ? phrase : `Copre ${copre}`}${!phrase && tipo ? ` (${tipo})` : ""}  |  ${stato}`,
       );
       count += 1;
     }
@@ -197,27 +210,25 @@ export function reportXlsx(
 }
 
 export function timetableXlsx(data: PersistedData): File {
-  const rows: (string | number)[][] = [["Classe", "Giorno", "Ora", "Materia", "Docente", "Compresenza"]];
-  const sorted = [...data.slots].sort((a, b) => {
-    if (a.classId !== b.classId) return a.classId.localeCompare(b.classId);
-    if (a.day !== b.day) return a.day - b.day;
-    return (findPeriod(data, a.periodId)?.index ?? 0) - (findPeriod(data, b.periodId)?.index ?? 0);
-  });
-  for (const s of sorted) {
-    const cls = findClass(data, s.classId);
-    const t = findTeacher(data, s.teacherId);
-    const p = findPeriod(data, s.periodId);
-    const n = data.slots.filter((x) => x.classId === s.classId && x.day === s.day && x.periodId === s.periodId).length;
-    rows.push([
-      cls?.name ?? "",
-      DAY_SHORT[s.day],
-      p?.label ?? "",
-      s.subject,
-      t ? teacherName(t) : "",
-      n > 1 ? "sì" : "",
-    ]);
-  }
-  return xlsxFile(orarioDownloadName(data.settings.schoolName, "orario", "xlsx"), rows, "Orario");
+  const toSpec = (mode: "cognomi" | "materie", sheetName: string) => {
+    const grid = classTimetableSheet(data, mode);
+    return {
+      rows: grid.rows,
+      sheetName,
+      merges: grid.merges,
+      colWidths: grid.colWidths,
+      rowHeights: grid.rowHeights,
+      freezeRow: grid.freezeRow,
+      freezeCol: grid.freezeCol,
+      autoFilter: false,
+      headerRow: false,
+      landscape: true,
+    };
+  };
+  return xlsxWorkbookFile(orarioDownloadName(data.settings.schoolName, "orario", "xlsx"), [
+    toSpec("cognomi", "Cognomi"),
+    toSpec("materie", "Materie"),
+  ]);
 }
 
 function padEnd(s: string, n: number): string {
@@ -240,31 +251,69 @@ function dailySheetBody(data: PersistedData, needs: CoverageNeed[]): string[] {
     return lines;
   }
 
-  const rows = needs.map((n) => {
-    const period = findPeriod(data, n.slot.periodId);
-    const cls = findClass(data, n.slot.classId);
-    const absent = findTeacher(data, n.absence.teacherId);
-    const sub = findTeacher(data, n.substitution?.substituteId ?? null);
-    let who = "DA COPRIRE";
-    if (n.substitution?.type === "divisione") who = "classe divisa";
-    else if (sub) who = teacherShort(sub, data.teachers);
-    return {
-      ora: (period?.label ?? n.slot.periodId).toUpperCase(),
+  const date = needs[0].date;
+  const applied = classShifts(data, date).filter((s) => s.applied);
+  const taken = new Set(applied.flatMap((s) => s.needs.map((n) => n.key)));
+
+  const rows = needs
+    .filter((n) => !taken.has(n.key))
+    .map((n) => {
+      const period = findPeriod(data, n.slot.periodId);
+      const cls = findClass(data, n.slot.classId);
+      const absent = findTeacher(data, n.absence.teacherId);
+      const sub = findTeacher(data, n.substitution?.substituteId ?? null);
+      let who = "DA COPRIRE";
+      if (n.substitution?.type === "divisione") who = "classe divisa";
+      else if (sub) who = teacherShort(sub, data.teachers);
+      const tipo =
+        n.substitution?.type && n.substitution.type !== "divisione"
+          ? typeLabel(n.substitution.type, true)
+          : "";
+      return {
+        sort: period?.index ?? 0,
+        ora: (period?.label ?? n.slot.periodId).toUpperCase(),
+        cls: classCode(cls?.name ?? "?"),
+        absent: absent ? teacherShort(absent, data.teachers) : "?",
+        tail: `copre ${who}${tipo ? ` (${tipo})` : ""}`,
+      };
+    });
+
+  for (const shift of applied) {
+    const cls = findClass(data, shift.classId);
+    const periods = [...new Set(shift.needs.map((n) => n.slot.periodId))]
+      .map((id) => findPeriod(data, id))
+      .filter((p): p is NonNullable<typeof p> => Boolean(p))
+      .sort((a, b) => a.index - b.index);
+    const marks = periods.map((p) => periodMark(p.label));
+    const ora = marks.length <= 1 ? (marks[0] ?? "") : `${marks[0]}–${marks[marks.length - 1]}`;
+    const names = [...new Set(shift.needs.map((n) => {
+      const t = findTeacher(data, n.absence.teacherId);
+      return t ? teacherShort(t, data.teachers) : "?";
+    }))].sort((a, b) => a.localeCompare(b, "it"));
+    rows.push({
+      sort: periods[0]?.index ?? 0,
+      ora,
       cls: classCode(cls?.name ?? "?"),
-      absent: absent ? teacherShort(absent, data.teachers) : "?",
-      who,
-    };
-  });
+      absent: names.join(", "),
+      tail: shift.phrase,
+    });
+  }
+
+  rows.sort((a, b) => a.sort - b.sort || a.cls.localeCompare(b.cls, "it"));
   const oraW = Math.max(...rows.map((r) => r.ora.length));
   const clsW = Math.max(...rows.map((r) => r.cls.length));
   const absW = Math.max(...rows.map((r) => r.absent.length));
 
   for (const r of rows) {
     lines.push(
-      `${padEnd(r.ora, oraW)}  -  ${padEnd(r.cls, clsW)}  |  assente ${padEnd(r.absent, absW)}  |  copre ${r.who}`,
+      `${padEnd(r.ora, oraW)}  -  ${padEnd(r.cls, clsW)}  |  assente ${padEnd(r.absent, absW)}  |  ${r.tail}`,
     );
   }
   return lines;
+}
+
+function periodMark(label: string): string {
+  return label.match(/\d+ª/)?.[0] ?? label;
 }
 
 export function dailySheetText(data: PersistedData, date: string, needs: CoverageNeed[]): string {

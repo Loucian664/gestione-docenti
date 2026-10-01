@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { autoAssignPlan, coverageNeeds, rankSubstitutes, type CoverageNeed } from "./coverage.ts";
+import { autoAssignPlan, classShifts, coverageNeeds, isCovered, rankSubstitutes, type CoverageNeed } from "./coverage.ts";
 import type { PersistedData, Teacher, TimetableSlot } from "./types.ts";
 
 function teacher(
@@ -182,5 +182,174 @@ describe("rankSubstitutes", () => {
     const plan = autoAssignPlan(fixture, fixture.selectedDate);
     assert.equal(plan.length, 1);
     assert.equal(plan[0]?.substituteId, "t-hole");
+  });
+});
+
+describe("classShifts", () => {
+  const date = "2026-09-07";
+  function absent(id: string) {
+    return {
+      id: `a-${id}`,
+      teacherId: id,
+      dateFrom: date,
+      dateTo: date,
+      reason: "assemblea_sindacale" as const,
+      notes: "",
+      allDay: true,
+      periodIds: [] as string[],
+    };
+  }
+
+  it("entra alla 5ª se le prime quattro ore di 2A sono vuote", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [teacher("t1", "Lentini"), teacher("t2", "Giofrè"), teacher("t3", "Capria")],
+      slots: [
+        slot("c-2A", "p1", "t1"),
+        slot("c-2A", "p2", "t2"),
+        slot("c-2A", "p3", "t1"),
+        slot("c-2A", "p4", "t2"),
+        slot("c-2A", "p5", "t3"),
+        slot("c-2A", "p6", "t3"),
+      ],
+      absences: [absent("t1"), absent("t2")],
+    });
+    const shifts = classShifts(d, date);
+    assert.equal(shifts.length, 1);
+    assert.equal(shifts[0]?.kind, "entra");
+    assert.equal(shifts[0]?.phrase, "entra alla 5ª");
+    assert.equal(shifts[0]?.applied, false);
+    assert.equal(shifts[0]?.needs.length, 4);
+  });
+
+  it("esce alla 3ª se mancano solo le ultime ore", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [teacher("t1", "Lentini"), teacher("t3", "Capria")],
+      slots: ["p1", "p2", "p3", "p4", "p5", "p6"].map((p, i) => slot("c-2A", p, i < 3 ? "t3" : "t1")),
+      absences: [absent("t1")],
+    });
+    const shifts = classShifts(d, date);
+    assert.equal(shifts.length, 1);
+    assert.equal(shifts[0]?.phrase, "esce alla 3ª");
+  });
+
+  it("non entra se la giornata della classe è tutta vuota", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [teacher("t1", "Lentini")],
+      slots: ["p1", "p2", "p3", "p4", "p5", "p6"].map((p) => slot("c-1A", p, "t1")),
+      absences: [absent("t1")],
+    });
+    assert.equal(classShifts(d, date)[0]?.phrase, "non entra");
+  });
+
+  it("il sostegno in compresenza non tiene la classe: Lentini 1ª e 2ª, entra alla 3ª", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [
+        teacher("t1", "Lentini"),
+        teacher("t-sos", "Lorenzo", "sostegno", ["Sostegno"]),
+        teacher("t3", "Staropoli", "cattedra", ["Tecnologia"]),
+      ],
+      slots: [
+        slot("c-1A", "p1", "t1", "Italiano"),
+        slot("c-1A", "p2", "t1", "Italiano"),
+        slot("c-1A", "p2", "t-sos", "Sostegno"),
+        slot("c-1A", "p3", "t3", "Tecnologia"),
+      ],
+      absences: [
+        {
+          id: "a-t1",
+          teacherId: "t1",
+          dateFrom: date,
+          dateTo: date,
+          reason: "assemblea_sindacale",
+          notes: "",
+          allDay: false,
+          periodIds: ["p1", "p2"],
+        },
+      ],
+    });
+    const shifts = classShifts(d, date);
+    assert.equal(shifts.length, 1);
+    assert.equal(shifts[0]?.classId, "c-1A");
+    assert.equal(shifts[0]?.phrase, "entra alla 3ª");
+    assert.deepEqual(
+      shifts[0]?.needs.map((n) => n.slot.periodId).sort(),
+      ["p1", "p2"],
+    );
+  });
+
+  it("un buco in mezzo non è un cambio di orario", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [teacher("t1", "Lentini"), teacher("t3", "Capria")],
+      slots: ["p1", "p2", "p3", "p4", "p5", "p6"].map((p) => slot("c-1A", p, p === "p3" ? "t1" : "t3")),
+      absences: [absent("t1")],
+    });
+    assert.equal(classShifts(d, date).length, 0);
+    assert.equal(isCovered(coverageNeeds(d, date)[0]!), false);
+  });
+
+  it("un docente di sostegno assente non si sostituisce e non sposta la classe", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [
+        teacher("t1", "Pata"),
+        teacher("t-sos", "Pontoriero", "sostegno", ["Sostegno"]),
+      ],
+      slots: [
+        slot("c-3A", "p1", "t1", "Matematica"),
+        slot("c-3A", "p1", "t-sos", "Sostegno"),
+        slot("c-3A", "p2", "t1", "Matematica"),
+        slot("c-3A", "p2", "t-sos", "Sostegno"),
+        slot("c-3A", "p3", "t1", "Matematica"),
+      ],
+      absences: [absent("t-sos")],
+    });
+    assert.equal(coverageNeeds(d, date).length, 0);
+    assert.equal(classShifts(d, date).length, 0);
+  });
+
+  it("il potenziamento non tiene la classe e non sposta ingresso o uscita", () => {
+    const base = {
+      selectedDate: date,
+      teachers: [
+        teacher("t1", "Capria"),
+        teacher("t-pot", "Arcella", "potenziamento", ["Potenziamento"]),
+      ],
+      slots: [
+        slot("c-2A", "p1", "t1", "Inglese"),
+        slot("c-2A", "p1", "t-pot", "Potenziamento"),
+        slot("c-2A", "p2", "t1", "Inglese"),
+        slot("c-2A", "p3", "t1", "Inglese"),
+      ],
+    };
+    const onlyPot = data({ ...base, absences: [absent("t-pot")] });
+    assert.equal(classShifts(onlyPot, date).length, 0);
+
+    const curricular = data({
+      ...base,
+      absences: [
+        {
+          id: "a-t1",
+          teacherId: "t1",
+          dateFrom: date,
+          dateTo: date,
+          reason: "assemblea_sindacale" as const,
+          notes: "",
+          allDay: false,
+          periodIds: ["p1"],
+        },
+      ],
+    });
+    const shifts = classShifts(curricular, date);
+    assert.equal(shifts.length, 1);
+    assert.equal(shifts[0]?.phrase, "entra alla 2ª");
+    assert.deepEqual(
+      shifts[0]?.needs.map((n) => n.absence.teacherId),
+      ["t1"],
+    );
   });
 });
