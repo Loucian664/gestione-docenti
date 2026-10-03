@@ -52,8 +52,19 @@ export function teacherShort(t: Teacher, all: readonly Teacher[] = []): string {
   return `${last} ${first}`;
 }
 
+/** Riepilogo sostituzioni: solo il cognome; parte del nome solo se ce ne sono due uguali. */
+export function teacherSurname(t: Teacher, all: readonly Teacher[] = []): string {
+  const peers = all.filter((x) => x.lastName === t.lastName);
+  if (peers.length <= 1) return t.lastName;
+  return teacherShort(t, all);
+}
+
 export function absencesOnDate(data: PersistedData, date: string): Absence[] {
   return data.absences.filter((a) => dateInRange(date, a.dateFrom, a.dateTo));
+}
+
+function periodMark(label: string): string {
+  return label.match(/\d+ª/)?.[0] ?? label;
 }
 
 export function isTeacherAbsent(
@@ -131,10 +142,6 @@ export type ClassShift = {
   needs: CoverageNeed[];
   applied: boolean;
 };
-
-function periodMark(label: string): string {
-  return label.match(/\d+ª/)?.[0] ?? label;
-}
 
 /** Ore vuote di fila in testa o in coda: la classe entra dopo, esce prima, o non entra. */
 export function classShifts(data: PersistedData, date: string): ClassShift[] {

@@ -1,5 +1,5 @@
 import { eachIsoInRange, formatDayName, formatItDate, formatItFileDate, formatLong, isWeekend } from "./dates";
-import { coverageNeeds, isCovered, isShiftType, classShifts, teacherName, teacherShort, absencesByReason, type CoverageNeed } from "./coverage";
+import { coverageNeeds, isCovered, isShiftType, classShifts, teacherName, teacherSurname, absencesByReason, type CoverageNeed } from "./coverage";
 import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, SUBSTITUTION_TYPES } from "./types";
 import { classTimetableSheet } from "./class-grid";
@@ -243,7 +243,11 @@ export function dailySheetHeading(date: string): string {
   return formatLong(date).toLocaleUpperCase("it-IT");
 }
 
-function dailySheetBody(data: PersistedData, needs: CoverageNeed[]): string[] {
+function withAssembly(name: string, reason: string | undefined): string {
+  return reason === "assemblea_sindacale" ? `${name} (assemblea)` : name;
+}
+
+function dailySheetBody(data: PersistedData, date: string, needs: CoverageNeed[]): string[] {
   const lines: string[] = [];
 
   if (needs.length === 0) {
@@ -251,7 +255,6 @@ function dailySheetBody(data: PersistedData, needs: CoverageNeed[]): string[] {
     return lines;
   }
 
-  const date = needs[0].date;
   const applied = classShifts(data, date).filter((s) => s.applied);
   const taken = new Set(applied.flatMap((s) => s.needs.map((n) => n.key)));
 
@@ -264,16 +267,17 @@ function dailySheetBody(data: PersistedData, needs: CoverageNeed[]): string[] {
       const sub = findTeacher(data, n.substitution?.substituteId ?? null);
       let who = "DA COPRIRE";
       if (n.substitution?.type === "divisione") who = "classe divisa";
-      else if (sub) who = teacherShort(sub, data.teachers);
+      else if (sub) who = teacherSurname(sub, data.teachers);
       const tipo =
         n.substitution?.type && n.substitution.type !== "divisione"
           ? typeLabel(n.substitution.type, true)
           : "";
       return {
+        shift: false,
         sort: period?.index ?? 0,
         ora: (period?.label ?? n.slot.periodId).toUpperCase(),
         cls: classCode(cls?.name ?? "?"),
-        absent: absent ? teacherShort(absent, data.teachers) : "?",
+        absent: withAssembly(absent ? teacherSurname(absent, data.teachers) : "?", n.absence.reason),
         tail: `copre ${who}${tipo ? ` (${tipo})` : ""}`,
       };
     });
@@ -286,15 +290,26 @@ function dailySheetBody(data: PersistedData, needs: CoverageNeed[]): string[] {
       .sort((a, b) => a.index - b.index);
     const marks = periods.map((p) => periodMark(p.label));
     const ora = marks.length <= 1 ? (marks[0] ?? "") : `${marks[0]}–${marks[marks.length - 1]}`;
-    const names = [...new Set(shift.needs.map((n) => {
+    const people = new Map<string, { name: string; reason: string }>();
+    for (const n of shift.needs) {
       const t = findTeacher(data, n.absence.teacherId);
-      return t ? teacherShort(t, data.teachers) : "?";
-    }))].sort((a, b) => a.localeCompare(b, "it"));
+      if (!people.has(n.absence.teacherId)) {
+        people.set(n.absence.teacherId, {
+          name: t ? teacherSurname(t, data.teachers) : "?",
+          reason: n.absence.reason,
+        });
+      }
+    }
+    const absent = [...people.values()]
+      .sort((a, b) => a.name.localeCompare(b.name, "it"))
+      .map((p) => withAssembly(p.name, p.reason))
+      .join(", ");
     rows.push({
+      shift: true,
       sort: periods[0]?.index ?? 0,
       ora,
       cls: classCode(cls?.name ?? "?"),
-      absent: names.join(", "),
+      absent,
       tail: shift.phrase,
     });
   }
@@ -303,12 +318,13 @@ function dailySheetBody(data: PersistedData, needs: CoverageNeed[]): string[] {
   const oraW = Math.max(...rows.map((r) => r.ora.length));
   const clsW = Math.max(...rows.map((r) => r.cls.length));
   const absW = Math.max(...rows.map((r) => r.absent.length));
-
-  for (const r of rows) {
-    lines.push(
-      `${padEnd(r.ora, oraW)}  -  ${padEnd(r.cls, clsW)}  |  assente ${padEnd(r.absent, absW)}  |  ${r.tail}`,
-    );
-  }
+  const format = (r: (typeof rows)[number]) =>
+    `${padEnd(r.ora, oraW)}  -  ${padEnd(r.cls, clsW)}  |  assente ${padEnd(r.absent, absW)}  |  ${r.tail}`;
+  const varied = rows.filter((r) => r.shift);
+  const rest = rows.filter((r) => !r.shift);
+  for (const r of varied) lines.push(format(r));
+  if (varied.length > 0 && rest.length > 0) lines.push("");
+  for (const r of rest) lines.push(format(r));
   return lines;
 }
 
@@ -317,7 +333,7 @@ function periodMark(label: string): string {
 }
 
 export function dailySheetText(data: PersistedData, date: string, needs: CoverageNeed[]): string {
-  return [dailySheetHeading(date), ...dailySheetBody(data, needs)].join("\n");
+  return [dailySheetHeading(date), ...dailySheetBody(data, date, needs)].join("\n");
 }
 
 const BOLD_ACCENT: Record<string, string> = {
@@ -355,7 +371,7 @@ export function toPlainBold(s: string): string {
 }
 
 export function dailySheetCopyPlain(data: PersistedData, date: string, needs: CoverageNeed[]): string {
-  return [toPlainBold(dailySheetHeading(date)), ...dailySheetBody(data, needs)].join("\n");
+  return [toPlainBold(dailySheetHeading(date)), ...dailySheetBody(data, date, needs)].join("\n");
 }
 
 function escapeHtml(s: string): string {
@@ -368,7 +384,7 @@ function escapeHtml(s: string): string {
 
 export function dailySheetHtml(data: PersistedData, date: string, needs: CoverageNeed[]): string {
   const heading = escapeHtml(dailySheetHeading(date));
-  const rows = dailySheetBody(data, needs)
+  const rows = dailySheetBody(data, date, needs)
     .map((line) => `<div>${escapeHtml(line) || "&nbsp;"}</div>`)
     .join("");
   return `<b>${heading}</b>${rows}`;
