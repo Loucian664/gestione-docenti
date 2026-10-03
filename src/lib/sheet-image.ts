@@ -9,6 +9,7 @@ import {
   teacherDayWindow,
   teacherName,
   teacherShort,
+  teacherSurname,
   teacherSlotAt,
 } from "./coverage";
 import { formatLong } from "./dates";
@@ -410,7 +411,8 @@ export async function bachecaJpeg(data: PersistedData, date: string): Promise<Bl
       const code = (cls?.name ?? "?").replace(/ª\s*/g, "").replace(/\s+/g, "");
       const names = [...new Set(shift.needs.map((n) => {
         const t = data.teachers.find((x) => x.id === n.absence.teacherId);
-        return t ? teacherShort(t, data.teachers) : "?";
+        const name = t ? teacherSurname(t, data.teachers) : "?";
+        return n.absence.reason === "assemblea_sindacale" ? `${name} (assemblea)` : name;
       }))].sort((a, b) => a.localeCompare(b, "it"));
       ctx.fillStyle = INK;
       ctx.font = "600 16px 'Source Sans 3', system-ui, sans-serif";
@@ -437,12 +439,15 @@ export async function bachecaJpeg(data: PersistedData, date: string): Promise<Bl
     for (const n of g.items) {
       const cls = data.classes.find((c) => c.id === n.slot.classId);
       const absent = data.teachers.find((t) => t.id === n.absence.teacherId);
+      const absentName = absent ? teacherSurname(absent, data.teachers) : "—";
+      const absentLabel =
+        n.absence.reason === "assemblea_sindacale" ? `${absentName} (assemblea)` : absentName;
       const sub = data.teachers.find((t) => t.id === n.substitution?.substituteId);
       const copre =
         n.substitution?.type === "divisione"
           ? "classe divisa"
           : sub
-            ? teacherShort(sub, data.teachers)
+            ? teacherSurname(sub, data.teachers)
             : "da assegnare";
       const tipo =
         n.substitution?.type && n.substitution.type !== "divisione"
@@ -454,7 +459,7 @@ export async function bachecaJpeg(data: PersistedData, date: string): Promise<Bl
       ctx.fillStyle = MUTED;
       ctx.font = "500 14px 'Source Sans 3', system-ui, sans-serif";
       ctx.fillText(
-        `Assente ${absent ? teacherShort(absent, data.teachers) : "—"}   →   Copre ${copre}${tipo ? ` (${tipo})` : ""}`,
+        `Assente ${absentLabel}   →   Copre ${copre}${tipo ? ` (${tipo})` : ""}`,
         pad,
         y + 22,
       );

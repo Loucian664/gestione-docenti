@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { autoAssignPlan, classShifts, coverageNeeds, isCovered, rankSubstitutes, type CoverageNeed } from "./coverage.ts";
+import { dailySheetText } from "./export.ts";
 import type { PersistedData, Teacher, TimetableSlot } from "./types.ts";
 
 function teacher(
@@ -351,5 +352,44 @@ describe("classShifts", () => {
       shifts[0]?.needs.map((n) => n.absence.teacherId),
       ["t1"],
     );
+  });
+
+  it("il foglio nomina chi è in assemblea, anche sostegno", () => {
+    const lentini = teacher("t1", "Lentini");
+    lentini.firstName = "Giuseppina";
+    const pont = teacher("t-sos", "Pontoriero", "sostegno", ["Sostegno"]);
+    pont.firstName = "Grazia";
+    const d = data({
+      selectedDate: date,
+      teachers: [lentini, pont],
+      slots: [
+        slot("c-1A", "p1", "t1"),
+        slot("c-1A", "p2", "t1"),
+        slot("c-1A", "p3", "t1"),
+        slot("c-1A", "p1", "t-sos", "Sostegno"),
+        slot("c-1A", "p2", "t-sos", "Sostegno"),
+      ],
+      absences: [
+        { ...absent("t1"), allDay: false, periodIds: ["p1", "p2"] },
+        { ...absent("t-sos"), allDay: false, periodIds: ["p1", "p2"] },
+      ],
+    });
+    const shift = classShifts(d, date)[0]!;
+    d.substitutions = shift.needs.map((n) => ({
+      id: `s-${n.slot.id}`,
+      date,
+      periodId: n.slot.periodId,
+      classId: n.slot.classId,
+      absentTeacherId: n.absence.teacherId,
+      substituteId: null,
+      type: shift.kind,
+      activity: "",
+      notes: "",
+      subject: n.slot.subject,
+    }));
+    const text = dailySheetText(d, date, coverageNeeds(d, date));
+    assert.doesNotMatch(text, /Assemblea sindacale,/);
+    assert.match(text, /assente Lentini \(assemblea\)/);
+    assert.match(text, /entra alla 3ª/);
   });
 });
