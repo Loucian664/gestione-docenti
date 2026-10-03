@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAppStore, snapshot } from "@/lib/store";
 import { loadByTeacher, absencesByReason, teacherShort } from "@/lib/coverage";
-import { monthRange, schoolYearRange } from "@/lib/dates";
+import { formatItDate, monthRange, schoolYearRange } from "@/lib/dates";
 import { reportXlsx } from "@/lib/export";
 import { shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
@@ -262,7 +262,7 @@ function ReportPage() {
 
       <h2 className="mt-8 mb-1 font-display text-lg">Anno scolastico {data.settings.schoolYear}</h2>
       <p className="mb-3 text-sm text-muted-foreground">
-        Dal {yearRange.from} al {yearRange.to}. Non dipende dal periodo sopra.
+        Dal {formatItDate(yearRange.from)} al {formatItDate(yearRange.to)}. Non dipende dal periodo sopra.
       </p>
       {yearStatCards.length === 0 ? (
         <p className="mb-5 text-sm text-muted-foreground">

@@ -59,18 +59,18 @@ export function substitutionsXlsx(data: PersistedData, date: string): File {
     const sub = findTeacher(data, n.substitution?.substituteId ?? null);
     const reason = ABSENCE_REASONS.find((r) => r.value === n.absence.reason)?.label ?? "";
     rows.push([
-      n.date,
+      formatItDate(n.date),
       period?.label ?? "",
       cls?.name ?? "",
       n.slot.subject,
-      absent ? teacherName(absent) : "",
+      absent ? teacherSurname(absent, data.teachers) : "",
       reason,
-      n.substitution?.type === "divisione" ? "(classe divisa)" : sub ? teacherName(sub) : "",
+      n.substitution?.type === "divisione" ? "(classe divisa)" : sub ? teacherSurname(sub, data.teachers) : "",
       shiftPhrase(data, date, n.key) || typeLabel(n.substitution?.type ?? null),
       n.substitution?.notes ?? "",
     ]);
   }
-  return xlsxFile(`sostituzioni-${date}.xlsx`, rows, "Sostituzioni");
+  return xlsxFile(`sostituzioni-${formatItFileDate(date)}.xlsx`, rows, "Sostituzioni");
 }
 
 export function absencesRangeXlsx(data: PersistedData, from: string, to: string): File {
