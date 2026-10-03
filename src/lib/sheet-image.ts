@@ -12,7 +12,7 @@ import {
   teacherSurname,
   teacherSlotAt,
 } from "./coverage";
-import { formatLong } from "./dates";
+import { formatItDate, formatLong } from "./dates";
 import { ABSENCE_REASONS, dayNameUpper, DAY_SHORT, SUBSTITUTION_TYPES, type DayOfWeek, type PersistedData } from "./types";
 import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "./periods";
 import { teacherSheetName } from "./teacher-print";
@@ -503,7 +503,7 @@ export async function reportJpeg(data: PersistedData, from: string, to: string):
     };
   });
   const subBlob = await paintTable({
-    kicker: `${data.settings.schoolName} · ${from} → ${to}`,
+    kicker: `${data.settings.schoolName} · ${formatItDate(from)} → ${formatItDate(to)}`,
     title: "Monte ore sostituzioni",
     corner: "Docente",
     columns: [
@@ -528,7 +528,7 @@ export async function reportJpeg(data: PersistedData, from: string, to: string):
     };
   });
   const absBlob = await paintTable({
-    kicker: `${data.settings.schoolName} · ${from} → ${to}`,
+    kicker: `${data.settings.schoolName} · ${formatItDate(from)} → ${formatItDate(to)}`,
     title: "Assenze per motivo",
     corner: "Docente",
     columns: [...ABSENCE_REASONS.map((x) => ({ title: REASON_SHORT[x.value] ?? x.label })), { title: "Tot." }],
