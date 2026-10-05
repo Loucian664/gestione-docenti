@@ -143,7 +143,8 @@ export type ClassShift = {
   applied: boolean;
 };
 
-/** Ore vuote di fila in testa o in coda: la classe entra dopo, esce prima, o non entra. */
+/** Ore vuote di fila in testa o in coda: la classe entra dopo, esce prima, o non entra.
+ *  Entra dopo solo se chi tiene la classe manca per assemblea sindacale. */
 export function classShifts(data: PersistedData, date: string): ClassShift[] {
   const day = toSchoolDay(date);
   if (!day) return [];
@@ -171,6 +172,15 @@ export function classShifts(data: PersistedData, date: string): ClassShift[] {
     return true;
   }
 
+  function assemblyVoid(classId: string, periodId: string): boolean {
+    if (!voidPeriod(classId, periodId)) return false;
+    const hourNeeds = needs.filter((n) => {
+      if (n.slot.classId !== classId || n.slot.periodId !== periodId) return false;
+      return holdsClass(n.slot.teacherId);
+    });
+    return hourNeeds.length > 0 && hourNeeds.every((n) => n.absence.reason === "assemblea_sindacale");
+  }
+
   const out: ClassShift[] = [];
   const classIds = [...new Set(data.slots.filter((s) => s.day === day).map((s) => s.classId))];
   for (const classId of classIds) {
@@ -184,8 +194,11 @@ export function classShifts(data: PersistedData, date: string): ClassShift[] {
     periodIds.sort((a, b) => periodIndex(data, a) - periodIndex(data, b));
     const states = periodIds.map((periodId) => ({ periodId, void: voidPeriod(classId, periodId) }));
     if (!states.some((s) => s.void)) continue;
+    const allVoid = states.every((s) => s.void);
+    const allAssembly = states.every((s) => assemblyVoid(classId, s.periodId));
+    if (allVoid && !allAssembly) continue;
     let lead = 0;
-    while (lead < states.length && states[lead].void) lead += 1;
+    while (lead < states.length && assemblyVoid(classId, states[lead].periodId)) lead += 1;
     let trail = 0;
     while (trail < states.length - lead && states[states.length - 1 - trail].void) trail += 1;
 
