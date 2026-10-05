@@ -168,7 +168,94 @@ describe("rankSubstitutes", () => {
     assert.ok(row);
     assert.equal(row.bucket, "sostegno");
     assert.ok(ranked[0]?.teacher.id !== "t-sost");
-    assert.ok(!["buco", "pre-post", "in-sede", "potenziamento"].includes(row.bucket));
+    assert.ok(!["buco", "pre-post", "in-sede", "potenziamento", "sostegno-qui"].includes(row.bucket));
+  });
+
+  it("mette in evidenza il sostegno già in quell’ora e in quella classe", () => {
+    const d = data({
+      teachers: [teacher("t1", "Staropoli"), teacher("t-sos", "Pagnotta", "sostegno", ["Sostegno"]), teacher("t-hole", "Buco")],
+      slots: [
+        slot("c-3B", "p2", "t1", "Tecnologia"),
+        slot("c-3B", "p2", "t-sos", "Sostegno"),
+        slot("c-2A", "p1", "t-hole"),
+        slot("c-2A", "p3", "t-hole"),
+      ],
+      absences: [
+        {
+          id: "a1",
+          teacherId: "t1",
+          dateFrom: "2026-09-07",
+          dateTo: "2026-09-07",
+          reason: "visita",
+          notes: "",
+          allDay: true,
+          periodIds: [],
+        },
+      ],
+    });
+    const need = coverageNeeds(d, "2026-09-07").find((n) => n.slot.periodId === "p2")!;
+    const ranked = rankSubstitutes(d, need);
+    const sos = ranked.find((r) => r.teacher.id === "t-sos");
+    const hole = ranked.find((r) => r.teacher.id === "t-hole");
+    assert.equal(sos?.bucket, "sostegno-qui");
+    assert.ok(sos && hole && ranked.indexOf(sos) > ranked.indexOf(hole));
+    assert.equal(autoAssignPlan(d, "2026-09-07").some((s) => s.substituteId === "t-sos"), false);
+  });
+
+  it("il sostegno di una classe che entra dopo può coprire un’altra", () => {
+    const d = data({
+      teachers: [
+        teacher("t1", "Lentini"),
+        teacher("t2", "Staropoli"),
+        teacher("t-sos", "Lorenzo", "sostegno", ["Sostegno"]),
+      ],
+      slots: [
+        slot("c-1A", "p1", "t1", "Italiano"),
+        slot("c-1A", "p2", "t1", "Italiano"),
+        slot("c-1A", "p2", "t-sos", "Sostegno"),
+        slot("c-1A", "p3", "t1", "Italiano"),
+        slot("c-2A", "p2", "t2", "Tecnologia"),
+      ],
+      absences: [
+        {
+          id: "a1",
+          teacherId: "t1",
+          dateFrom: "2026-09-07",
+          dateTo: "2026-09-07",
+          reason: "assemblea_sindacale",
+          notes: "",
+          allDay: false,
+          periodIds: ["p1", "p2"],
+        },
+        {
+          id: "a2",
+          teacherId: "t2",
+          dateFrom: "2026-09-07",
+          dateTo: "2026-09-07",
+          reason: "visita",
+          notes: "",
+          allDay: true,
+          periodIds: [],
+        },
+      ],
+      substitutions: ["p1", "p2"].map((periodId) => ({
+        id: `s-${periodId}`,
+        date: "2026-09-07",
+        periodId,
+        classId: "c-1A",
+        absentTeacherId: "t1",
+        substituteId: null,
+        type: "entra" as const,
+        activity: "",
+        notes: "",
+        subject: "Italiano",
+      })),
+    });
+    const need = coverageNeeds(d, "2026-09-07").find((n) => n.slot.classId === "c-2A")!;
+    const row = rankSubstitutes(d, need).find((r) => r.teacher.id === "t-sos");
+    assert.equal(row?.bucket, "sostegno-libera");
+    assert.match(row?.reasons.join(" ") ?? "", /entra alla 3ª/);
+    assert.equal(autoAssignPlan(d, "2026-09-07").some((s) => s.substituteId === "t-sos"), false);
   });
 
   it("lists busy cattedra after available names, not hidden", () => {

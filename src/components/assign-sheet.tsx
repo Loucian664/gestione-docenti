@@ -31,6 +31,16 @@ const GROUPS: { bucket: SubstituteBucket | SubstituteBucket[]; title: string; hi
     hint: "Già a scuola tra due lezioni, ora libera.",
   },
   {
+    bucket: "sostegno-qui",
+    title: "Sostegno già in questa classe",
+    hint: "È in quest’ora, nella classe scoperta. Puoi chiedergli di coprire.",
+  },
+  {
+    bucket: "sostegno-libera",
+    title: "Sostegno libero, la classe non c’è",
+    hint: "La sua classe entra più tardi o è già uscita. Può coprire questa.",
+  },
+  {
     bucket: "pre-post",
     title: "Un’ora prima o un’ora dopo",
     hint: "Basta anticipare l’ingresso o posticipare l’uscita di un’ora.",
@@ -58,7 +68,7 @@ const GROUPS: { bucket: SubstituteBucket | SubstituteBucket[]; title: string; hi
   {
     bucket: "sostegno",
     title: "Sostegno",
-    hint: "Non in automatico: non sappiamo se l’alunno seguito è in classe.",
+    hint: "In un’altra classe, oppure non in quest’ora. Non in automatico.",
   },
   {
     bucket: "non-in-sede",

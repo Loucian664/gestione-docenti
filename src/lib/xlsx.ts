@@ -148,6 +148,11 @@ function isRich(c: XlsxCellInput): c is XlsxRichCell {
   return typeof c === "object" && c !== null && ("v" in c || "s" in c);
 }
 
+/** Testo di una tabella con la stessa griglia sottile dell’orario. */
+export const XLSX_GRID_TEXT = 11;
+/** Etichetta del giorno, centrata nel blocco di righe di quel giorno. */
+export const XLSX_GRID_DAY = 12;
+
 function cellValue(c: XlsxCellInput | undefined): Cell {
   if (isRich(c)) return c.v;
   return c;
@@ -342,7 +347,7 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="11">
+  <cellXfs count="13">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
     <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
@@ -354,6 +359,8 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <xf numFmtId="0" fontId="5" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="1" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
   </cellXfs>
 </styleSheet>`;
 
