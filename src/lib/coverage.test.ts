@@ -288,6 +288,30 @@ describe("classShifts", () => {
     };
   }
 
+  it("non fa entrare dopo se l’assenza non è assemblea", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [teacher("t1", "Staropoli"), teacher("t3", "Capria")],
+      slots: [
+        slot("c-2A", "p1", "t1", "Tecnologia"),
+        slot("c-2A", "p2", "t1", "Tecnologia"),
+        slot("c-2A", "p3", "t3", "Inglese"),
+      ],
+      absences: [
+        {
+          ...absent("t1"),
+          reason: "visita",
+          allDay: false,
+          periodIds: ["p1", "p2"],
+        },
+      ],
+    });
+    assert.equal(classShifts(d, date).length, 0);
+    const needs = coverageNeeds(d, date);
+    assert.equal(needs.length, 2);
+    assert.equal(needs.every((n) => !isCovered(n)), true);
+  });
+
   it("entra alla 5ª se le prime quattro ore di 2A sono vuote", () => {
     const d = data({
       selectedDate: date,
