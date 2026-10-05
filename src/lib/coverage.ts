@@ -230,6 +230,8 @@ export function classShifts(data: PersistedData, date: string): ClassShift[] {
 export type SubstituteBucket =
   | "disp"
   | "buco"
+  | "sostegno-qui"
+  | "sostegno-libera"
   | "pre-post"
   | "potenziamento"
   | "in-sede"
@@ -376,13 +378,15 @@ function isPotenziamentoSlot(teacher: Teacher, slot: TimetableSlot | undefined):
 const BUCKET_ORDER: Record<SubstituteBucket, number> = {
   disp: -1,
   buco: 0,
-  "pre-post": 1,
-  potenziamento: 2,
-  "in-sede": 3,
-  "senza-orario": 4,
-  impegnato: 5,
-  sostegno: 6,
-  "non-in-sede": 7,
+  "sostegno-qui": 1,
+  "sostegno-libera": 2,
+  "pre-post": 3,
+  potenziamento: 4,
+  "in-sede": 5,
+  "senza-orario": 6,
+  impegnato: 7,
+  sostegno: 8,
+  "non-in-sede": 9,
 };
 
 export function rankSubstitutes(
@@ -393,6 +397,12 @@ export function rankSubstitutes(
   const counts = monthSubCounts(data, need.date);
   const day = toSchoolDay(need.date);
   if (!day) return [];
+  const skipped = new Map<string, string>();
+  for (const shift of classShifts(data, need.date)) {
+    if (!shift.applied) continue;
+    if (!shift.needs.some((n) => n.slot.periodId === need.slot.periodId)) continue;
+    skipped.set(shift.classId, shift.phrase);
+  }
 
   const idx = periodIndex(data, need.slot.periodId);
   const coveringThisHour = new Set(
@@ -441,6 +451,18 @@ export function rankSubstitutes(
         score -= 80;
         reasons.push("Assente");
         inferredType = "eccedente";
+      } else if (isSostegno && occupyingHere) {
+        bucket = "sostegno-qui";
+        onSite = true;
+        score += 70;
+        inferredType = "sostegno";
+        reasons.push("Già in questa classe");
+      } else if (isSostegno && occupyingElse && skipped.has(occupation!.classId)) {
+        bucket = "sostegno-libera";
+        onSite = true;
+        score += 66;
+        inferredType = "sostegno";
+        reasons.push(`Libero: ${clsElse?.name ?? "la classe"} ${skipped.get(occupation!.classId)}`);
       } else if (isSostegno) {
         bucket = "sostegno";
         onSite = false;
