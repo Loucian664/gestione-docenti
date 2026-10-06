@@ -346,6 +346,17 @@ describe("classShifts", () => {
     assert.equal(shifts[0]?.phrase, "esce alla 3ª");
   });
 
+  it("non fa uscire prima se l’assenza non è assemblea", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [teacher("t1", "Staropoli"), teacher("t3", "Capria")],
+      slots: ["p1", "p2", "p3", "p4", "p5", "p6"].map((p, i) => slot("c-2A", p, i < 3 ? "t3" : "t1")),
+      absences: [{ ...absent("t1"), reason: "visita" }],
+    });
+    assert.equal(classShifts(d, date).length, 0);
+    assert.equal(coverageNeeds(d, date).length, 3);
+  });
+
   it("non entra se la giornata della classe è tutta vuota", () => {
     const d = data({
       selectedDate: date,
