@@ -717,6 +717,45 @@ export function loadByTeacher(data: PersistedData, from: string, to: string): Te
   });
 }
 
+export type EccedenteLine = {
+  id: string;
+  date: string;
+  teacher: string;
+  className: string;
+  hour: string;
+  from: string;
+  to: string;
+};
+
+/** Ore segnate come eccedenti: chi ha coperto, la classe e l’orario. */
+export function eccedenteLines(data: PersistedData, from: string, to: string): EccedenteLine[] {
+  return data.substitutions
+    .filter((s) => s.type === "eccedente" && s.substituteId && s.date >= from && s.date <= to)
+    .map((s) => {
+      const teacher = data.teachers.find((t) => t.id === s.substituteId);
+      const cls = data.classes.find((c) => c.id === s.classId);
+      const period = data.settings.periods.find((p) => p.id === s.periodId);
+      return {
+        id: s.id,
+        date: s.date,
+        teacher: teacher ? teacherName(teacher) : "",
+        className: cls?.name ?? "",
+        hour: period ? (isMensaPeriod(period) ? "M" : `${period.index}ª`) : "",
+        from: period?.start ?? "",
+        to: period?.end ?? "",
+        index: period?.index ?? 99,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) ||
+        a.index - b.index ||
+        a.teacher.localeCompare(b.teacher, "it") ||
+        a.className.localeCompare(b.className, "it"),
+    )
+    .map(({ index: _index, ...line }) => line);
+}
+
 export type AbsenceReasonRow = {
   teacherId: string;
   byReason: Record<AbsenceReason, number>;

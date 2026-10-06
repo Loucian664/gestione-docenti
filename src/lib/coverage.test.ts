@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { autoAssignPlan, classShifts, coverageNeeds, isCovered, rankSubstitutes, type CoverageNeed } from "./coverage.ts";
+import { autoAssignPlan, classShifts, coverageNeeds, eccedenteLines, isCovered, rankSubstitutes, type CoverageNeed } from "./coverage.ts";
 import { assemblySummary, dailySheetText } from "./export.ts";
 import type { PersistedData, Teacher, TimetableSlot } from "./types.ts";
 
@@ -398,6 +398,46 @@ describe("classShifts", () => {
       ].join("\n"),
     );
     assert.equal(assemblySummary(data({ selectedDate: date }), date), null);
+  });
+
+  it("elenca solo le ore eccedenti, con classe e orario", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [teacher("t1", "Lentini"), teacher("t2", "Capria")],
+      substitutions: [
+        {
+          id: "s-ecc",
+          date,
+          periodId: "p1",
+          classId: "c-1A",
+          absentTeacherId: "t1",
+          substituteId: "t2",
+          type: "eccedente",
+          activity: "",
+          notes: "",
+          subject: "Italiano",
+        },
+        {
+          id: "s-disp",
+          date,
+          periodId: "p2",
+          classId: "c-2A",
+          absentTeacherId: "t1",
+          substituteId: "t2",
+          type: "disposizione",
+          activity: "",
+          notes: "",
+          subject: "Italiano",
+        },
+      ],
+    });
+    const lines = eccedenteLines(d, "2026-09-01", "2027-08-31");
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0]?.teacher, "Capria X");
+    assert.equal(lines[0]?.className, "1ª A");
+    assert.equal(lines[0]?.hour, "1ª");
+    assert.equal(lines[0]?.from, "08:00");
+    assert.equal(lines[0]?.to, "08:55");
   });
 
   it("non entra se la giornata della classe è tutta vuota", () => {

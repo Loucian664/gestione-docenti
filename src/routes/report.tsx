@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAppStore, snapshot } from "@/lib/store";
-import { loadByTeacher, absencesByReason, teacherShort } from "@/lib/coverage";
+import { loadByTeacher, absencesByReason, eccedenteLines, teacherShort } from "@/lib/coverage";
 import { formatItDate, monthRange, schoolYearRange } from "@/lib/dates";
 import { reportXlsx } from "@/lib/export";
 import { shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
@@ -70,6 +70,10 @@ function ReportPage() {
     [data, yearRange],
   );
   const yearLoads = useMemo(() => loadByTeacher(data, yearRange.from, yearRange.to), [data, yearRange]);
+  const yearEccedenteLines = useMemo(
+    () => eccedenteLines(data, yearRange.from, yearRange.to),
+    [data, yearRange],
+  );
   const yearEccedenti = yearLoads.reduce((n, r) => n + r.eccedente, 0);
   const yearStatCards = [
     ...ABSENCE_REASONS.map((reason) => ({
@@ -255,6 +259,41 @@ function ReportPage() {
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <h2 className="mt-8 mb-1 font-display text-lg">Ore eccedenti</h2>
+      <p className="mb-3 text-sm text-muted-foreground">
+        Anno {data.settings.schoolYear}. Solo le ore segnate come eccedenti: chi ha coperto, la classe e l’orario.
+      </p>
+      <div className="paper-panel overflow-x-auto rounded-xl">
+        {yearEccedenteLines.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-muted-foreground">Nessuna ora eccedente in questo anno.</p>
+        ) : (
+          <table className="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
+                <th className="px-4 py-2 font-medium">Data</th>
+                <th className="px-3 py-2 font-medium">Docente</th>
+                <th className="px-3 py-2 font-medium">Classe</th>
+                <th className="px-3 py-2 font-medium">Ora</th>
+                <th className="px-3 py-2 font-medium">Dalle</th>
+                <th className="px-3 py-2 font-medium">Alle</th>
+              </tr>
+            </thead>
+            <tbody>
+              {yearEccedenteLines.map((row) => (
+                <tr key={row.id} className="border-b border-border last:border-0">
+                  <td className="px-4 py-2.5 tabular-nums">{formatItDate(row.date)}</td>
+                  <td className="px-3 py-2.5 font-medium">{row.teacher}</td>
+                  <td className="px-3 py-2.5">{row.className}</td>
+                  <td className="px-3 py-2.5 tabular-nums">{row.hour}</td>
+                  <td className="px-3 py-2.5 tabular-nums">{row.from}</td>
+                  <td className="px-3 py-2.5 tabular-nums">{row.to}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         )}
