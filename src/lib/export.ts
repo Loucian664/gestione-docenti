@@ -156,7 +156,7 @@ export function assemblySummary(data: PersistedData, date: string): string | nul
     schoolLine(data),
     `${dated}, ${roundHour(periods[0].start)}-${roundHour(periods[periods.length - 1].end)}`,
     "",
-    "Docenti aderenti:",
+    "Aderiscono:",
     namesLine,
   ];
   const entra = groupedTimes(clocks.filter((row) => row.kind === "entra" && row.time).map((row) => ({ code: row.code, time: row.time! })));

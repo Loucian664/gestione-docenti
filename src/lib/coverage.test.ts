@@ -388,7 +388,7 @@ describe("classShifts", () => {
         "Test",
         "Lunedì 7 settembre, 08:00-10:00",
         "",
-        "Docenti aderenti:",
+        "Aderiscono:",
         "Capria, Lentini.",
         "",
         "Ingresso posticipato:",
