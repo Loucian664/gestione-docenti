@@ -4,7 +4,7 @@ import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, SUBSTITUTION_TYPES } from "./types";
 import { classTimetableSheet, XLSX_S } from "./class-grid";
 import { xlsxFile, xlsxSpecFile, xlsxWorkbookFile, XLSX_GRID_DAY, XLSX_GRID_TEXT, type XlsxCellInput } from "./xlsx";
-import { jpegBlobToPdf, tableToPdf } from "./pdf";
+import { jpegBlobToPdf } from "./pdf";
 import { orarioTeacherJpeg, teachersOnTimetable } from "./sheet-image";
 import { teacherPdfFileName } from "./teacher-print";
 import { zipFile } from "./zip";
@@ -300,118 +300,6 @@ export function reportXlsx(
     ]);
   }
   return xlsxFile(`report-sostituzioni-${from}-${to}.xlsx`, rows, "Monte ore");
-}
-
-export type EccedenteRow = {
-  date: string;
-  teacher: string;
-  className: string;
-  from: string;
-  to: string;
-};
-
-/** Ore segnate come eccedenti, una riga per ora. Senza l’intestazione del modello, che cambia. */
-export function eccedenteRows(data: PersistedData, from: string, to: string): EccedenteRow[] {
-  const periods = [...data.settings.periods].sort((a, b) => a.index - b.index);
-  return data.substitutions
-    .filter((s) => s.type === "eccedente" && s.substituteId && s.date >= from && s.date <= to)
-    .map((s) => {
-      const teacher = findTeacher(data, s.substituteId);
-      const cls = data.classes.find((c) => c.id === s.classId);
-      const period = periods.find((p) => p.id === s.periodId);
-      return {
-        date: s.date,
-        teacher: teacher ? teacherName(teacher) : "",
-        className: cls?.name ?? "",
-        from: period?.start ?? "",
-        to: period?.end ?? "",
-        index: period?.index ?? 99,
-      };
-    })
-    .sort(
-      (a, b) =>
-        a.date.localeCompare(b.date) ||
-        a.index - b.index ||
-        a.teacher.localeCompare(b.teacher, "it") ||
-        a.className.localeCompare(b.className, "it"),
-    )
-    .map(({ date, teacher, className, from: start, to: end }) => ({ date, teacher, className, from: start, to: end }));
-}
-
-function eccedenteTitles(data: PersistedData): string[] {
-  const name = data.settings.schoolName.trim();
-  const kind = data.settings.plesso.trim();
-  const raw = data.settings.schoolYear.trim();
-  const year = raw ? (/a\.?\s*s\.?/i.test(raw) ? raw : `a.s. ${raw}`) : "";
-  const yearLine = kind && year ? `${kind}  ·  ${year}` : kind || year;
-  return [name ? `Plesso di ${name}` : "Plesso", "Ore eccedenti", yearLine];
-}
-
-const ECCEDENTE_HEADERS = ["Data", "Docente", "Classe", "Dalle", "Alle", "Ore"];
-
-function eccedenteSheetRows(data: PersistedData, from: string, to: string): string[][] {
-  return eccedenteRows(data, from, to).map((row) => [
-    formatItDate(row.date),
-    row.teacher,
-    row.className,
-    row.from,
-    row.to,
-    "1",
-  ]);
-}
-
-export function eccedenteRegisterText(data: PersistedData, from: string, to: string): string {
-  const rows = eccedenteSheetRows(data, from, to);
-  const lines = [...eccedenteTitles(data), "", ECCEDENTE_HEADERS.join(" | "), ...rows.map((row) => row.join(" | "))];
-  lines.push("", `Ore ${rows.length}`);
-  return lines.join("\n");
-}
-
-export function eccedenteRegisterPdf(data: PersistedData, from: string, to: string): Blob {
-  const rows = eccedenteSheetRows(data, from, to);
-  return tableToPdf({
-    title: eccedenteTitles(data),
-    headers: ECCEDENTE_HEADERS,
-    rows: rows.length ? [...rows, ["", "", "", "", "Ore", String(rows.length)]] : [["Nessuna ora eccedente.", "", "", "", "", ""]],
-    footer: [],
-    colWidths: [90, 220, 80, 70, 70, 50],
-  });
-}
-
-export function eccedenteRegisterXlsx(data: PersistedData, from: string, to: string): File {
-  const rows = eccedenteSheetRows(data, from, to);
-  const span = (text: string, s: number): XlsxCellInput[] =>
-    [text, "", "", "", "", ""].map((v, i) => ({ v: i === 0 ? v : "", s }));
-  const titles = eccedenteTitles(data);
-  const sheet: XlsxCellInput[][] = [
-    span(titles[0] ?? "", XLSX_S.kicker),
-    span(titles[1] ?? "", XLSX_S.title),
-    span(titles[2] ?? "", XLSX_S.year),
-    ECCEDENTE_HEADERS.map((v) => ({ v, s: XLSX_S.th })),
-    ...(rows.length
-      ? rows.map((row) => row.map((v) => ({ v, s: XLSX_GRID_TEXT })))
-      : [span("Nessuna ora eccedente.", XLSX_GRID_TEXT)]),
-  ];
-  if (rows.length) {
-    sheet.push([
-      { v: "", s: XLSX_S.th },
-      { v: "", s: XLSX_S.th },
-      { v: "", s: XLSX_S.th },
-      { v: "", s: XLSX_S.th },
-      { v: "Ore", s: XLSX_S.th },
-      { v: rows.length, s: XLSX_S.th },
-    ]);
-  }
-  return xlsxSpecFile(`registro-ore-eccedenti-${from}-${to}.xlsx`, {
-    rows: sheet,
-    merges: ["A1:F1", "A2:F2", "A3:F3"],
-    sheetName: "Ore eccedenti",
-    headerRow: false,
-    freezeRow: 4,
-    colWidths: [14, 32, 14, 12, 12, 10],
-    rowHeights: [18, 22, 16, 22],
-    landscape: true,
-  });
 }
 
 export function timetableXlsx(data: PersistedData): File {

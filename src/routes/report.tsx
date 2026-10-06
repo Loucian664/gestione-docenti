@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useAppStore, snapshot } from "@/lib/store";
 import { loadByTeacher, absencesByReason, teacherShort } from "@/lib/coverage";
 import { formatItDate, monthRange, schoolYearRange } from "@/lib/dates";
-import { reportXlsx, eccedenteRegisterPdf, eccedenteRegisterXlsx } from "@/lib/export";
+import { reportXlsx } from "@/lib/export";
 import { shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
 import { reportJpeg } from "@/lib/sheet-image";
@@ -260,42 +260,7 @@ function ReportPage() {
         )}
       </div>
 
-      <h2 className="mt-8 mb-1 font-display text-lg">Registro ore eccedenti</h2>
-      <p className="mb-3 text-sm text-muted-foreground">
-        Solo le ore segnate come eccedenti, quelle da retribuire. Disposizione, potenziamento e le altre coperture non
-        ci sono. Anno {data.settings.schoolYear}.
-      </p>
-      <div className="mb-8 flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          onClick={() => {
-            void shareOrSaveFile(eccedenteRegisterXlsx(data, yearRange.from, yearRange.to)).then((outcome) =>
-              toastSave(outcome, "excel"),
-            );
-          }}
-        >
-          <Download />
-          Excel ore eccedenti
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => {
-            const tab = openPdfTab();
-            try {
-              const blob = eccedenteRegisterPdf(data, yearRange.from, yearRange.to);
-              toastSave(tab.show(`registro-ore-eccedenti-${yearRange.from}-${yearRange.to}.pdf`, blob), "pdf");
-            } catch {
-              tab.cancel();
-              toast.error("Non sono riuscito a creare il PDF.");
-            }
-          }}
-        >
-          <FileText />
-          PDF ore eccedenti
-        </Button>
-      </div>
-
-      <h2 className="mb-1 font-display text-lg">Anno scolastico {data.settings.schoolYear}</h2>
+      <h2 className="mt-8 mb-1 font-display text-lg">Anno scolastico {data.settings.schoolYear}</h2>
       <p className="mb-3 text-sm text-muted-foreground">
         Dal {formatItDate(yearRange.from)} al {formatItDate(yearRange.to)}. Non dipende dal periodo sopra.
       </p>
