@@ -19,10 +19,10 @@ import {
   todayIso,
   toSchoolDay,
 } from "@/lib/dates";
-import { absencesRangeText, absencesRangeXlsx } from "@/lib/export";
-import { shareOrSaveFile, toastSave, openPdfTab } from "@/lib/share-file";
+import { absencesRangeText, absencesRangeXlsx, assemblySummary } from "@/lib/export";
+import { shareOrSaveFile, toastSave, openPdfTab, copyText } from "@/lib/share-file";
 import { textToPdf } from "@/lib/pdf";
-import { ChevronLeft, ChevronRight, Plus, Download, FileText } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Download, FileText, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,6 +51,7 @@ function AssenzePage() {
   );
 
   const cells = useMemo(() => monthCalendarDays(monthIso), [monthIso]);
+  const sintesi = useMemo(() => assemblySummary(data, data.selectedDate), [data]);
 
   return (
     <div>
@@ -109,6 +110,17 @@ function AssenzePage() {
           <FileText />
           PDF
         </Button>
+        {sintesi && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              void copyText(sintesi).then((ok) => toastSave(ok ? "copied" : "failed", "copy"));
+            }}
+          >
+            <Copy />
+            Sintesi
+          </Button>
+        )}
         <p className="text-[12px] text-muted-foreground sm:max-w-xs">
           Una riga per ogni ora: data, assente, materia, chi copre, tipo e se è coperta.
         </p>

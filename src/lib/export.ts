@@ -1,5 +1,5 @@
-import { eachIsoInRange, formatDayName, formatItDate, formatItFileDate, formatLong, isWeekend } from "./dates";
-import { coverageNeeds, isCovered, isShiftType, classShifts, teacherName, teacherSurname, absencesByReason, type CoverageNeed } from "./coverage";
+import { eachIsoInRange, formatDayName, formatItDate, formatItFileDate, formatLong, isWeekend, toSchoolDay } from "./dates";
+import { coverageNeeds, isCovered, isShiftType, classShifts, teacherName, teacherSurname, absencesByReason, absencesOnDate, type CoverageNeed, type ClassShift } from "./coverage";
 import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, SUBSTITUTION_TYPES } from "./types";
 import { classTimetableSheet, XLSX_S } from "./class-grid";
@@ -71,6 +71,64 @@ export function substitutionsXlsx(data: PersistedData, date: string): File {
     ]);
   }
   return xlsxFile(`sostituzioni-${formatItFileDate(date)}.xlsx`, rows, "Sostituzioni");
+}
+
+function roundHour(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm;
+  const hour = Math.round((h * 60 + m) / 60);
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+function assemblyPeriods(data: PersistedData, date: string) {
+  const marked = absencesOnDate(data, date).filter((a) => a.reason === "assemblea_sindacale");
+  const ids = new Set<string>();
+  for (const absence of marked) {
+    const chosen = absence.allDay || absence.periodIds.length === 0 ? data.settings.periods.map((p) => p.id) : absence.periodIds;
+    for (const id of chosen) ids.add(id);
+  }
+  return data.settings.periods.filter((p) => ids.has(p.id)).sort((a, b) => a.index - b.index);
+}
+
+function shiftLine(data: PersistedData, date: string, shift: ClassShift): string | null {
+  const day = toSchoolDay(date);
+  const cls = data.classes.find((c) => c.id === shift.classId);
+  const code = classCode(cls?.name ?? "");
+  if (!day || shift.kind === "non_entra") return `${code} non entra`;
+  const periods = data.settings.periods
+    .filter((p) => data.slots.some((s) => s.day === day && s.classId === shift.classId && s.periodId === p.id))
+    .sort((a, b) => a.index - b.index);
+  const skipped = new Set(shift.needs.map((n) => n.slot.periodId));
+  if (shift.kind === "entra") {
+    const lastSkipped = Math.max(...periods.filter((p) => skipped.has(p.id)).map((p) => p.index));
+    const entry = periods.find((p) => p.index > lastSkipped);
+    return entry ? `${code} entra alle ${roundHour(entry.start)}` : null;
+  }
+  const firstSkipped = Math.min(...periods.filter((p) => skipped.has(p.id)).map((p) => p.index));
+  const kept = [...periods].reverse().find((p) => p.index < firstSkipped);
+  return kept ? `${code} esce alle ${roundHour(kept.end)}` : null;
+}
+
+/** Testo breve per il dirigente: solo assemblea, orari arrotondati all’ora. */
+export function assemblySummary(data: PersistedData, date: string): string | null {
+  const marked = absencesOnDate(data, date).filter((a) => a.reason === "assemblea_sindacale");
+  if (marked.length === 0) return null;
+  const periods = assemblyPeriods(data, date);
+  if (periods.length === 0) return null;
+  const names = [
+    ...new Set(
+      marked
+        .map((a) => data.teachers.find((t) => t.id === a.teacherId))
+        .filter((t): t is NonNullable<typeof t> => Boolean(t))
+        .map((t) => teacherSurname(t, data.teachers)),
+    ),
+  ].sort((a, b) => a.localeCompare(b, "it"));
+  const classes = classShifts(data, date)
+    .map((shift) => shiftLine(data, date, shift))
+    .filter((line): line is string => Boolean(line));
+  const lines = [`Assemblea sindacale ${roundHour(periods[0].start)}-${roundHour(periods[periods.length - 1].end)}`, "", names.join(", ")];
+  if (classes.length > 0) lines.push("", ...classes);
+  return lines.join("\n");
 }
 
 export function absencesRangeXlsx(data: PersistedData, from: string, to: string): File {

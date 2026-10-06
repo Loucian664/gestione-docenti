@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { autoAssignPlan, classShifts, coverageNeeds, isCovered, rankSubstitutes, type CoverageNeed } from "./coverage.ts";
-import { dailySheetText } from "./export.ts";
+import { assemblySummary, dailySheetText } from "./export.ts";
 import type { PersistedData, Teacher, TimetableSlot } from "./types.ts";
 
 function teacher(
@@ -355,6 +355,31 @@ describe("classShifts", () => {
     });
     assert.equal(classShifts(d, date).length, 0);
     assert.equal(coverageNeeds(d, date).length, 3);
+  });
+
+  it("sintesi: solo chi è in assemblea, orari arrotondati", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [teacher("t1", "Lentini"), teacher("t2", "Capria"), teacher("t3", "Staropoli")],
+      slots: [
+        slot("c-1A", "p1", "t1"),
+        slot("c-1A", "p2", "t1"),
+        slot("c-1A", "p3", "t2"),
+        slot("c-2A", "p1", "t2"),
+        slot("c-2A", "p2", "t3"),
+        slot("c-3B", "p1", "t3"),
+      ],
+      absences: [
+        { ...absent("t1"), allDay: false, periodIds: ["p1", "p2"] },
+        { ...absent("t2"), allDay: false, periodIds: ["p1", "p2"] },
+        { ...absent("t3"), reason: "visita" },
+      ],
+    });
+    assert.equal(
+      assemblySummary(d, date),
+      ["Assemblea sindacale 08:00-10:00", "", "Capria, Lentini", "", "1A entra alle 10:00", "2A entra alle 09:00"].join("\n"),
+    );
+    assert.equal(assemblySummary(data({ selectedDate: date }), date), null);
   });
 
   it("non entra se la giornata della classe è tutta vuota", () => {
