@@ -4,7 +4,7 @@ import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, SUBSTITUTION_TYPES } from "./types";
 import { classTimetableSheet, XLSX_S } from "./class-grid";
 import { xlsxFile, xlsxSpecFile, xlsxWorkbookFile, XLSX_GRID_DAY, XLSX_GRID_TEXT, type XlsxCellInput } from "./xlsx";
-import { jpegBlobToPdf } from "./pdf";
+import { jpegBlobToPdf, tableToPdf } from "./pdf";
 import { orarioTeacherJpeg, teachersOnTimetable } from "./sheet-image";
 import { teacherPdfFileName } from "./teacher-print";
 import { zipFile } from "./zip";
@@ -342,20 +342,35 @@ function eccedenteClosing(): string[] {
   return [
     "Il responsabile di plesso dovrà custodire e consegnare il registro al termine delle attività didattiche annuali",
     "",
-    "Data ____________________",
+    "Data ______________________",
     "",
     "Firma responsabile di plesso",
     "",
-    "Presa visione Dirigente scolastico",
-    "",
-    "Presa visione DSGA",
+    "Presa Visione Dirigente Scolastico",
+    "Presa Visione DSGA",
   ];
 }
+
+function eccedenteHeading(data: PersistedData): string[] {
+  const plesso = data.settings.plesso.trim();
+  const where = plesso ? `Plesso ${plesso}` : data.settings.schoolName.trim();
+  return ["REGISTRO ORE ECCEDENTI", `${where} — a.s. ${data.settings.schoolYear}`];
+}
+
+const ECCEDENTE_HEADERS = [
+  "DATA",
+  "Docente che presta sostituzione orario eccedente",
+  "CLASSE",
+  "Orario sostituzione\nDalle … alle …",
+  "Totale ore eccedenti",
+];
 
 export function eccedenteRegisterText(data: PersistedData, from: string, to: string): string {
   const rows = eccedenteRows(data, from, to);
   const lines = [
-    "DATA | DOCENTE | CLASSE | ORARIO | TOTALE",
+    ...eccedenteHeading(data),
+    "",
+    ECCEDENTE_HEADERS.join(" | ").replace("\n", " "),
     ...rows.map((row) => `${formatItDate(row.date)} | ${row.teacher} | ${row.className} | dalle ${row.from} alle ${row.to} | 1`),
   ];
   if (rows.length === 0) lines.push("Nessuna ora eccedente.");
@@ -364,24 +379,44 @@ export function eccedenteRegisterText(data: PersistedData, from: string, to: str
   return lines.join("\n");
 }
 
+export function eccedenteRegisterPdf(data: PersistedData, from: string, to: string): Blob {
+  const rows = eccedenteRows(data, from, to);
+  const body = rows.map((row) => [
+    formatItDate(row.date),
+    row.teacher,
+    row.className,
+    row.from && row.to ? `dalle ${row.from} alle ${row.to}` : "",
+    "1",
+  ]);
+  if (body.length === 0) body.push(["Nessuna ora eccedente.", "", "", "", ""]);
+  else body.push(["Totale", "", "", "", String(rows.length)]);
+  return tableToPdf({
+    title: eccedenteHeading(data),
+    headers: ECCEDENTE_HEADERS,
+    rows: body,
+    footer: eccedenteClosing().filter(Boolean),
+    colWidths: [78, 280, 72, 220, 110],
+  });
+}
+
 export function eccedenteRegisterXlsx(data: PersistedData, from: string, to: string): File {
   const rows = eccedenteRows(data, from, to);
-  const header = [
-    "DATA",
-    "Docente che presta sostituzione orario eccedente",
-    "CLASSE",
-    "Orario sostituzione (Dalle … alle …)",
-    "Totale ore eccedenti",
-  ].map((v) => ({ v, s: XLSX_S.th }));
-  const body: XlsxCellInput[][] = rows.map((row) => [
-    { v: formatItDate(row.date), s: XLSX_GRID_TEXT },
-    { v: row.teacher, s: XLSX_GRID_TEXT },
-    { v: row.className, s: XLSX_GRID_TEXT },
-    { v: row.from && row.to ? `dalle ${row.from} alle ${row.to}` : "", s: XLSX_GRID_TEXT },
-    { v: 1, s: XLSX_GRID_TEXT },
-  ]);
-  if (body.length === 0) {
-    body.push([
+  const span = (text: string, s: number): XlsxCellInput[] => [
+    { v: text, s },
+    { v: "", s },
+    { v: "", s },
+    { v: "", s },
+    { v: "", s },
+  ];
+  const [title, subtitle] = eccedenteHeading(data);
+  const sheet: XlsxCellInput[][] = [
+    span(title ?? "", XLSX_S.title),
+    span(subtitle ?? "", XLSX_S.year),
+    ECCEDENTE_HEADERS.map((v) => ({ v, s: XLSX_S.th })),
+  ];
+  const merges = ["A1:E1", "A2:E2"];
+  if (rows.length === 0) {
+    sheet.push([
       { v: "Nessuna ora eccedente.", s: XLSX_GRID_TEXT },
       { v: "", s: XLSX_GRID_TEXT },
       { v: "", s: XLSX_GRID_TEXT },
@@ -389,7 +424,16 @@ export function eccedenteRegisterXlsx(data: PersistedData, from: string, to: str
       { v: "", s: XLSX_GRID_TEXT },
     ]);
   } else {
-    body.push([
+    for (const row of rows) {
+      sheet.push([
+        { v: formatItDate(row.date), s: XLSX_GRID_TEXT },
+        { v: row.teacher, s: XLSX_GRID_TEXT },
+        { v: row.className, s: XLSX_GRID_TEXT },
+        { v: row.from && row.to ? `dalle ${row.from} alle ${row.to}` : "", s: XLSX_GRID_TEXT },
+        { v: 1, s: XLSX_GRID_TEXT },
+      ]);
+    }
+    sheet.push([
       { v: "Totale", s: XLSX_S.th },
       { v: "", s: XLSX_S.th },
       { v: "", s: XLSX_S.th },
@@ -397,19 +441,19 @@ export function eccedenteRegisterXlsx(data: PersistedData, from: string, to: str
       { v: rows.length, s: XLSX_S.th },
     ]);
   }
-  const foot = eccedenteClosing().map((line) => [
-    { v: line, s: XLSX_GRID_TEXT },
-    { v: "", s: XLSX_GRID_TEXT },
-    { v: "", s: XLSX_GRID_TEXT },
-    { v: "", s: XLSX_GRID_TEXT },
-    { v: "", s: XLSX_GRID_TEXT },
-  ]);
+  sheet.push(span("", 10));
+  for (const line of eccedenteClosing()) {
+    merges.push(`A${sheet.length + 1}:E${sheet.length + 1}`);
+    sheet.push(span(line, 10));
+  }
   return xlsxSpecFile(`registro-ore-eccedenti-${from}-${to}.xlsx`, {
-    rows: [header, ...body, [{ v: "", s: XLSX_GRID_TEXT }], ...foot],
+    rows: sheet,
+    merges,
     sheetName: "Ore eccedenti",
     headerRow: false,
-    freezeRow: 1,
-    colWidths: [14, 42, 14, 36, 22],
+    freezeRow: 3,
+    colWidths: [16, 46, 16, 34, 24],
+    rowHeights: [24, 18, 32],
     landscape: true,
   });
 }
