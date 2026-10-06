@@ -1,4 +1,4 @@
-import { eachIsoInRange, formatDayName, formatItDate, formatItFileDate, formatLong, isWeekend, toSchoolDay } from "./dates";
+import { eachIsoInRange, formatDayMonth, formatDayName, formatItDate, formatItFileDate, formatLong, isWeekend, toSchoolDay } from "./dates";
 import { coverageNeeds, isCovered, isShiftType, classShifts, teacherName, teacherSurname, absencesByReason, absencesOnDate, type CoverageNeed, type ClassShift } from "./coverage";
 import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, SUBSTITUTION_TYPES } from "./types";
@@ -128,14 +128,9 @@ export function assemblySummary(data: PersistedData, date: string): string | nul
     .filter((line): line is string => Boolean(line));
   const list = names.join(", ");
   const namesLine = list.endsWith(".") ? list : `${list}.`;
-  const day = formatLong(date);
+  const day = formatDayMonth(date);
   const dated = day.charAt(0).toLocaleUpperCase("it-IT") + day.slice(1);
-  const lines = [
-    dated,
-    `Assemblea sindacale ${roundHour(periods[0].start)}-${roundHour(periods[periods.length - 1].end)}`,
-    "",
-    namesLine,
-  ];
+  const lines = ["Assemblea sindacale", dated, `${roundHour(periods[0].start)}-${roundHour(periods[periods.length - 1].end)}`, "", namesLine];
   if (classes.length > 0) lines.push("", ...classes);
   return lines.join("\n");
 }

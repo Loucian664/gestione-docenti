@@ -377,7 +377,7 @@ describe("classShifts", () => {
     });
     assert.equal(
       assemblySummary(d, date),
-      ["Lunedì 7 settembre 2026", "Assemblea sindacale 08:00-10:00", "", "Capria, Lentini.", "", "1A entra alle 10:00", "2A entra alle 09:00"].join("\n"),
+      ["Assemblea sindacale", "Lunedì 7 settembre", "08:00-10:00", "", "Capria, Lentini.", "", "1A entra alle 10:00", "2A entra alle 09:00"].join("\n"),
     );
     assert.equal(assemblySummary(data({ selectedDate: date }), date), null);
   });
