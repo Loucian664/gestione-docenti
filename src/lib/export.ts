@@ -165,6 +165,18 @@ export function assemblySummary(data: PersistedData, date: string): string | nul
   if (entra.length > 0) lines.push("", "Ingresso posticipato:", ...entra);
   if (esce.length > 0) lines.push("", "Uscita anticipata:", ...esce);
   if (assenti.length > 0) lines.push("", "Non entra:", assenti.sort((a, b) => a.localeCompare(b, "it")).join(", "));
+  const dayNum = toSchoolDay(date);
+  const opening = roundHour([...data.settings.periods].sort((a, b) => a.index - b.index)[0]?.start ?? "08:00");
+  const delayed = new Set(clocks.filter((row) => row.kind === "entra" || row.kind === "non_entra").map((row) => row.code));
+  const inSchool = new Set(
+    data.slots
+      .filter((slot) => slot.day === dayNum)
+      .map((slot) => classCode(data.classes.find((c) => c.id === slot.classId)?.name ?? ""))
+      .filter(Boolean),
+  );
+  if (entra.length > 0 && [...inSchool].some((code) => !delayed.has(code))) {
+    lines.push(`Le altre classi entreranno regolarmente alle ore ${opening}.`);
+  }
   return lines.join("\n");
 }
 

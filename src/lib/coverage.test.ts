@@ -360,7 +360,12 @@ describe("classShifts", () => {
   it("sintesi: solo chi è in assemblea, orari arrotondati", () => {
     const d = data({
       selectedDate: date,
-      teachers: [teacher("t1", "Lentini"), teacher("t2", "Capria"), teacher("t3", "Staropoli")],
+      teachers: [teacher("t1", "Lentini"), teacher("t2", "Capria"), teacher("t3", "Staropoli"), teacher("t4", "Gallo")],
+      classes: [
+        { id: "c-1A", name: "1ª A", grade: 1, section: "A", students: 18, tempo: "TN" },
+        { id: "c-2A", name: "2ª A", grade: 2, section: "A", students: 20, tempo: "TN" },
+        { id: "c-3A", name: "3ª A", grade: 3, section: "A", students: 18, tempo: "TN" },
+      ],
       slots: [
         slot("c-1A", "p1", "t1"),
         slot("c-1A", "p2", "t1"),
@@ -368,6 +373,7 @@ describe("classShifts", () => {
         slot("c-2A", "p1", "t2"),
         slot("c-2A", "p2", "t3"),
         slot("c-3B", "p1", "t3"),
+        slot("c-3A", "p1", "t4"),
       ],
       absences: [
         { ...absent("t1"), allDay: false, periodIds: ["p1", "p2"] },
@@ -388,6 +394,7 @@ describe("classShifts", () => {
         "Ingresso posticipato:",
         "2A: 09:00",
         "1A: 10:00",
+        "Le altre classi entreranno regolarmente alle ore 08:00.",
       ].join("\n"),
     );
     assert.equal(assemblySummary(data({ selectedDate: date }), date), null);
