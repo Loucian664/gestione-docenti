@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label";
 import { useAppStore, snapshot } from "@/lib/store";
 import { loadByTeacher, absencesByReason, teacherShort } from "@/lib/coverage";
 import { formatItDate, monthRange, schoolYearRange } from "@/lib/dates";
-import { reportXlsx } from "@/lib/export";
+import { reportXlsx, eccedenteRegisterText, eccedenteRegisterXlsx } from "@/lib/export";
 import { shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
-import { jpegBlobToPdf } from "@/lib/pdf";
+import { jpegBlobToPdf, textToPdf } from "@/lib/pdf";
 import { reportJpeg } from "@/lib/sheet-image";
 import { ABSENCE_REASONS } from "@/lib/types";
 import { Download, Images as ImageIcon, FileText } from "lucide-react";
@@ -264,6 +264,35 @@ function ReportPage() {
       <p className="mb-3 text-sm text-muted-foreground">
         Dal {formatItDate(yearRange.from)} al {formatItDate(yearRange.to)}. Non dipende dal periodo sopra.
       </p>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          onClick={() => {
+            void shareOrSaveFile(eccedenteRegisterXlsx(data, yearRange.from, yearRange.to)).then((outcome) =>
+              toastSave(outcome, "excel"),
+            );
+          }}
+        >
+          <Download />
+          Excel registro
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => {
+            const tab = openPdfTab();
+            try {
+              const blob = textToPdf(eccedenteRegisterText(data, yearRange.from, yearRange.to));
+              toastSave(tab.show(`registro-ore-eccedenti-${yearRange.from}-${yearRange.to}.pdf`, blob), "pdf");
+            } catch {
+              tab.cancel();
+              toast.error("Non sono riuscito a creare il PDF.");
+            }
+          }}
+        >
+          <FileText />
+          PDF registro
+        </Button>
+      </div>
       {yearStatCards.length === 0 ? (
         <p className="mb-5 text-sm text-muted-foreground">
           Nessuna assenza né ora eccedente in anagrafe per quest’anno.
