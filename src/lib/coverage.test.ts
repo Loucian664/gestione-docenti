@@ -437,7 +437,7 @@ describe("classShifts", () => {
     assert.equal(lines[0]?.className, "1ª A");
     assert.equal(lines[0]?.hour, "1ª");
     assert.equal(lines[0]?.from, "08:00");
-    assert.equal(lines[0]?.to, "08:55");
+    assert.equal(lines[0]?.to, "09:00");
   });
 
   it("non entra se la giornata della classe è tutta vuota", () => {

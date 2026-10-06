@@ -727,7 +727,14 @@ export type EccedenteLine = {
   to: string;
 };
 
-/** Ore segnate come eccedenti: chi ha coperto, la classe e l’orario. */
+function roundClock(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm;
+  const hour = Math.round((h * 60 + m) / 60);
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+/** Ore segnate come eccedenti: chi ha coperto, la classe e l’orario arrotondato all’ora. */
 export function eccedenteLines(data: PersistedData, from: string, to: string): EccedenteLine[] {
   return data.substitutions
     .filter((s) => s.type === "eccedente" && s.substituteId && s.date >= from && s.date <= to)
@@ -741,8 +748,8 @@ export function eccedenteLines(data: PersistedData, from: string, to: string): E
         teacher: teacher ? teacherName(teacher) : "",
         className: cls?.name ?? "",
         hour: period ? (isMensaPeriod(period) ? "M" : `${period.index}ª`) : "",
-        from: period?.start ?? "",
-        to: period?.end ?? "",
+        from: period ? roundClock(period.start) : "",
+        to: period ? roundClock(period.end) : "",
         index: period?.index ?? 99,
       };
     })

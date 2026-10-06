@@ -266,7 +266,7 @@ function ReportPage() {
 
       <h2 className="mt-8 mb-1 font-display text-lg">Ore eccedenti</h2>
       <p className="mb-3 text-sm text-muted-foreground">
-        Anno {data.settings.schoolYear}. Solo le ore segnate come eccedenti: chi ha coperto, la classe e l’orario.
+        Anno {data.settings.schoolYear}. Solo le ore segnate come eccedenti: chi ha coperto, la classe e l’ora arrotondata.
       </p>
       <div className="paper-panel overflow-x-auto rounded-xl">
         {yearEccedenteLines.length === 0 ? (
