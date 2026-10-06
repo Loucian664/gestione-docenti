@@ -194,9 +194,6 @@ export function classShifts(data: PersistedData, date: string): ClassShift[] {
     periodIds.sort((a, b) => periodIndex(data, a) - periodIndex(data, b));
     const states = periodIds.map((periodId) => ({ periodId, void: voidPeriod(classId, periodId) }));
     if (!states.some((s) => s.void)) continue;
-    const allVoid = states.every((s) => s.void);
-    const allAssembly = states.every((s) => assemblyVoid(classId, s.periodId));
-    if (allVoid && !allAssembly) continue;
     let lead = 0;
     while (lead < states.length && assemblyVoid(classId, states[lead].periodId)) lead += 1;
     let trail = 0;
