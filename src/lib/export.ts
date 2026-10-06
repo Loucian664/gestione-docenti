@@ -4,7 +4,7 @@ import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, SUBSTITUTION_TYPES } from "./types";
 import { classTimetableSheet, XLSX_S } from "./class-grid";
 import { xlsxFile, xlsxSpecFile, xlsxWorkbookFile, XLSX_GRID_DAY, XLSX_GRID_TEXT, type XlsxCellInput } from "./xlsx";
-import { jpegBlobToPdf, eccedenteFormPdf } from "./pdf";
+import { jpegBlobToPdf, tableToPdf } from "./pdf";
 import { orarioTeacherJpeg, teachersOnTimetable } from "./sheet-image";
 import { teacherPdfFileName } from "./teacher-print";
 import { zipFile } from "./zip";
@@ -338,107 +338,78 @@ export function eccedenteRows(data: PersistedData, from: string, to: string): Ec
     .map(({ date, teacher, className, from: start, to: end }) => ({ date, teacher, className, from: start, to: end }));
 }
 
-const ECCEDENTE_HEADERS = [
-  "DATA",
-  "Docente che presta sostituzione orario eccedente",
-  "CLASSE",
-  "Orario sostituzione\nDalle … alle …",
-  "Totale ore eccedenti",
-];
+function eccedenteTitles(data: PersistedData): string[] {
+  const name = data.settings.schoolName.trim();
+  const kind = data.settings.plesso.trim();
+  const raw = data.settings.schoolYear.trim();
+  const year = raw ? (/a\.?\s*s\.?/i.test(raw) ? raw : `a.s. ${raw}`) : "";
+  const yearLine = kind && year ? `${kind}  ·  ${year}` : kind || year;
+  return [name ? `Plesso di ${name}` : "Plesso", "Ore eccedenti", yearLine];
+}
+
+const ECCEDENTE_HEADERS = ["Data", "Docente", "Classe", "Dalle", "Alle", "Ore"];
 
 function eccedenteSheetRows(data: PersistedData, from: string, to: string): string[][] {
   return eccedenteRows(data, from, to).map((row) => [
     formatItDate(row.date),
     row.teacher,
     row.className,
-    row.from && row.to ? `${row.from} – ${row.to}` : "",
+    row.from,
+    row.to,
     "1",
   ]);
 }
 
 export function eccedenteRegisterText(data: PersistedData, from: string, to: string): string {
-  const plesso = data.settings.plesso.trim() || data.settings.schoolName.trim();
-  const lines = [
-    "ORE ECCEDENTI DOCENZA",
-    `REGISTRO ORE ECCEDENTI PLESSO ${plesso}    a.s. ${data.settings.schoolYear}`,
-    ECCEDENTE_HEADERS.join(" | ").replace("\n", " "),
-    ...eccedenteSheetRows(data, from, to).map((row) => row.join(" | ")),
-    "",
-    "Il responsabile di plesso dovrà custodire e consegnare il registro al termine delle attività didattiche annuali",
-    "Data ____________________",
-    "Firma responsabile di plesso",
-    "Presa Visione Dirigente Scolastico",
-    "Presa Visione DSGA",
-  ];
+  const rows = eccedenteSheetRows(data, from, to);
+  const lines = [...eccedenteTitles(data), "", ECCEDENTE_HEADERS.join(" | "), ...rows.map((row) => row.join(" | "))];
+  lines.push("", `Ore ${rows.length}`);
   return lines.join("\n");
 }
 
 export function eccedenteRegisterPdf(data: PersistedData, from: string, to: string): Blob {
-  return eccedenteFormPdf({
-    plesso: data.settings.plesso.trim() || data.settings.schoolName.trim(),
-    year: data.settings.schoolYear,
-    rows: eccedenteSheetRows(data, from, to),
+  const rows = eccedenteSheetRows(data, from, to);
+  return tableToPdf({
+    title: eccedenteTitles(data),
+    headers: ECCEDENTE_HEADERS,
+    rows: rows.length ? [...rows, ["", "", "", "", "Ore", String(rows.length)]] : [["Nessuna ora eccedente.", "", "", "", "", ""]],
+    footer: [],
+    colWidths: [90, 220, 80, 70, 70, 50],
   });
 }
 
 export function eccedenteRegisterXlsx(data: PersistedData, from: string, to: string): File {
-  const filled = eccedenteSheetRows(data, from, to);
-  const blank = (): XlsxCellInput[] => [
-    { v: "", s: XLSX_GRID_TEXT },
-    { v: "", s: XLSX_GRID_TEXT },
-    { v: "", s: XLSX_GRID_TEXT },
-    { v: "", s: XLSX_GRID_TEXT },
-    { v: "", s: XLSX_GRID_TEXT },
-  ];
-  const span = (text: string, s: number): XlsxCellInput[] => [
-    { v: text, s },
-    { v: "", s },
-    { v: "", s },
-    { v: "", s },
-    { v: "", s },
-  ];
-  const plesso = data.settings.plesso.trim() || data.settings.schoolName.trim();
-  const body = [...filled];
-  while (body.length < 16) body.push(["", "", "", "", ""]);
+  const rows = eccedenteSheetRows(data, from, to);
+  const span = (text: string, s: number): XlsxCellInput[] =>
+    [text, "", "", "", "", ""].map((v, i) => ({ v: i === 0 ? v : "", s }));
+  const titles = eccedenteTitles(data);
   const sheet: XlsxCellInput[][] = [
-    span("ORE ECCEDENTI DOCENZA", XLSX_S.title),
-    [
-      { v: `REGISTRO ORE ECCEDENTI PLESSO  ${plesso}`, s: XLSX_GRID_TEXT },
-      { v: "", s: XLSX_GRID_TEXT },
-      { v: "", s: XLSX_GRID_TEXT },
-      { v: "", s: XLSX_GRID_TEXT },
-      { v: `a.s. ${data.settings.schoolYear}`, s: XLSX_GRID_TEXT },
-    ],
-    [
-      { v: "DATA", s: XLSX_S.th },
-      { v: "Docente che presta sostituzione\norario eccedente", s: XLSX_S.th },
-      { v: "CLASSE", s: XLSX_S.th },
-      { v: "Orario sostituzione\nDalle … alle …", s: XLSX_S.th },
-      { v: "Totale ore eccedenti", s: XLSX_S.th },
-    ],
-    ...body.map((row) => row.map((v) => ({ v, s: XLSX_GRID_TEXT }))),
-    blank(),
-    span("Il responsabile di plesso dovrà custodire e consegnare il registro al termine delle attività didattiche annuali", 10),
-    [
-      { v: "Data ____________________", s: 10 },
-      { v: "", s: 10 },
-      { v: "", s: 10 },
-      { v: "", s: 10 },
-      { v: "Firma responsabile di plesso", s: 10 },
-    ],
-    span("☐  Presa Visione Dirigente Scolastico", 10),
-    span("☐  Presa Visione DSGA", 10),
+    span(titles[0] ?? "", XLSX_S.kicker),
+    span(titles[1] ?? "", XLSX_S.title),
+    span(titles[2] ?? "", XLSX_S.year),
+    ECCEDENTE_HEADERS.map((v) => ({ v, s: XLSX_S.th })),
+    ...(rows.length
+      ? rows.map((row) => row.map((v) => ({ v, s: XLSX_GRID_TEXT })))
+      : [span("Nessuna ora eccedente.", XLSX_GRID_TEXT)]),
   ];
-  const merges = ["A1:E1", "A2:D2"];
-  const noteRow = 4 + body.length + 1;
-  merges.push(`A${noteRow}:E${noteRow}`, `A${noteRow + 2}:E${noteRow + 2}`, `A${noteRow + 3}:E${noteRow + 3}`);
+  if (rows.length) {
+    sheet.push([
+      { v: "", s: XLSX_S.th },
+      { v: "", s: XLSX_S.th },
+      { v: "", s: XLSX_S.th },
+      { v: "", s: XLSX_S.th },
+      { v: "Ore", s: XLSX_S.th },
+      { v: rows.length, s: XLSX_S.th },
+    ]);
+  }
   return xlsxSpecFile(`registro-ore-eccedenti-${from}-${to}.xlsx`, {
     rows: sheet,
-    merges,
+    merges: ["A1:F1", "A2:F2", "A3:F3"],
     sheetName: "Ore eccedenti",
     headerRow: false,
-    colWidths: [14, 38, 14, 28, 22],
-    rowHeights: [22, 20, 32, ...body.map(() => 18)],
+    freezeRow: 4,
+    colWidths: [14, 32, 14, 12, 12, 10],
+    rowHeights: [18, 22, 16, 22],
     landscape: true,
   });
 }

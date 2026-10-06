@@ -432,11 +432,10 @@ describe("classShifts", () => {
       ],
     });
     const text = eccedenteRegisterText(d, "2026-09-01", "2027-08-31");
-    assert.match(text, /ORE ECCEDENTI DOCENZA/);
-    assert.match(text, /07\/09\/2026 \| Capria X \| 1ª A \| 08:00 – 08:55 \| 1/);
+    assert.match(text, /Ore eccedenti/);
+    assert.match(text, /07\/09\/2026 \| Capria X \| 1ª A \| 08:00 \| 08:55 \| 1/);
     assert.doesNotMatch(text, /2ª A/);
-    assert.match(text, /Firma responsabile di plesso/);
-    assert.match(text, /Presa Visione DSGA/);
+    assert.match(text, /Ore 1/);
   });
 
   it("non entra se la giornata della classe è tutta vuota", () => {
