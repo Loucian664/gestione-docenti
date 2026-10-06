@@ -90,11 +90,20 @@ function assemblyPeriods(data: PersistedData, date: string) {
   return data.settings.periods.filter((p) => ids.has(p.id)).sort((a, b) => a.index - b.index);
 }
 
-function shiftLine(data: PersistedData, date: string, shift: ClassShift): string | null {
+function schoolLine(data: PersistedData): string {
+  const name = data.settings.schoolName.trim();
+  const plesso = data.settings.plesso.trim();
+  if (/secondaria/i.test(plesso) && name) return `Scuola Secondaria di ${name}`;
+  if (name && plesso && plesso !== name) return `${plesso} di ${name}`;
+  return name || plesso;
+}
+
+function shiftClock(data: PersistedData, date: string, shift: ClassShift): { kind: ClassShift["kind"]; code: string; time: string | null } | null {
   const day = toSchoolDay(date);
   const cls = data.classes.find((c) => c.id === shift.classId);
   const code = classCode(cls?.name ?? "");
-  if (!day || shift.kind === "non_entra") return `${code} non entra`;
+  if (!code) return null;
+  if (!day || shift.kind === "non_entra") return { kind: "non_entra", code, time: null };
   const periods = data.settings.periods
     .filter((p) => data.slots.some((s) => s.day === day && s.classId === shift.classId && s.periodId === p.id))
     .sort((a, b) => a.index - b.index);
@@ -102,11 +111,23 @@ function shiftLine(data: PersistedData, date: string, shift: ClassShift): string
   if (shift.kind === "entra") {
     const lastSkipped = Math.max(...periods.filter((p) => skipped.has(p.id)).map((p) => p.index));
     const entry = periods.find((p) => p.index > lastSkipped);
-    return entry ? `${code} entra alle ${roundHour(entry.start)}` : null;
+    return entry ? { kind: "entra", code, time: roundHour(entry.start) } : null;
   }
   const firstSkipped = Math.min(...periods.filter((p) => skipped.has(p.id)).map((p) => p.index));
   const kept = [...periods].reverse().find((p) => p.index < firstSkipped);
-  return kept ? `${code} esce alle ${roundHour(kept.end)}` : null;
+  return kept ? { kind: "esce", code, time: roundHour(kept.end) } : null;
+}
+
+function groupedTimes(rows: { code: string; time: string }[]): string[] {
+  const byTime = new Map<string, string[]>();
+  for (const row of rows) {
+    const list = byTime.get(row.time) ?? [];
+    list.push(row.code);
+    byTime.set(row.time, list);
+  }
+  return [...byTime.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([time, codes]) => `${codes.sort((a, b) => a.localeCompare(b, "it")).join(", ")}: ${time}`);
 }
 
 /** Testo breve per il dirigente: solo assemblea, orari arrotondati all’ora. */
@@ -123,15 +144,27 @@ export function assemblySummary(data: PersistedData, date: string): string | nul
         .map((t) => teacherSurname(t, data.teachers)),
     ),
   ].sort((a, b) => a.localeCompare(b, "it"));
-  const classes = classShifts(data, date)
-    .map((shift) => shiftLine(data, date, shift))
-    .filter((line): line is string => Boolean(line));
+  const clocks = classShifts(data, date)
+    .map((shift) => shiftClock(data, date, shift))
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
   const list = names.join(", ");
   const namesLine = list.endsWith(".") ? list : `${list}.`;
   const day = formatDayMonth(date);
   const dated = day.charAt(0).toLocaleUpperCase("it-IT") + day.slice(1);
-  const lines = ["Assemblea sindacale", dated, `${roundHour(periods[0].start)}-${roundHour(periods[periods.length - 1].end)}`, "", namesLine];
-  if (classes.length > 0) lines.push("", ...classes);
+  const lines = [
+    "Assemblea sindacale",
+    schoolLine(data),
+    `${dated}, ${roundHour(periods[0].start)}-${roundHour(periods[periods.length - 1].end)}`,
+    "",
+    "Docenti aderenti:",
+    namesLine,
+  ];
+  const entra = groupedTimes(clocks.filter((row) => row.kind === "entra" && row.time).map((row) => ({ code: row.code, time: row.time! })));
+  const esce = groupedTimes(clocks.filter((row) => row.kind === "esce" && row.time).map((row) => ({ code: row.code, time: row.time! })));
+  const assenti = clocks.filter((row) => row.kind === "non_entra").map((row) => row.code);
+  if (entra.length > 0) lines.push("", "Ingresso posticipato:", ...entra);
+  if (esce.length > 0) lines.push("", "Uscita anticipata:", ...esce);
+  if (assenti.length > 0) lines.push("", "Non entra:", assenti.sort((a, b) => a.localeCompare(b, "it")).join(", "));
   return lines.join("\n");
 }
 
