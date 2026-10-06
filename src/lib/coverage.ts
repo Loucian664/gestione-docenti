@@ -144,7 +144,7 @@ export type ClassShift = {
 };
 
 /** Ore vuote di fila in testa o in coda: la classe entra dopo, esce prima, o non entra.
- *  Entra dopo solo se chi tiene la classe manca per assemblea sindacale. */
+ *  Entra dopo o esce prima solo se chi tiene la classe manca per assemblea sindacale. */
 export function classShifts(data: PersistedData, date: string): ClassShift[] {
   const day = toSchoolDay(date);
   if (!day) return [];
@@ -200,7 +200,7 @@ export function classShifts(data: PersistedData, date: string): ClassShift[] {
     let lead = 0;
     while (lead < states.length && assemblyVoid(classId, states[lead].periodId)) lead += 1;
     let trail = 0;
-    while (trail < states.length - lead && states[states.length - 1 - trail].void) trail += 1;
+    while (trail < states.length - lead && assemblyVoid(classId, states[states.length - 1 - trail].periodId)) trail += 1;
 
     const push = (kind: ClassShift["kind"], slice: { periodId: string }[], phrase: string) => {
       const ids = new Set(slice.map((s) => s.periodId));
