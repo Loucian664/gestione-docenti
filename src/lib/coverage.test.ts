@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { autoAssignPlan, classShifts, coverageNeeds, isCovered, rankSubstitutes, type CoverageNeed } from "./coverage.ts";
-import { assemblySummary, dailySheetText } from "./export.ts";
+import { assemblySummary, dailySheetText, eccedenteRegisterText } from "./export.ts";
 import type { PersistedData, Teacher, TimetableSlot } from "./types.ts";
 
 function teacher(
@@ -398,6 +398,45 @@ describe("classShifts", () => {
       ].join("\n"),
     );
     assert.equal(assemblySummary(data({ selectedDate: date }), date), null);
+  });
+
+  it("il registro eccedenti elenca solo quelle ore, con orario e chiusura", () => {
+    const d = data({
+      selectedDate: date,
+      teachers: [teacher("t1", "Lentini", "cattedra", ["Italiano"]), teacher("t2", "Capria", "cattedra", ["Inglese"])],
+      substitutions: [
+        {
+          id: "s-ecc",
+          date,
+          periodId: "p1",
+          classId: "c-1A",
+          absentTeacherId: "t1",
+          substituteId: "t2",
+          type: "eccedente",
+          activity: "",
+          notes: "",
+          subject: "Italiano",
+        },
+        {
+          id: "s-disp",
+          date,
+          periodId: "p2",
+          classId: "c-2A",
+          absentTeacherId: "t1",
+          substituteId: "t2",
+          type: "disposizione",
+          activity: "",
+          notes: "",
+          subject: "Italiano",
+        },
+      ],
+    });
+    const text = eccedenteRegisterText(d, "2026-09-01", "2027-08-31");
+    assert.match(text, /07\/09\/2026 \| Capria X \| 1ª A \| dalle 08:00 alle 08:55 \| 1/);
+    assert.doesNotMatch(text, /2ª A/);
+    assert.match(text, /Totale ore eccedenti: 1/);
+    assert.match(text, /Firma responsabile di plesso/);
+    assert.match(text, /Presa visione DSGA/);
   });
 
   it("non entra se la giornata della classe è tutta vuota", () => {

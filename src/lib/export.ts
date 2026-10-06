@@ -302,6 +302,118 @@ export function reportXlsx(
   return xlsxFile(`report-sostituzioni-${from}-${to}.xlsx`, rows, "Monte ore");
 }
 
+export type EccedenteRow = {
+  date: string;
+  teacher: string;
+  className: string;
+  from: string;
+  to: string;
+};
+
+/** Ore segnate come eccedenti, una riga per ora. Senza l’intestazione del modello, che cambia. */
+export function eccedenteRows(data: PersistedData, from: string, to: string): EccedenteRow[] {
+  const periods = [...data.settings.periods].sort((a, b) => a.index - b.index);
+  return data.substitutions
+    .filter((s) => s.type === "eccedente" && s.substituteId && s.date >= from && s.date <= to)
+    .map((s) => {
+      const teacher = findTeacher(data, s.substituteId);
+      const cls = data.classes.find((c) => c.id === s.classId);
+      const period = periods.find((p) => p.id === s.periodId);
+      return {
+        date: s.date,
+        teacher: teacher ? teacherName(teacher) : "",
+        className: cls?.name ?? "",
+        from: period?.start ?? "",
+        to: period?.end ?? "",
+        index: period?.index ?? 99,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) ||
+        a.index - b.index ||
+        a.teacher.localeCompare(b.teacher, "it") ||
+        a.className.localeCompare(b.className, "it"),
+    )
+    .map(({ date, teacher, className, from: start, to: end }) => ({ date, teacher, className, from: start, to: end }));
+}
+
+function eccedenteClosing(): string[] {
+  return [
+    "Il responsabile di plesso dovrà custodire e consegnare il registro al termine delle attività didattiche annuali",
+    "",
+    "Data ____________________",
+    "",
+    "Firma responsabile di plesso",
+    "",
+    "Presa visione Dirigente scolastico",
+    "",
+    "Presa visione DSGA",
+  ];
+}
+
+export function eccedenteRegisterText(data: PersistedData, from: string, to: string): string {
+  const rows = eccedenteRows(data, from, to);
+  const lines = [
+    "DATA | DOCENTE | CLASSE | ORARIO | TOTALE",
+    ...rows.map((row) => `${formatItDate(row.date)} | ${row.teacher} | ${row.className} | dalle ${row.from} alle ${row.to} | 1`),
+  ];
+  if (rows.length === 0) lines.push("Nessuna ora eccedente.");
+  else lines.push("", `Totale ore eccedenti: ${rows.length}`);
+  lines.push("", ...eccedenteClosing());
+  return lines.join("\n");
+}
+
+export function eccedenteRegisterXlsx(data: PersistedData, from: string, to: string): File {
+  const rows = eccedenteRows(data, from, to);
+  const header = [
+    "DATA",
+    "Docente che presta sostituzione orario eccedente",
+    "CLASSE",
+    "Orario sostituzione (Dalle … alle …)",
+    "Totale ore eccedenti",
+  ].map((v) => ({ v, s: XLSX_S.th }));
+  const body: XlsxCellInput[][] = rows.map((row) => [
+    { v: formatItDate(row.date), s: XLSX_GRID_TEXT },
+    { v: row.teacher, s: XLSX_GRID_TEXT },
+    { v: row.className, s: XLSX_GRID_TEXT },
+    { v: row.from && row.to ? `dalle ${row.from} alle ${row.to}` : "", s: XLSX_GRID_TEXT },
+    { v: 1, s: XLSX_GRID_TEXT },
+  ]);
+  if (body.length === 0) {
+    body.push([
+      { v: "Nessuna ora eccedente.", s: XLSX_GRID_TEXT },
+      { v: "", s: XLSX_GRID_TEXT },
+      { v: "", s: XLSX_GRID_TEXT },
+      { v: "", s: XLSX_GRID_TEXT },
+      { v: "", s: XLSX_GRID_TEXT },
+    ]);
+  } else {
+    body.push([
+      { v: "Totale", s: XLSX_S.th },
+      { v: "", s: XLSX_S.th },
+      { v: "", s: XLSX_S.th },
+      { v: "", s: XLSX_S.th },
+      { v: rows.length, s: XLSX_S.th },
+    ]);
+  }
+  const foot = eccedenteClosing().map((line) => [
+    { v: line, s: XLSX_GRID_TEXT },
+    { v: "", s: XLSX_GRID_TEXT },
+    { v: "", s: XLSX_GRID_TEXT },
+    { v: "", s: XLSX_GRID_TEXT },
+    { v: "", s: XLSX_GRID_TEXT },
+  ]);
+  return xlsxSpecFile(`registro-ore-eccedenti-${from}-${to}.xlsx`, {
+    rows: [header, ...body, [{ v: "", s: XLSX_GRID_TEXT }], ...foot],
+    sheetName: "Ore eccedenti",
+    headerRow: false,
+    freezeRow: 1,
+    colWidths: [14, 42, 14, 36, 22],
+    landscape: true,
+  });
+}
+
 export function timetableXlsx(data: PersistedData): File {
   const toSpec = (mode: "cognomi" | "materie", sheetName: string) => {
     const grid = classTimetableSheet(data, mode);
