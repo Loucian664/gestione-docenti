@@ -126,7 +126,16 @@ export function assemblySummary(data: PersistedData, date: string): string | nul
   const classes = classShifts(data, date)
     .map((shift) => shiftLine(data, date, shift))
     .filter((line): line is string => Boolean(line));
-  const lines = [`Assemblea sindacale ${roundHour(periods[0].start)}-${roundHour(periods[periods.length - 1].end)}`, "", names.join(", ")];
+  const list = names.join(", ");
+  const namesLine = list.endsWith(".") ? list : `${list}.`;
+  const day = formatLong(date);
+  const dated = day.charAt(0).toLocaleUpperCase("it-IT") + day.slice(1);
+  const lines = [
+    dated,
+    `Assemblea sindacale ${roundHour(periods[0].start)}-${roundHour(periods[periods.length - 1].end)}`,
+    "",
+    namesLine,
+  ];
   if (classes.length > 0) lines.push("", ...classes);
   return lines.join("\n");
 }
