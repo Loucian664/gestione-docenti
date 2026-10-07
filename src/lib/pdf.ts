@@ -238,6 +238,80 @@ export function jpegToPdf(jpeg: Uint8Array, imgW: number, imgH: number): Blob {
   return new Blob([out], { type: "application/pdf" });
 }
 
+/** Più JPEG, una pagina A4 ciascuno, stesso incastro del foglio singolo. */
+export function jpegsToPdf(pages: { jpeg: Uint8Array; w: number; h: number }[]): Blob {
+  const items = pages.length > 0 ? pages : [];
+  if (items.length === 0) return jpegToPdf(new Uint8Array(), 842, 595);
+  const encoder = new TextEncoder();
+  const parts: Uint8Array[] = [];
+  const offsets: number[] = [0];
+  let offset = 0;
+  const push = (data: Uint8Array) => {
+    parts.push(data);
+    offset += data.length;
+  };
+  const pushText = (s: string) => push(encoder.encode(s));
+  const markObj = () => {
+    offsets.push(offset);
+  };
+
+  const n = items.length;
+  const pageObj = (i: number) => 3 + i * 3;
+  const contentObj = (i: number) => 4 + i * 3;
+  const imageObj = (i: number) => 5 + i * 3;
+
+  pushText("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  markObj();
+  pushText("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+  markObj();
+  pushText(
+    `2 0 obj\n<< /Type /Pages /Kids [ ${items.map((_, i) => `${pageObj(i)} 0 R`).join(" ")} ] /Count ${n} >>\nendobj\n`,
+  );
+
+  items.forEach((item, i) => {
+    const landscape = item.w / Math.max(1, item.h) >= 1.05;
+    const pageW = landscape ? 842 : 595;
+    const pageH = landscape ? 595 : 842;
+    const margin = 22;
+    const scale = Math.min((pageW - margin * 2) / item.w, (pageH - margin * 2) / item.h);
+    const w = item.w * scale;
+    const h = item.h * scale;
+    const x = (pageW - w) / 2;
+    const y = (pageH - h) / 2;
+    const content = `q\n${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm\n/Im${i} Do\nQ\n`;
+    const contentBytes = encoder.encode(content);
+    markObj();
+    pushText(
+      `${pageObj(i)} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im${i} ${imageObj(i)} 0 R >> >> /Contents ${contentObj(i)} 0 R >>\nendobj\n`,
+    );
+    markObj();
+    pushText(`${contentObj(i)} 0 obj\n<< /Length ${contentBytes.length} >>\nstream\n`);
+    push(contentBytes);
+    pushText("\nendstream\nendobj\n");
+    markObj();
+    pushText(
+      `${imageObj(i)} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${Math.round(item.w)} /Height ${Math.round(item.h)} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${item.jpeg.byteLength} >>\nstream\n`,
+    );
+    push(item.jpeg);
+    pushText("\nendstream\nendobj\n");
+  });
+
+  const xrefStart = offset;
+  const size = 2 + n * 3;
+  const xrefLines = ["xref", `0 ${size + 1}`, "0000000000 65535 f "];
+  for (let i = 1; i <= size; i++) xrefLines.push(`${String(offsets[i]).padStart(10, "0")} 00000 n `);
+  pushText(`${xrefLines.join("\n")}\ntrailer\n<< /Size ${size + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`);
+
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
+  let cursor = 0;
+  for (const part of parts) {
+    out.set(part, cursor);
+    cursor += part.length;
+  }
+  return new Blob([out], { type: "application/pdf" });
+}
+
 export async function jpegBlobToPdf(blob: Blob): Promise<Blob> {
   const buf = new Uint8Array(await blob.arrayBuffer());
   const url = URL.createObjectURL(blob);

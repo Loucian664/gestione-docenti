@@ -6,6 +6,7 @@ import {
   classShifts,
   loadByTeacher,
   absencesByReason,
+  eccedenteLines,
   teacherDayWindow,
   teacherName,
   teacherShort,
@@ -1404,6 +1405,92 @@ export async function orarioClassiGridJpeg(
   }
 
   return canvasToJpeg(canvas);
+}
+
+const ECCEDENTE_COLS = [
+  { label: "Data", share: 0.16 },
+  { label: "Docente", share: 0.34 },
+  { label: "Classe", share: 0.14 },
+  { label: "Ora", share: 0.1 },
+  { label: "Dalle", share: 0.13 },
+  { label: "Alle", share: 0.13 },
+];
+
+/** Foglio ore eccedenti, stesso impianto del settimanale: titolo centrato, fascia crema, griglia nera. */
+export async function eccedenteJpegs(
+  data: PersistedData,
+  from: string,
+  to: string,
+): Promise<{ blob: Blob; w: number; h: number }[]> {
+  await document.fonts.ready.catch(() => undefined);
+  const lines = eccedenteLines(data, from, to);
+  const pageW = 842;
+  const pageH = 595;
+  const padX = 16;
+  const padY = 14;
+  const titleH = 56;
+  const headH = 22;
+  const rowH = 18;
+  const tableW = pageW - padX * 2;
+  const slots = Math.max(1, Math.floor((pageH - padY * 2 - titleH - headH) / rowH));
+  const chunks = lines.length === 0 ? [[]] : Array.from({ length: Math.ceil(lines.length / slots) }, (_, i) => lines.slice(i * slots, (i + 1) * slots));
+  const widths = ECCEDENTE_COLS.map((col) => col.share * tableW);
+  const out: { blob: Blob; w: number; h: number }[] = [];
+
+  for (const chunk of chunks) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(pageW * SHEET_DPR);
+    canvas.height = Math.round(pageH * SHEET_DPR);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas");
+    ctx.scale(SHEET_DPR, SHEET_DPR);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, pageW, pageH);
+    drawSheetHeading(ctx, data, pageW, padY, "ORE ECCEDENTI");
+
+    const headY = padY + titleH;
+    let x = padX;
+    ctx.fillStyle = "#eee8dc";
+    ctx.fillRect(padX, headY, tableW, headH);
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 0.7;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#111";
+    ctx.font = "700 10px 'Source Sans 3', system-ui, sans-serif";
+    ECCEDENTE_COLS.forEach((col, i) => {
+      const w = widths[i] ?? 0;
+      ctx.strokeRect(x, headY, w, headH);
+      ctx.fillText(col.label, x + w / 2, headY + headH / 2 + 0.6);
+      x += w;
+    });
+
+    if (chunk.length === 0) {
+      ctx.font = "500 11px 'Source Sans 3', system-ui, sans-serif";
+      ctx.fillText("Nessuna ora eccedente.", pageW / 2, headY + headH + 28);
+    } else {
+      chunk.forEach((line, ri) => {
+        const y = headY + headH + ri * rowH;
+        const values = [formatItDate(line.date), line.teacher, line.className, line.hour, line.from, line.to];
+        let cx = padX;
+        values.forEach((value, i) => {
+          const w = widths[i] ?? 0;
+          ctx.strokeRect(cx, y, w, rowH);
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(cx + 2, y, w - 4, rowH);
+          ctx.clip();
+          ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
+          ctx.fillStyle = "#111";
+          ctx.fillText(value, cx + w / 2, y + rowH / 2 + 0.6);
+          ctx.restore();
+          cx += w;
+        });
+      });
+    }
+    out.push({ blob: await canvasToJpeg(canvas), w: canvas.width, h: canvas.height });
+  }
+  return out;
 }
 
 export { teachersOnTimetable };
