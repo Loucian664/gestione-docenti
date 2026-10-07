@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,12 @@ export function AbsenceDialog({
   const [allDay, setAllDay] = useState(initial?.allDay ?? true);
   const [periodIds, setPeriodIds] = useState<string[]>(initial?.periodIds ?? []);
   const [notes, setNotes] = useState(initial?.notes ?? "");
+
+  useEffect(() => {
+    if (!open || initial) return;
+    setDateFrom(selectedDate);
+    setDateTo(selectedDate);
+  }, [open, initial, selectedDate]);
 
   function togglePeriod(id: string) {
     setPeriodIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
