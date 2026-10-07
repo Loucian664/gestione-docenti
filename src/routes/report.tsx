@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useAppStore, snapshot } from "@/lib/store";
 import { loadByTeacher, absencesByReason, eccedenteLines, teacherShort } from "@/lib/coverage";
 import { formatItDate, monthRange, schoolYearRange } from "@/lib/dates";
-import { reportXlsx } from "@/lib/export";
+import { reportXlsx, eccedenteXlsx, eccedentePdf, schoolFileTag } from "@/lib/export";
 import { shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
 import { reportJpeg } from "@/lib/sheet-image";
@@ -264,10 +264,46 @@ function ReportPage() {
         )}
       </div>
 
-      <h2 className="mt-8 mb-1 font-display text-lg">Ore eccedenti</h2>
-      <p className="mb-3 text-sm text-muted-foreground">
-        Anno {data.settings.schoolYear}. Solo le ore segnate come eccedenti: chi ha coperto, la classe e l’ora arrotondata.
-      </p>
+      <div className="mt-8 mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="mb-1 font-display text-lg">Ore eccedenti</h2>
+          <p className="text-sm text-muted-foreground">
+            Anno {data.settings.schoolYear}. Solo le ore segnate come eccedenti: chi ha coperto, la classe e l’ora arrotondata.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              void shareOrSaveFile(eccedenteXlsx(data, yearRange.from, yearRange.to)).then((outcome) =>
+                toastSave(outcome, "excel"),
+              );
+            }}
+          >
+            <Download />
+            Excel
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              const tab = openPdfTab();
+              void (async () => {
+                try {
+                  const blob = await eccedentePdf(data, yearRange.from, yearRange.to);
+                  const name = `ore-eccedenti-${schoolFileTag(data.settings.schoolName)}.pdf`;
+                  toastSave(tab.show(name, blob), "pdf");
+                } catch {
+                  tab.cancel();
+                  toast.error("Non sono riuscito a creare il PDF.");
+                }
+              })();
+            }}
+          >
+            <FileText />
+            PDF
+          </Button>
+        </div>
+      </div>
       <div className="paper-panel overflow-x-auto rounded-xl">
         {yearEccedenteLines.length === 0 ? (
           <p className="px-4 py-6 text-sm text-muted-foreground">Nessuna ora eccedente in questo anno.</p>

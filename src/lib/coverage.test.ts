@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { autoAssignPlan, classShifts, coverageNeeds, eccedenteLines, isCovered, rankSubstitutes, type CoverageNeed } from "./coverage.ts";
-import { assemblySummary, dailySheetText } from "./export.ts";
+import { assemblySummary, dailySheetText, eccedenteXlsx } from "./export.ts";
 import type { PersistedData, Teacher, TimetableSlot } from "./types.ts";
 
 function teacher(
@@ -438,6 +438,9 @@ describe("classShifts", () => {
     assert.equal(lines[0]?.hour, "1ª");
     assert.equal(lines[0]?.from, "08:00");
     assert.equal(lines[0]?.to, "09:00");
+    const file = eccedenteXlsx(d, "2026-09-01", "2027-08-31");
+    assert.match(file.name, /ore-eccedenti-/);
+    assert.ok(file.size > 0);
   });
 
   it("non entra se la giornata della classe è tutta vuota", () => {

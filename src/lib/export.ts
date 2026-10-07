@@ -1,11 +1,11 @@
 import { eachIsoInRange, formatDayMonth, formatDayName, formatItDate, formatItFileDate, formatLong, isWeekend, toSchoolDay } from "./dates";
-import { coverageNeeds, isCovered, isShiftType, classShifts, teacherName, teacherSurname, absencesByReason, absencesOnDate, type CoverageNeed, type ClassShift } from "./coverage";
+import { coverageNeeds, isCovered, isShiftType, classShifts, eccedenteLines, teacherName, teacherSurname, absencesByReason, absencesOnDate, type CoverageNeed, type ClassShift } from "./coverage";
 import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, SUBSTITUTION_TYPES } from "./types";
 import { classTimetableSheet, XLSX_S } from "./class-grid";
 import { xlsxFile, xlsxSpecFile, xlsxWorkbookFile, XLSX_GRID_DAY, XLSX_GRID_TEXT, type XlsxCellInput } from "./xlsx";
-import { jpegBlobToPdf } from "./pdf";
-import { orarioTeacherJpeg, teachersOnTimetable } from "./sheet-image";
+import { jpegBlobToPdf, jpegsToPdf } from "./pdf";
+import { orarioTeacherJpeg, teachersOnTimetable, eccedenteJpegs } from "./sheet-image";
 import { teacherPdfFileName } from "./teacher-print";
 import { zipFile } from "./zip";
 
@@ -300,6 +300,64 @@ export function reportXlsx(
     ]);
   }
   return xlsxFile(`report-sostituzioni-${from}-${to}.xlsx`, rows, "Monte ore");
+}
+
+function eccedenteHeading(data: PersistedData): [string, string, string] {
+  const name = data.settings.schoolName.trim();
+  const kind = data.settings.plesso.trim();
+  const raw = data.settings.schoolYear.trim();
+  const year = raw ? (/a\.?\s*s\.?/i.test(raw) ? raw : `a.s. ${raw}`) : "";
+  const yearLine = kind && year ? `${kind}  ·  ${year}` : kind || year;
+  return [name ? `Plesso di ${name}` : "Plesso", "ORE ECCEDENTI", yearLine];
+}
+
+export function eccedenteXlsx(data: PersistedData, from: string, to: string): File {
+  const lines = eccedenteLines(data, from, to);
+  const span = (text: string, s: number): XlsxCellInput[] => [
+    { v: text, s },
+    { v: "", s },
+    { v: "", s },
+    { v: "", s },
+    { v: "", s },
+    { v: "", s },
+  ];
+  const [kicker, title, year] = eccedenteHeading(data);
+  const sheet: XlsxCellInput[][] = [
+    span(kicker, XLSX_S.kicker),
+    span(title, XLSX_S.title),
+    span(year, XLSX_S.year),
+    ["Data", "Docente", "Classe", "Ora", "Dalle", "Alle"].map((v) => ({ v, s: XLSX_S.th })),
+  ];
+  if (lines.length === 0) {
+    sheet.push(span("Nessuna ora eccedente.", XLSX_S.body));
+  } else {
+    for (const line of lines) {
+      sheet.push(
+        [formatItDate(line.date), line.teacher, line.className, line.hour, line.from, line.to].map((v) => ({
+          v,
+          s: XLSX_S.body,
+        })),
+      );
+    }
+  }
+  return xlsxSpecFile(orarioDownloadName(data.settings.schoolName, "ore-eccedenti", "xlsx"), {
+    rows: sheet,
+    merges: ["A1:F1", "A2:F2", "A3:F3", ...(lines.length === 0 ? ["A5:F5"] : [])],
+    sheetName: "Ore eccedenti",
+    headerRow: false,
+    freezeRow: 4,
+    colWidths: [16, 32, 14, 10, 12, 12],
+    rowHeights: [18, 22, 16, 22, ...lines.map(() => 18)],
+    landscape: true,
+  });
+}
+
+export async function eccedentePdf(data: PersistedData, from: string, to: string): Promise<Blob> {
+  const pages = await eccedenteJpegs(data, from, to);
+  const images = await Promise.all(
+    pages.map(async (page) => ({ jpeg: new Uint8Array(await page.blob.arrayBuffer()), w: page.w, h: page.h })),
+  );
+  return jpegsToPdf(images);
 }
 
 export function timetableXlsx(data: PersistedData): File {
