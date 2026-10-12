@@ -272,20 +272,42 @@ export function PageHeader({
   title,
   description,
   actions,
+  actionsCentered = false,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
+  /**
+   * Sotto i 1024 px i tasti vanno sotto la descrizione, al centro (come la data in Oggi);
+   * più larghi, a destra e sempre su una riga.
+   */
+  actionsCentered?: boolean;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div
+      className={cn(
+        "mb-6 flex flex-col gap-3",
+        actionsCentered
+          ? "lg:flex-row lg:items-end lg:justify-between"
+          : "sm:flex-row sm:items-end sm:justify-between",
+      )}
+    >
       <div>
         <h1 className="font-display text-3xl font-medium tracking-tight text-foreground md:text-4xl">
           {title}
         </h1>
         {description && <p className="mt-1 max-w-xl text-sm text-muted-foreground">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && (
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-2",
+            actionsCentered && "justify-center lg:shrink-0 lg:justify-end",
+          )}
+        >
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

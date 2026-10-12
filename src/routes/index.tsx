@@ -168,6 +168,7 @@ function OggiPage() {
       <PageHeader
         title="Bacheca del giorno"
         description="Registra le assenze, copri le ore, stampa il foglio per la sala docenti."
+        actionsCentered
         actions={
           <>
             <Button onClick={() => setAbsenceOpen(true)}>
