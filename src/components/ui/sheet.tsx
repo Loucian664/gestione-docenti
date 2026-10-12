@@ -15,7 +15,7 @@ function SheetContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & { side?: "right" | "bottom" }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-foreground/40" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-foreground/40 dark:bg-black/60" />
       <DialogPrimitive.Content
         className={cn(
           "fixed z-50 flex flex-col bg-popover text-popover-foreground shadow-border-hover outline-none",
