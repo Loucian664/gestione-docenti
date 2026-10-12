@@ -16,6 +16,13 @@ import { Plus, Search, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { corePeriods } from "@/lib/periods";
+import {
+  DEFAULT_TEACHER_COLOR,
+  TEACHER_PALETTE,
+  TONE_NAMES,
+  findPastel,
+  teacherDotColor,
+} from "@/lib/teacher-palette";
 
 export const Route = createFileRoute("/docenti")({ component: DocentiPage });
 
@@ -60,7 +67,7 @@ function DocentiPage() {
             <li key={t.id} className="flex items-start gap-2 py-3 pr-2 pl-4">
               <button type="button" onClick={() => setEditing(t)} className="min-w-0 flex-1 text-left">
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="size-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
+                  <span className="size-2.5 shrink-0 rounded-full" style={{ background: teacherDotColor(t.color) }} />
                   <span className="font-medium">{teacherName(t)}</span>
                   <Badge variant="outline">{ROLE_LABELS[t.role]}</Badge>
                 </span>
@@ -107,7 +114,7 @@ function DocentiPage() {
               >
                 <td className="whitespace-nowrap px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <span className="size-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
+                    <span className="size-2.5 shrink-0 rounded-full" style={{ background: teacherDotColor(t.color) }} />
                     <span className="font-medium">{teacherName(t)}</span>
                   </div>
                 </td>
@@ -198,7 +205,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
   const [dispHours, setDispHours] = useState(String(current?.dispHours ?? 0));
   const [role, setRole] = useState<TeacherRole>(current?.role ?? "cattedra");
   const [notes, setNotes] = useState(current?.notes ?? "");
-  const [color, setColor] = useState(current?.color ?? "#3d5a4c");
+  const [color, setColor] = useState(current?.color ?? DEFAULT_TEACHER_COLOR);
   const [dispSlots, setDispSlots] = useState<{ day: DayOfWeek; periodId: string }[]>(
     current?.dispSlots ?? [],
   );
@@ -427,7 +434,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
           </Field>
           )}
           <Field label="Colore in orario">
-            <Input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-10 w-20 p-1" />
+            <ColorSwatches value={color} original={current?.color} onChange={setColor} />
           </Field>
           <Field label="Note">
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
@@ -456,6 +463,60 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** «Colore in orario»: 24 pastelli; un colore di prima resta come «colore attuale» finché non se ne sceglie un altro. */
+function ColorSwatches({
+  value,
+  original,
+  onChange,
+}: {
+  value: string;
+  original: string | undefined;
+  onChange: (color: string) => void;
+}) {
+  const legacy = original && !findPastel(original) ? original : null;
+  const isOn = (c: string) => value.toUpperCase() === c.toUpperCase();
+  const ring = "ring-2 ring-primary ring-offset-2 ring-offset-popover";
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-8 gap-1">
+        {TEACHER_PALETTE.map((hue) => (
+          <div key={hue.name} className="flex min-w-0 flex-col gap-1">
+            <span className="truncate text-center text-[10px] tracking-tight text-muted-foreground" title={hue.name}>
+              {hue.name}
+            </span>
+            {hue.tones.map((tone, i) => (
+              <button
+                key={tone}
+                type="button"
+                aria-label={`${hue.name} ${TONE_NAMES[i]}`}
+                aria-pressed={isOn(tone)}
+                title={`${hue.name} ${TONE_NAMES[i]}`}
+                onClick={() => onChange(tone)}
+                className={cn("h-7 rounded-md border border-black/10", isOn(tone) && ring)}
+                style={{ background: tone }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      {legacy && (
+        <button
+          type="button"
+          aria-pressed={isOn(legacy)}
+          onClick={() => onChange(legacy)}
+          className="flex items-center gap-2 self-start text-[12px] text-muted-foreground"
+        >
+          <span
+            className={cn("h-7 w-10 rounded-md border border-black/10", isOn(legacy) && ring)}
+            style={{ background: legacy }}
+          />
+          colore attuale
+        </button>
+      )}
+    </div>
   );
 }
 

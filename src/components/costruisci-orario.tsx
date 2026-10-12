@@ -51,6 +51,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { PASTEL_TEXT_2, teacherCell } from "@/lib/teacher-palette";
 import { corePeriods, isTpPeriodId } from "@/lib/periods";
 
 type Cell = { day: DayOfWeek; periodId: string };
@@ -1165,6 +1166,7 @@ function Ritocchi({
                     const t = lesson ? tById.get(lesson.teacherId) : undefined;
                     const isSel = Boolean(sel && sel.classId === classId && sel.z === z);
                     const tint = !isSel && eff && eff.verdict !== "same";
+                    const tc = teacherCell(t && !tint ? t.color : undefined);
                     return (
                       <td key={d} className="p-0.5">
                         <button
@@ -1172,12 +1174,8 @@ function Ritocchi({
                           aria-label={`${DAY_SHORT[d]} ${p.index}ª: ${lesson ? `${lesson.subject}, ${short(t)}` : "libera"}${lesson?.locked ? ", bloccata" : ""}${eff ? `. Spostando qui: ${VERDICT_WORD[eff.verdict]}` : ""}`}
                           aria-pressed={isSel}
                           onClick={() => tap(z, lesson ? classId : null)}
-                          className={cellClass(z, isSel, Boolean(lesson))}
-                          style={
-                            t && !tint
-                              ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` }
-                              : undefined
-                          }
+                          className={cn(cellClass(z, isSel, Boolean(lesson)), tc.className)}
+                          style={tc.style}
                         >
                           {lesson ? (
                             <>
@@ -1185,7 +1183,11 @@ function Ritocchi({
                                 <span className="sm:hidden">{subjectAbbr(lesson.subject)}</span>
                                 <span className="hidden sm:inline">{lesson.subject}</span>
                               </span>
-                              <span className="w-full truncate text-[11px] text-muted-foreground">{short(t)}</span>
+                              <span
+                                className={cn("w-full truncate text-[11px]", tc.pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}
+                              >
+                                {short(t)}
+                              </span>
                             </>
                           ) : (
                             <span className="text-[12px] text-ink-faint">—</span>
@@ -1204,6 +1206,11 @@ function Ritocchi({
                     Boolean(sel && sel.z === z && cellT.kind === "lesson" && cellT.classId === sel.classId) ||
                     (!sel && gapNow === z);
                   const lessonClass = cellT.kind === "lesson" ? cellT.classId : null;
+                  const tcT = teacherCell(
+                    cellT.kind === "lesson" && shownTeacher && !(eff && eff.verdict !== "same" && !isSel)
+                      ? shownTeacher.color
+                      : undefined,
+                  );
                   return (
                     <td key={d} className="p-0.5">
                       <button
@@ -1221,17 +1228,15 @@ function Ritocchi({
                         }${eff ? `. Spostando qui: ${VERDICT_WORD[eff.verdict]}` : ""}`}
                         aria-pressed={isSel}
                         onClick={() => tap(z, lessonClass, isGap)}
-                        className={cellClass(z, isSel, cellT.kind === "lesson")}
-                        style={
-                          cellT.kind === "lesson" && shownTeacher && !(eff && eff.verdict !== "same" && !isSel)
-                            ? { background: `color-mix(in srgb, ${shownTeacher.color} var(--teacher-wash), transparent)` }
-                            : undefined
-                        }
+                        className={cn(cellClass(z, isSel, cellT.kind === "lesson"), tcT.className)}
+                        style={tcT.style}
                       >
                         {cellT.kind === "lesson" ? (
                           <>
                             <span className="w-full truncate text-[12px] font-medium">{cellT.className}</span>
-                            <span className="w-full truncate text-[11px] text-muted-foreground">
+                            <span
+                              className={cn("w-full truncate text-[11px]", tcT.pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}
+                            >
                               <span className="sm:hidden">{subjectAbbr(cellT.subject)}</span>
                               <span className="hidden sm:inline">{cellT.subject}</span>
                             </span>
@@ -2248,9 +2253,12 @@ function TeacherWeekPreview({
 function CellBody({
   occupants,
   teachers,
+  pastel = false,
 }: {
   occupants: TimetableSlot[];
   teachers: Teacher[];
+  /** Cella col pastello del docente: testo secondario più scuro. */
+  pastel?: boolean;
 }) {
   if (occupants.length === 0) {
     return <span className="text-[12px] text-ink-faint">—</span>;
@@ -2262,7 +2270,7 @@ function CellBody({
         return (
           <span key={s.id} className={cn("flex flex-col leading-tight", i > 0 && "mt-1")}>
             <span className="text-[13px] font-medium">{s.subject}</span>
-            <span className="text-[12px] text-muted-foreground">
+            <span className={cn("text-[12px]", pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}>
               {doc ? teacherShort(doc, teachers) : ""}
               {i > 0 ? " · compr." : ""}
             </span>
@@ -2314,10 +2322,10 @@ function ClassPreview({
                 return (
                   <td key={d} className="p-1.5 align-top">
                     <div
-                      className="flex min-h-16 w-full flex-col rounded-md px-2 py-1.5"
-                      style={t ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` } : undefined}
+                      className={cn("flex min-h-16 w-full flex-col rounded-md px-2 py-1.5", teacherCell(t?.color).className)}
+                      style={teacherCell(t?.color).style}
                     >
-                      <CellBody occupants={occupants} teachers={teachers} />
+                      <CellBody occupants={occupants} teachers={teachers} pastel={teacherCell(t?.color).pastel} />
                     </div>
                   </td>
                 );
@@ -2372,10 +2380,10 @@ function DayPreview({
                 return (
                   <td key={c.id} className="p-1 align-top">
                     <div
-                      className="flex min-h-[4.25rem] w-full flex-col rounded-md px-2 py-1.5"
-                      style={t ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` } : undefined}
+                      className={cn("flex min-h-[4.25rem] w-full flex-col rounded-md px-2 py-1.5", teacherCell(t?.color).className)}
+                      style={teacherCell(t?.color).style}
                     >
-                      <CellBody occupants={occupants} teachers={teachers} />
+                      <CellBody occupants={occupants} teachers={teachers} pastel={teacherCell(t?.color).pastel} />
                     </div>
                   </td>
                 );

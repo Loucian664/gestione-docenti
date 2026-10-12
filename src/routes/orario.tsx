@@ -36,6 +36,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ScrollGrid } from "@/components/scroll-grid";
+import { PASTEL_TEXT_2, teacherCell } from "@/lib/teacher-palette";
 import { CostruisciOrario } from "@/components/costruisci-orario";
 import { BucheList } from "@/components/buche-list";
 import { gapsOf, gapsRanking, isTimetableTeacher } from "@/lib/build-timetable";
@@ -384,13 +385,17 @@ function OrarioPage() {
                         <td key={c.id} className="bg-muted/40 p-1 align-top" />
                       );
                     }
+                    const tc = teacherCell(t?.color);
                     return (
                       <td key={c.id} className="p-1 align-top">
                         <button
                           type="button"
                           onClick={() => setCellEdit({ day: quadroDay, periodId: p.id, classId: c.id })}
-                          className="flex min-h-[4.25rem] w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
-                          style={t ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` } : undefined}
+                          className={cn(
+                            "flex min-h-[4.25rem] w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted",
+                            tc.className,
+                          )}
+                          style={tc.style}
                         >
                           {occupants.length === 0 ? (
                             <span className="text-[11px] text-ink-faint">—</span>
@@ -403,7 +408,7 @@ function OrarioPage() {
                                   className={cn("flex flex-col leading-tight", i > 0 && "mt-1")}
                                 >
                                   <span className="text-[12px] font-medium">{doc ? teacherShort(doc, data.teachers) : ""}</span>
-                                  <span className="text-[11px] text-muted-foreground">
+                                  <span className={cn("text-[11px]", tc.pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}>
                                     {s.subject}
                                     {i > 0 ? " · compr." : ""}
                                   </span>
@@ -503,13 +508,17 @@ function OrarioPage() {
                     const occupants = classSlots.filter((s) => s.day === d && s.periodId === p.id);
                     const primary = occupants[0];
                     const t = primary ? data.teachers.find((x) => x.id === primary.teacherId) : null;
+                    const tc = teacherCell(t?.color);
                     return (
                       <td key={d} className="p-1.5 align-top">
                         <button
                           type="button"
                           onClick={() => setCellEdit({ day: d, periodId: p.id, classId })}
-                          className="flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
-                          style={t ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` } : undefined}
+                          className={cn(
+                            "flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted",
+                            tc.className,
+                          )}
+                          style={tc.style}
                         >
                           {occupants.length === 0 ? (
                             <span className="text-[12px] text-ink-faint">Vuoto</span>
@@ -522,7 +531,7 @@ function OrarioPage() {
                                   className={cn("flex flex-col leading-tight", i > 0 && "mt-1")}
                                 >
                                   <span className="text-[13px] font-medium">{s.subject}</span>
-                                  <span className="text-[12px] text-muted-foreground">
+                                  <span className={cn("text-[12px]", tc.pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}>
                                     {doc ? teacherShort(doc, data.teachers) : ""}
                                     {i > 0 ? " · compr." : ""}
                                   </span>
@@ -575,24 +584,27 @@ function OrarioPage() {
                         p.index <= win.last,
                     );
                     const disp = Boolean(currentTeacher && !slot && isDispHour(currentTeacher, d, p.id));
+                    const tc = teacherCell(slot ? currentTeacher?.color : undefined);
                     return (
                       <td key={d} className="p-1.5 align-top">
                         <button
                           type="button"
                           onClick={() => setTeacherEdit({ day: d, periodId: p.id, teacherId })}
-                          className="flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                          className={cn(
+                            "flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted",
+                            tc.className,
+                          )}
                           style={
-                            slot && currentTeacher
-                              ? { background: `color-mix(in srgb, ${currentTeacher.color} var(--teacher-wash), transparent)` }
-                              : disp
-                                ? { background: "color-mix(in oklab, var(--color-accent) 45%, transparent)" }
-                                : undefined
+                            tc.style ??
+                            (disp ? { background: "color-mix(in oklab, var(--color-accent) 45%, transparent)" } : undefined)
                           }
                         >
                           {slot ? (
                             <>
                               <span className="text-[13px] font-medium">{cls?.name}</span>
-                              <span className="text-[12px] text-muted-foreground">{slot.subject}</span>
+                              <span className={cn("text-[12px]", tc.pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}>
+                                {slot.subject}
+                              </span>
                               {others.length > 0 && (
                                 <span className="text-[11px] text-ink-faint">Compresenza</span>
                               )}
