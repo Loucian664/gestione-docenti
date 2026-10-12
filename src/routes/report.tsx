@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,13 +36,16 @@ function ReportPage() {
     })
     .filter((r) => r.total > 0);
 
-  const chartData = withName.slice(0, 12).map((r) => ({
-    name: r.name,
-    Disposizione: r.disposizione,
-    Potenziamento: r.potenziamento,
-    Eccedenti: r.eccedente,
-    Altro: r.recupero + r.sostegno + r.altro,
-  }));
+  // «Chi ha coperto di più»: tutti quelli con almeno un'ora, dal valore più alto
+  const chartData = [...withName]
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "it"))
+    .map((r) => ({
+      id: r.teacherId,
+      name: r.name,
+      total: r.total,
+      detail: `Disposizione ${r.disposizione} · Potenziamento ${r.potenziamento} · Eccedenti ${r.eccedente} · Altro ${r.recupero + r.sostegno + r.altro}`,
+    }));
+  const chartMax = Math.max(1, ...chartData.map((r) => r.total));
 
   const totals = loads.reduce(
     (acc, r) => ({
@@ -162,27 +164,25 @@ function ReportPage() {
       {chartData.length > 0 && (
         <div className="paper-panel mb-5 rounded-xl p-4">
           <h2 className="mb-3 font-display text-lg">Chi ha coperto di più</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
-                <CartesianGrid stroke="var(--color-border)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} interval={0} angle={-25} textAnchor="end" height={48} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--color-popover)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                />
-                <Bar dataKey="Disposizione" stackId="a" fill="#1f4a3c" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Potenziamento" stackId="a" fill="#4a7c6a" />
-                <Bar dataKey="Eccedenti" stackId="a" fill="#8a5a18" />
-                <Bar dataKey="Altro" stackId="a" fill="#8a8276" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ul className="flex flex-col gap-1.5" aria-label="Ore di copertura per docente">
+            {chartData.map((r) => (
+              <li
+                key={r.id}
+                title={`${r.name}: ${r.total} ${r.total === 1 ? "ora" : "ore"} · ${r.detail}`}
+                className="grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)] items-center gap-3 text-[13px]"
+              >
+                <span className="truncate text-muted-foreground">{r.name}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="h-4 shrink-0 rounded-r-[4px] bg-primary"
+                    style={{ width: `calc((100% - 2.5rem) * ${r.total / chartMax})` }}
+                    aria-hidden
+                  />
+                  <span className="font-medium tabular-nums text-foreground">{r.total}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -215,7 +215,7 @@ function ReportPage() {
                   <Cell n={row.eccedente} warn />
                   <Cell n={row.sostegno} />
                   <Cell n={row.altro} />
-                  <td className="px-3 py-2.5 tabular-nums font-medium">{row.total}</td>
+                  <td className={row.total ? "px-3 py-2.5 tabular-nums font-semibold" : "px-3 py-2.5 tabular-nums text-muted-foreground/55"}>{row.total}</td>
                 </tr>
               );
             })}
@@ -255,7 +255,7 @@ function ReportPage() {
                     {ABSENCE_REASONS.map((r) => (
                       <Cell key={r.value} n={row.byReason[r.value]} />
                     ))}
-                    <td className="px-3 py-2.5 tabular-nums font-medium">{row.total}</td>
+                    <td className={row.total ? "px-3 py-2.5 tabular-nums font-semibold" : "px-3 py-2.5 tabular-nums text-muted-foreground/55"}>{row.total}</td>
                   </tr>
                 );
               })}
@@ -378,7 +378,7 @@ function ReportPage() {
                     {ABSENCE_REASONS.map((r) => (
                       <Cell key={r.value} n={row.byReason[r.value]} />
                     ))}
-                    <td className="px-3 py-2.5 tabular-nums font-medium">{row.total}</td>
+                    <td className={row.total ? "px-3 py-2.5 tabular-nums font-semibold" : "px-3 py-2.5 tabular-nums text-muted-foreground/55"}>{row.total}</td>
                   </tr>
                 );
               })}
@@ -413,8 +413,17 @@ const REASON_CARD: Record<string, string> = {
 };
 
 function Cell({ n, warn }: { n: number; warn?: boolean }) {
+  // «—» (zero) attenuato: risaltano i numeri veri
   return (
-    <td className={warn && n > 0 ? "px-3 py-2.5 tabular-nums text-warning" : "px-3 py-2.5 tabular-nums text-muted-foreground"}>
+    <td
+      className={
+        n === 0
+          ? "px-3 py-2.5 tabular-nums text-muted-foreground/55"
+          : warn
+            ? "px-3 py-2.5 tabular-nums text-warning"
+            : "px-3 py-2.5 tabular-nums text-foreground"
+      }
+    >
       {n || "—"}
     </td>
   );
