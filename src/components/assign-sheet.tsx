@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { SUBSTITUTION_TYPES, type SubstitutionType } from "@/lib/types";
 import { useAppStore, snapshot } from "@/lib/store";
 import {
+  classShifts,
   isCovered,
   isShiftType,
   rankSubstitutes,
@@ -99,6 +100,10 @@ export function AssignSheet({
   );
   const [notes, setNotes] = useState(current?.notes ?? "");
   const [barOpen, setBarOpen] = useState(coveredNow);
+  // L'avviso dell'ora appena salvata coprirebbe la conferma in fondo: si chiude quando apri un'altra ora.
+  useEffect(() => {
+    if (need) toast.dismiss();
+  }, [need]);
 
   if (!need) return null;
 
@@ -134,6 +139,13 @@ export function AssignSheet({
   }
 
   const divisione = SUBSTITUTION_TYPES.find((t) => t.value === "divisione");
+  // Chi copre già l'ora (dati salvati, non la scelta in corso)
+  const coveringTeacher = coveredNow ? data.teachers.find((t) => t.id === current?.substituteId) : undefined;
+  const coveringType = SUBSTITUTION_TYPES.find((t) => t.value === current?.type)?.label;
+  const shiftPhrase =
+    current && isShiftType(current.type)
+      ? classShifts(data, active.date).find((sh) => sh.needs.some((x) => x.key === active.key))?.phrase
+      : undefined;
   const chosenTeacher = type === "divisione" ? undefined : data.teachers.find((t) => t.id === substituteId);
   const chosenLabel =
     type === "divisione"
@@ -192,6 +204,33 @@ export function AssignSheet({
           </SheetDescription>
         </SheetHeader>
         <div className="flex flex-col gap-4 p-5">
+          {(coveredNow || shiftPhrase) && (
+            <div
+              className={
+                coveredNow
+                  ? "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg bg-success-soft px-3 py-2.5"
+                  : "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg bg-warning-soft px-3 py-2.5"
+              }
+            >
+              <p className="min-w-0 text-sm">
+                {coveredNow ? (
+                  <>
+                    <span className="font-medium text-success">Copre ora:</span>{" "}
+                    {current?.type === "divisione"
+                      ? "classe divisa"
+                      : `${coveringTeacher ? teacherShort(coveringTeacher, data.teachers) : "—"}${coveringType ? ` · ${coveringType}` : ""}`}
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium text-warning">Orario variato:</span> {shiftPhrase}
+                  </>
+                )}
+              </p>
+              <Button variant="outline" size="sm" className="shrink-0" onClick={clear}>
+                Lascia scoperta
+              </Button>
+            </div>
+          )}
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -246,11 +285,6 @@ export function AssignSheet({
             <Textarea id="assign-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
           </div>
 
-          <div className="flex flex-col gap-2 pt-2">
-            <Button variant="outline" onClick={clear}>
-              Lascia scoperta
-            </Button>
-          </div>
         </div>
 
         {barOpen && (
