@@ -830,24 +830,35 @@ function Ritocchi({
   const shownFind = find && find.job.forEditor === editor ? find : null;
 
   /**
-   * Il riquadro in basso copre le ultime righe della tabella: quando si tocca una casella, o il riquadro
-   * cresce, la pagina scorre quel tanto che basta a lasciare la casella visibile sopra il riquadro
-   * (senza farla finire sotto l'intestazione in alto).
+   * Il riquadro in basso, fermo sul fondo dello schermo, può coprire le ultime righe della tabella.
+   * Quando si tocca una casella, o il riquadro cresce, la pagina scorre: se la tabella intera ci sta tra
+   * l'intestazione in alto e il riquadro, la si porta tutta sopra il riquadro; se lo schermo è troppo
+   * basso, resta visibile almeno la casella toccata (o l'ora di arrivo scelta).
    */
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel || (!sel && gapNow === null)) return;
     const keepVisible = () => {
       const grid = gridRef.current;
-      const cell =
-        grid?.querySelector<HTMLElement>("[data-target]") ?? grid?.querySelector<HTMLElement>('button[aria-pressed="true"]');
-      if (!cell) return;
-      const c = cell.getBoundingClientRect();
-      const overlap = c.bottom + 8 - panel.getBoundingClientRect().top;
-      if (overlap <= 0) return;
-      const room = c.top - (headRef.current?.getBoundingClientRect().bottom ?? 0) - 8;
-      const by = Math.min(overlap, room);
-      if (by > 0) window.scrollBy({ top: by, behavior: "smooth" });
+      if (!grid) return;
+      // limiti quando intestazione e riquadro sono fermi: in alto e in basso, con 8 px di stacco
+      const top = (headRef.current?.offsetHeight ?? 0) + 8;
+      const pinned = parseFloat(getComputedStyle(panel).bottom) || 0;
+      const bottom = window.innerHeight - pinned - panel.offsetHeight - 8;
+      const g = grid.getBoundingClientRect();
+      const cell = (
+        grid.querySelector<HTMLElement>("[data-target]") ?? grid.querySelector<HTMLElement>('button[aria-pressed="true"]')
+      )?.getBoundingClientRect();
+      // di quanto si può scorrere (lo…hi) per vedere tutta la tabella, oppure, se non ci sta,
+      // per riempire lo spazio libero con la tabella tenendo visibile la casella; poi il minimo indispensabile
+      let lo = g.bottom - bottom;
+      let hi = g.top - top;
+      if (g.height > bottom - top) {
+        lo = Math.max(g.top - top, cell ? cell.bottom - bottom : -Infinity);
+        hi = Math.min(g.bottom - bottom, cell ? cell.top - top : Infinity);
+      }
+      const by = Math.min(Math.max(0, lo), hi);
+      if (Math.abs(by) >= 1) window.scrollBy({ top: by, behavior: "smooth" });
     };
     const ro = new ResizeObserver(keepVisible);
     ro.observe(panel);
