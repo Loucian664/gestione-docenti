@@ -1497,6 +1497,8 @@ function AvailabilityPanel({
 }) {
   const [brush, setBrush] = useState<Brush>("away");
   const [query, setQuery] = useState("");
+  // Sul telefono le schede partono chiuse; lo stato non si salva.
+  const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
   const current = BRUSHES.find((b) => b.value === brush) ?? BRUSHES[0]!;
   const q = query.trim().toLowerCase();
   const shown = q
@@ -1580,10 +1582,30 @@ function AvailabilityPanel({
         </label>
       )}
 
-      <ul className="mt-4 grid gap-3 md:grid-cols-2">
+      {shown.length > 0 && (
+        <div className="mt-4 flex justify-end gap-1 md:hidden">
+          <Button size="sm" variant="ghost" onClick={() => setOpenIds(new Set(shown.map((t) => t.id)))}>
+            Apri tutte
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setOpenIds(new Set())}>
+            Chiudi tutte
+          </Button>
+        </div>
+      )}
+
+      <ul className="mt-2 grid gap-3 md:mt-4 md:grid-cols-2">
         {shown.map((t) => (
           <TeacherCard
             key={t.id}
+            open={openIds.has(t.id)}
+            onToggle={() =>
+              setOpenIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(t.id)) next.delete(t.id);
+                else next.add(t.id);
+                return next;
+              })
+            }
             t={t}
             days={days}
             morning={morning}
@@ -1608,6 +1630,8 @@ function AvailabilityPanel({
 }
 
 function TeacherCard({
+  open,
+  onToggle,
   t,
   days,
   morning,
@@ -1619,6 +1643,9 @@ function TeacherCard({
   onLine,
   onPattern,
 }: {
+  /** Solo sotto i 768 px: scheda aperta o chiusa. */
+  open: boolean;
+  onToggle: () => void;
   t: Teacher;
   days: DayOfWeek[];
   morning: MorningPeriod[];
@@ -1634,15 +1661,57 @@ function TeacherCard({
   const pats = teacherDayPatterns(t);
   const stale = pats.some((x) => x.reduce((a, b) => a + b, 0) !== hours);
   const patText = pats.length === 0 ? "" : `${patternLabel(pats[0]!)}${pats.length > 1 ? ` +${pats.length - 1}` : ""}`;
+  const subtitle = `${t.subjects.slice(0, 3).join(", ")} · ${t.weeklyHours} h${(t.dispHours ?? 0) > 0 ? ` · ${t.dispHours} disp.` : ""}`;
+  // Riassunto dei segni per la scheda chiusa: quanti e di che tipo.
+  const marks = { away: 0, no: 0, hard: 0, soft: 0 };
+  for (const d of days) {
+    for (const p of morning) {
+      const st = cellState(t, d, p.id);
+      if (st === "away") marks.away++;
+      else if (st === "no") marks.no++;
+      else if (st === "class") {
+        const must = (t.mustSlots ?? []).find((a) => sameCell(a, d, p.id));
+        if (must?.level === "obbligo") marks.hard++;
+        else marks.soft++;
+      }
+    }
+  }
+  const markCount = marks.away + marks.no + marks.hard + marks.soft;
   return (
     <li className="rounded-lg border border-border bg-card px-3 py-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-[15px] font-medium">{teacherName(t)}</p>
-          <p className="truncate text-[12px] text-muted-foreground">
-            {t.subjects.slice(0, 3).join(", ")} · {t.weeklyHours} h
-            {(t.dispHours ?? 0) > 0 ? ` · ${t.dispHours} disp.` : ""}
-          </p>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            className="flex w-full min-w-0 items-start gap-1.5 text-left md:hidden"
+          >
+            <ChevronDown
+              className={cn("mt-1 size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
+              aria-hidden
+            />
+            <span className="min-w-0">
+              <span className="block truncate text-[15px] font-medium">{teacherName(t)}</span>
+              <span className="block truncate text-[12px] text-muted-foreground">{subtitle}</span>
+              <span className="mt-0.5 flex items-center gap-1 text-[12px] text-muted-foreground">
+                {markCount === 0 ? "nessun segno" : `${markCount} ${markCount === 1 ? "segno" : "segni"}`}
+                {marks.away > 0 && <span className="size-2.5 rounded-[3px] bg-primary" aria-hidden />}
+                {marks.no > 0 && <span className="size-2.5 rounded-[3px] bg-destructive" aria-hidden />}
+                {marks.hard > 0 && <span className="size-2.5 rounded-[3px] bg-class-mark" aria-hidden />}
+                {marks.soft > 0 && (
+                  <span
+                    className="size-2.5 rounded-[3px] bg-class-mark/20 ring-1 ring-inset ring-class-mark/65"
+                    aria-hidden
+                  />
+                )}
+              </span>
+            </span>
+          </button>
+          <div className="hidden md:block">
+            <p className="truncate text-[15px] font-medium">{teacherName(t)}</p>
+            <p className="truncate text-[12px] text-muted-foreground">{subtitle}</p>
+          </div>
         </div>
         <button
           type="button"
@@ -1660,145 +1729,147 @@ function TeacherCard({
         </button>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-1">
-        <span className="mr-1 text-[12px] text-muted-foreground">Rientro T.P.</span>
-        {days.map((d) => {
-          const on = rientro.includes(d);
-          return (
+      <div className={cn(!open && "max-md:hidden")}>
+        <div className="mt-2 flex flex-wrap items-center gap-1">
+          <span className="mr-1 text-[12px] text-muted-foreground">Rientro T.P.</span>
+          {days.map((d) => {
+            const on = rientro.includes(d);
+            return (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={on}
+                aria-label={on ? `Togli rientro ${DAY_SHORT[d]}` : `Rientro ${DAY_SHORT[d]}: 4ª–6ª`}
+                onClick={() => onUpdate(t.id, { rientroDays: on ? rientro.filter((x) => x !== d) : [...rientro, d] })}
+                className={cn(
+                  "h-7 min-w-9 rounded-full border px-2 text-[11px] font-medium transition-colors",
+                  on
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border text-muted-foreground hover:bg-muted",
+                )}
+              >
+                {DAY_SHORT[d]}
+              </button>
+            );
+          })}
+        </div>
+
+        {hours > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            <span className="mr-1 text-[12px] text-muted-foreground">Ore al giorno</span>
             <button
-              key={d}
               type="button"
-              aria-pressed={on}
-              aria-label={on ? `Togli rientro ${DAY_SHORT[d]}` : `Rientro ${DAY_SHORT[d]}: 4ª–6ª`}
-              onClick={() => onUpdate(t.id, { rientroDays: on ? rientro.filter((x) => x !== d) : [...rientro, d] })}
+              onClick={onPattern}
+              aria-label={
+                pats.length
+                  ? `Ore al giorno: ${pats.map(patternLabel).join(" o ")}${stale ? ", da rivedere" : ""}. Cambia`
+                  : "Ore al giorno: decide l’app. Scegli"
+              }
               className={cn(
-                "h-7 min-w-9 rounded-full border px-2 text-[11px] font-medium transition-colors",
-                on
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:bg-muted",
+                "h-7 rounded-full border px-2.5 text-[11px] font-medium tabular-nums transition-colors",
+                !pats.length && "border-border text-muted-foreground hover:bg-muted",
+                pats.length > 0 && !stale && "border-primary bg-primary text-primary-foreground",
+                pats.length > 0 && stale && "border-warning bg-warning-soft text-warning",
               )}
             >
-              {DAY_SHORT[d]}
+              {pats.length ? patText : "Libere"}
             </button>
-          );
-        })}
-      </div>
+            {stale && <span className="text-[11px] text-warning">da rivedere: ora le ore sono {hours}</span>}
+          </div>
+        )}
 
-      {hours > 0 && (
-        <div className="mt-2 flex flex-wrap items-center gap-1">
-          <span className="mr-1 text-[12px] text-muted-foreground">Ore al giorno</span>
-          <button
-            type="button"
-            onClick={onPattern}
-            aria-label={
-              pats.length
-                ? `Ore al giorno: ${pats.map(patternLabel).join(" o ")}${stale ? ", da rivedere" : ""}. Cambia`
-                : "Ore al giorno: decide l’app. Scegli"
-            }
-            className={cn(
-              "h-7 rounded-full border px-2.5 text-[11px] font-medium tabular-nums transition-colors",
-              !pats.length && "border-border text-muted-foreground hover:bg-muted",
-              pats.length > 0 && !stale && "border-primary bg-primary text-primary-foreground",
-              pats.length > 0 && stale && "border-warning bg-warning-soft text-warning",
-            )}
-          >
-            {pats.length ? patText : "Libere"}
-          </button>
-          {stale && <span className="text-[11px] text-warning">da rivedere: ora le ore sono {hours}</span>}
-        </div>
-      )}
+        {(t.lockWeek || locked > 0) && (
+          <p className="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <Lock className="size-3.5" aria-hidden />
+            {t.lockWeek ? "Settimana bloccata" : locked === 1 ? "1 ora bloccata" : `${locked} ore bloccate`}
+            <span className="text-ink-faint">· si cambia in «Ritocca a mano»</span>
+          </p>
+        )}
 
-      {(t.lockWeek || locked > 0) && (
-        <p className="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground">
-          <Lock className="size-3.5" aria-hidden />
-          {t.lockWeek ? "Settimana bloccata" : locked === 1 ? "1 ora bloccata" : `${locked} ore bloccate`}
-          <span className="text-ink-faint">· si cambia in «Ritocca a mano»</span>
-        </p>
-      )}
-
-      <table className="mt-2 w-full border-collapse text-[11px]">
-        <thead>
-          <tr>
-            <th className="w-9" />
-            {days.map((d) => {
-              const away = morning.filter((p) => cellState(t, d, p.id) === "away").length;
-              return (
-                <th key={d} className="p-0.5 font-medium">
-                  <button
-                    type="button"
-                    aria-label={`${DAY_SHORT[d]}: tutto il giorno`}
-                    onClick={() => onLine(morning.map((p) => ({ day: d, periodId: p.id })))}
-                    className={cn(
-                      "mx-auto flex h-8 w-full min-w-9 items-center justify-center rounded-md text-[11px] font-medium transition-colors",
-                      away === morning.length && away > 0
-                        ? "bg-primary/20 text-foreground"
-                        : "text-muted-foreground hover:bg-muted",
-                    )}
-                  >
-                    {DAY_SHORT[d]}
-                  </button>
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {morning.map((p) => (
-            <tr key={p.id}>
-              <td className="p-0.5">
-                <button
-                  type="button"
-                  aria-label={`${p.label}: tutti i giorni`}
-                  onClick={() => onLine(days.map((d) => ({ day: d, periodId: p.id })))}
-                  className="flex h-9 w-9 items-center justify-center rounded-md text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted"
-                >
-                  {p.index}ª
-                </button>
-              </td>
+        <table className="mt-2 w-full border-collapse text-[11px]">
+          <thead>
+            <tr>
+              <th className="w-9" />
               {days.map((d) => {
-                const state = cellState(t, d, p.id);
-                const must = state === "class" ? (t.mustSlots ?? []).find((a) => sameCell(a, d, p.id)) : undefined;
-                const ids = must ? (must.classIds?.length ? must.classIds : must.classId ? [must.classId] : []) : [];
-                const tags = ids
-                  .map((id) => classes.find((c) => c.id === id))
-                  .filter((c): c is NonNullable<typeof c> => Boolean(c))
-                  .map((c) => `${c.grade}${c.section}`);
-                const classLabel = must?.allClasses
-                  ? "tutte"
-                  : tags.length <= 1
-                    ? (tags[0] ?? "")
-                    : tags.length === 2
-                      ? `${tags[0]}·${tags[1]}`
-                      : `${tags[0]} +${tags.length - 1}`;
-                const what =
-                  state === "away"
-                    ? "altrove"
-                    : state === "no"
-                      ? "no"
-                      : state === "class"
-                        ? `classe ${must?.level === "obbligo" ? "obbligatoria" : "se possibile"}: ${must?.allClasses ? "tutte le sue classi" : tags.join(", ")}`
-                        : "libera";
+                const away = morning.filter((p) => cellState(t, d, p.id) === "away").length;
                 return (
-                  <td key={d} className="p-0.5 text-center">
+                  <th key={d} className="p-0.5 font-medium">
                     <button
                       type="button"
-                      aria-label={`${DAY_SHORT[d]} ${p.label}: ${what}`}
-                      title={state === "class" ? `${DAY_SHORT[d]} ${p.label}: ${what}` : undefined}
-                      onClick={() => onCell(d, p.id)}
+                      aria-label={`${DAY_SHORT[d]}: tutto il giorno`}
+                      onClick={() => onLine(morning.map((p) => ({ day: d, periodId: p.id })))}
                       className={cn(
-                        "inline-flex h-9 w-full min-w-9 touch-manipulation items-center justify-center rounded-md transition-colors",
-                        state === "class" && must?.level === "obbligo" ? HARD_CLASS_STYLE : CELL_STYLE[state],
+                        "mx-auto flex h-8 w-full min-w-9 items-center justify-center rounded-md text-[11px] font-medium transition-colors",
+                        away === morning.length && away > 0
+                          ? "bg-primary/20 text-foreground"
+                          : "text-muted-foreground hover:bg-muted",
                       )}
                     >
-                      <MarkGlyph state={state} label={classLabel} />
+                      {DAY_SHORT[d]}
                     </button>
-                  </td>
+                  </th>
                 );
               })}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {morning.map((p) => (
+              <tr key={p.id}>
+                <td className="p-0.5">
+                  <button
+                    type="button"
+                    aria-label={`${p.label}: tutti i giorni`}
+                    onClick={() => onLine(days.map((d) => ({ day: d, periodId: p.id })))}
+                    className="flex h-9 w-9 items-center justify-center rounded-md text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted"
+                  >
+                    {p.index}ª
+                  </button>
+                </td>
+                {days.map((d) => {
+                  const state = cellState(t, d, p.id);
+                  const must = state === "class" ? (t.mustSlots ?? []).find((a) => sameCell(a, d, p.id)) : undefined;
+                  const ids = must ? (must.classIds?.length ? must.classIds : must.classId ? [must.classId] : []) : [];
+                  const tags = ids
+                    .map((id) => classes.find((c) => c.id === id))
+                    .filter((c): c is NonNullable<typeof c> => Boolean(c))
+                    .map((c) => `${c.grade}${c.section}`);
+                  const classLabel = must?.allClasses
+                    ? "tutte"
+                    : tags.length <= 1
+                      ? (tags[0] ?? "")
+                      : tags.length === 2
+                        ? `${tags[0]}·${tags[1]}`
+                        : `${tags[0]} +${tags.length - 1}`;
+                  const what =
+                    state === "away"
+                      ? "altrove"
+                      : state === "no"
+                        ? "no"
+                        : state === "class"
+                          ? `classe ${must?.level === "obbligo" ? "obbligatoria" : "se possibile"}: ${must?.allClasses ? "tutte le sue classi" : tags.join(", ")}`
+                          : "libera";
+                  return (
+                    <td key={d} className="p-0.5 text-center">
+                      <button
+                        type="button"
+                        aria-label={`${DAY_SHORT[d]} ${p.label}: ${what}`}
+                        title={state === "class" ? `${DAY_SHORT[d]} ${p.label}: ${what}` : undefined}
+                        onClick={() => onCell(d, p.id)}
+                        className={cn(
+                          "inline-flex h-9 w-full min-w-9 touch-manipulation items-center justify-center rounded-md transition-colors",
+                          state === "class" && must?.level === "obbligo" ? HARD_CLASS_STYLE : CELL_STYLE[state],
+                        )}
+                      >
+                        <MarkGlyph state={state} label={classLabel} />
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </li>
   );
 }
