@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -12,7 +13,7 @@ import {
   Images as ImageIcon,
   FileText,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layout";
 import { AbsenceDialog } from "@/components/absence-dialog";
@@ -182,8 +183,8 @@ function OggiPage() {
       />
 
       <div className="mb-5 flex flex-col items-center gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex items-center justify-center gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
               size="icon"
@@ -193,10 +194,9 @@ function OggiPage() {
             >
               <ChevronLeft />
             </Button>
-            <div className="flex h-12 w-[13.5rem] shrink-0 flex-col justify-center px-1 text-center sm:w-[16rem]">
-              <p className="truncate font-display text-[17px] capitalize leading-tight sm:text-xl">{formatDayMonth(date)}</p>
-              <p className="truncate text-[12px] text-muted-foreground">{data.settings.schoolName}</p>
-            </div>
+            <p className="px-1 text-center font-display text-[17px] capitalize leading-tight whitespace-nowrap sm:text-xl">
+              {formatDayMonth(date)}
+            </p>
             <Button
               variant="outline"
               size="icon"
@@ -207,22 +207,32 @@ function OggiPage() {
               <ChevronRight />
             </Button>
           </div>
-          <div className="flex items-center justify-center gap-2">
-            <Button
-              variant="outline"
-              className="h-10 shrink-0 px-4"
-              disabled={date === todayIso()}
-              onClick={() => store.setSelectedDate(todayIso())}
+          <div className="flex items-center gap-2">
+            {date === todayIso() ? (
+              <span className="inline-flex h-10 items-center rounded-md bg-accent px-4 text-sm font-medium text-accent-foreground">
+                Oggi
+              </span>
+            ) : (
+              <Button variant="outline" className="h-10 shrink-0 px-4" onClick={() => store.setSelectedDate(todayIso())}>
+                Oggi
+              </Button>
+            )}
+            <label
+              className={cn(
+                buttonVariants({ variant: "outline", size: "icon" }),
+                "relative shrink-0 focus-within:ring-2 focus-within:ring-ring/40",
+              )}
+              title="Scegli data"
             >
-              Oggi
-            </Button>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => store.setSelectedDate(e.target.value)}
-              className="h-10 w-[10.5rem] min-w-0 appearance-none rounded-md border border-input bg-card text-center text-sm leading-10 [-webkit-appearance:none]"
-              aria-label="Scegli data"
-            />
+              <CalendarDays aria-hidden />
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => e.target.value && store.setSelectedDate(e.target.value)}
+                aria-label="Scegli data"
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", maxHeight: "none", opacity: 0 }}
+              />
+            </label>
           </div>
         </div>
         <div className="flex flex-wrap justify-center gap-2 lg:justify-end" data-print-hide>
@@ -259,6 +269,7 @@ function OggiPage() {
             <button
               key={iso}
               type="button"
+              aria-current={active ? "date" : undefined}
               onClick={() => store.setSelectedDate(iso)}
               className={cn(
                 "flex min-h-14 flex-col items-start rounded-lg px-2 py-1.5 text-left",
@@ -268,12 +279,36 @@ function OggiPage() {
               <span className={cn("text-[11px] font-medium", active ? "text-primary-foreground/80" : "text-muted-foreground")}>
                 {DAY_SHORT[dow]} {day}
               </span>
-              <span className="mt-0.5 text-[12px] font-medium leading-tight">
-                {summary.absences.length === 0
-                  ? "—"
-                  : summary.uncovered > 0
-                    ? `${summary.uncovered} sc.`
-                    : "ok"}
+              <span
+                className={cn(
+                  "mt-0.5 flex flex-col text-[12px] font-medium leading-tight md:flex-row md:gap-1",
+                  active
+                    ? "text-primary-foreground"
+                    : summary.absences.length === 0
+                      ? "text-muted-foreground"
+                      : summary.uncovered > 0
+                        ? "text-destructive"
+                        : "text-success",
+                )}
+              >
+                {summary.absences.length === 0 ? (
+                  <>
+                    <span aria-hidden>–</span>
+                    <span>
+                      nessuna<span className="hidden md:inline"> assenza</span>
+                    </span>
+                  </>
+                ) : summary.uncovered > 0 ? (
+                  <>
+                    <span className="tabular-nums">{summary.uncovered}</span>
+                    <span>{summary.uncovered === 1 ? "scoperta" : "scoperte"}</span>
+                  </>
+                ) : (
+                  <>
+                    <span aria-hidden>✓</span>
+                    <span>coperto</span>
+                  </>
+                )}
               </span>
             </button>
           );
