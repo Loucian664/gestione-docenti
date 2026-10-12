@@ -1,6 +1,7 @@
 import { cellSlots, isDispHour } from "./coverage";
 import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "./periods";
 import { teacherSheetName } from "./teacher-print";
+import { mergedUpper } from "./subject-groups";
 import {
   dayNameUpper,
   type DayOfWeek,
@@ -57,7 +58,7 @@ const SCHOOL_SUBJECT: Record<string, string> = {
 };
 
 function schoolSubjectLabel(subject: string): string {
-  return SCHOOL_SUBJECT[subject] ?? subject.toUpperCase();
+  return SCHOOL_SUBJECT[subject] ?? mergedUpper(subject) ?? subject.toUpperCase();
 }
 
 export function classOrder(data: PersistedData): SchoolClass[] {

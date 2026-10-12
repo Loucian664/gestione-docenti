@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -12,7 +13,7 @@ import {
   Images as ImageIcon,
   FileText,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/layout";
 import { AbsenceDialog } from "@/components/absence-dialog";
@@ -167,6 +168,7 @@ function OggiPage() {
       <PageHeader
         title="Bacheca del giorno"
         description="Registra le assenze, copri le ore, stampa il foglio per la sala docenti."
+        actionsCentered
         actions={
           <>
             <Button onClick={() => setAbsenceOpen(true)}>
@@ -182,8 +184,8 @@ function OggiPage() {
       />
 
       <div className="mb-5 flex flex-col items-center gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex items-center justify-center gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
               size="icon"
@@ -193,10 +195,9 @@ function OggiPage() {
             >
               <ChevronLeft />
             </Button>
-            <div className="flex h-12 w-[13.5rem] shrink-0 flex-col justify-center px-1 text-center sm:w-[16rem]">
-              <p className="truncate font-display text-[17px] capitalize leading-tight sm:text-xl">{formatDayMonth(date)}</p>
-              <p className="truncate text-[12px] text-muted-foreground">{data.settings.schoolName}</p>
-            </div>
+            <p className="px-1 text-center font-display text-[17px] capitalize leading-tight whitespace-nowrap sm:text-xl">
+              {formatDayMonth(date)}
+            </p>
             <Button
               variant="outline"
               size="icon"
@@ -207,22 +208,32 @@ function OggiPage() {
               <ChevronRight />
             </Button>
           </div>
-          <div className="flex items-center justify-center gap-2">
-            <Button
-              variant="outline"
-              className="h-10 shrink-0 px-4"
-              disabled={date === todayIso()}
-              onClick={() => store.setSelectedDate(todayIso())}
+          <div className="flex items-center gap-2">
+            {date === todayIso() ? (
+              <span className="inline-flex h-10 items-center rounded-md bg-accent px-4 text-sm font-medium text-accent-foreground">
+                Oggi
+              </span>
+            ) : (
+              <Button variant="outline" className="h-10 shrink-0 px-4" onClick={() => store.setSelectedDate(todayIso())}>
+                Oggi
+              </Button>
+            )}
+            <label
+              className={cn(
+                buttonVariants({ variant: "outline", size: "icon" }),
+                "relative shrink-0 focus-within:ring-2 focus-within:ring-ring/40",
+              )}
+              title="Scegli data"
             >
-              Oggi
-            </Button>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => store.setSelectedDate(e.target.value)}
-              className="h-10 w-[10.5rem] min-w-0 appearance-none rounded-md border border-input bg-card text-center text-sm leading-10 [-webkit-appearance:none]"
-              aria-label="Scegli data"
-            />
+              <CalendarDays aria-hidden />
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => e.target.value && store.setSelectedDate(e.target.value)}
+                aria-label="Scegli data"
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", maxHeight: "none", opacity: 0 }}
+              />
+            </label>
           </div>
         </div>
         <div className="flex flex-wrap justify-center gap-2 lg:justify-end" data-print-hide>
@@ -259,6 +270,7 @@ function OggiPage() {
             <button
               key={iso}
               type="button"
+              aria-current={active ? "date" : undefined}
               onClick={() => store.setSelectedDate(iso)}
               className={cn(
                 "flex min-h-14 flex-col items-start rounded-lg px-2 py-1.5 text-left",
@@ -268,12 +280,36 @@ function OggiPage() {
               <span className={cn("text-[11px] font-medium", active ? "text-primary-foreground/80" : "text-muted-foreground")}>
                 {DAY_SHORT[dow]} {day}
               </span>
-              <span className="mt-0.5 text-[12px] font-medium leading-tight">
-                {summary.absences.length === 0
-                  ? "—"
-                  : summary.uncovered > 0
-                    ? `${summary.uncovered} sc.`
-                    : "ok"}
+              <span
+                className={cn(
+                  "mt-0.5 flex flex-col text-[12px] font-medium leading-tight md:flex-row md:gap-1",
+                  active
+                    ? "text-primary-foreground"
+                    : summary.absences.length === 0
+                      ? "text-muted-foreground"
+                      : summary.uncovered > 0
+                        ? "text-destructive"
+                        : "text-success",
+                )}
+              >
+                {summary.absences.length === 0 ? (
+                  <>
+                    <span aria-hidden>–</span>
+                    <span>
+                      nessuna<span className="hidden md:inline"> assenza</span>
+                    </span>
+                  </>
+                ) : summary.uncovered > 0 ? (
+                  <>
+                    <span className="tabular-nums">{summary.uncovered}</span>
+                    <span>{summary.uncovered === 1 ? "scoperta" : "scoperte"}</span>
+                  </>
+                ) : (
+                  <>
+                    <span aria-hidden>✓</span>
+                    <span>coperto</span>
+                  </>
+                )}
               </span>
             </button>
           );
@@ -284,7 +320,12 @@ function OggiPage() {
         <Stat label="Assenti" value={absences.length} />
         <Stat label="Ore da coprire" value={needs.length - varied} />
         <Stat label="Coperte" value={covered} tone="ok" />
-        <Stat label="Scoperte" value={uncovered} tone={uncovered ? "warn" : "ok"} />
+        <Stat
+          label="Scoperte"
+          value={uncovered}
+          tone={uncovered ? "warn" : "ok"}
+          outOf={uncovered > 0 ? needs.length - varied : undefined}
+        />
       </div>
 
       {shifts.length > 0 && (
@@ -314,13 +355,12 @@ function OggiPage() {
           <p className="font-display text-lg text-destructive">
             {uncovered === 1 ? "Manca ancora chi copre 1 ora" : `Mancano ancora ${uncovered} coperture`}
           </p>
-          <p className="mt-1 text-sm text-destructive/90">
+          <p className="mt-1 hidden text-sm text-destructive/90 md:block">
             La bacheca non è chiusa. Tocca una riga per assegnare, oppure Auto-assegna.
           </p>
-          <ul className="mt-2 flex flex-col gap-1">
+          <ul className="mt-2 flex flex-wrap gap-1.5">
             {needs
               .filter((n) => !isCovered(n))
-              .slice(0, 8)
               .map((n) => {
                 const cls = data.classes.find((c) => c.id === n.slot.classId);
                 const per = data.settings.periods.find((p) => p.id === n.slot.periodId);
@@ -330,18 +370,17 @@ function OggiPage() {
                     <button
                       type="button"
                       onClick={() => setAssignNeed(n)}
-                      className="min-h-11 w-full rounded-md px-1 text-left text-sm font-medium text-destructive underline-offset-2 hover:underline"
+                      aria-label={`${per?.label ?? "Ora"} · ${cls?.name ?? "classe"} · assente ${
+                        absent ? teacherShort(absent, data.teachers) : "—"
+                      }`}
+                      className="h-8 whitespace-nowrap rounded-full border border-destructive/30 bg-card px-3 text-[13px] font-medium text-destructive transition-colors duration-150 hover:bg-destructive/10"
                     >
-                      {per?.label ?? "Ora"} · {cls?.name ?? "classe"} · assente{" "}
-                      {absent ? teacherShort(absent, data.teachers) : "—"}
+                      {per?.label ?? "Ora"} · {cls?.name ?? "classe"}
                     </button>
                   </li>
                 );
               })}
           </ul>
-          {uncovered > 8 && (
-            <p className="mt-1 text-sm text-destructive/80">e altre {uncovered - 8} più in basso.</p>
-          )}
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               onClick={() => {
@@ -403,7 +442,7 @@ function OggiPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-5">
+      <div className="grid gap-5 min-[1100px]:grid-cols-2 min-[1100px]:gap-x-6">
         {byPeriod.map(({ period, items }) => (
           <section key={period.id}>
             <div className="mb-2 flex items-baseline justify-between">
@@ -417,7 +456,7 @@ function OggiPage() {
                 {items.filter(isCovered).length}/{items.length} coperte
               </span>
             </div>
-            <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            <ul className="grid gap-2 md:max-[1100px]:grid-cols-2">
               {items.map((n) => {
                 const cls = data.classes.find((c) => c.id === n.slot.classId);
                 const absent = data.teachers.find((t) => t.id === n.absence.teacherId);
@@ -504,23 +543,43 @@ function OggiPage() {
       </Dialog>
 
       <AbsenceDialog open={absenceOpen} onOpenChange={setAbsenceOpen} />
-      <AssignSheet need={assignNeed} onClose={() => setAssignNeed(null)} />
+      <AssignSheet key={assignNeed?.key ?? "chiuso"} need={assignNeed} onClose={() => setAssignNeed(null)} />
     </div>
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone?: "ok" | "warn" }) {
+function Stat({
+  label,
+  value,
+  tone,
+  outOf,
+}: {
+  label: string;
+  value: number;
+  tone?: "ok" | "warn";
+  /** Se c'è, la card si evidenzia come l'avviso e mostra «su N». */
+  outOf?: number;
+}) {
+  const alert = outOf !== undefined;
   return (
-    <div className="paper-panel rounded-xl px-4 py-3">
-      <p className="text-[12px] text-muted-foreground">{label}</p>
-      <p
-        className={cn(
-          "font-display text-2xl tabular-nums",
-          tone === "ok" && "text-success",
-          tone === "warn" && "text-destructive",
-        )}
-      >
-        {value}
+    <div
+      className={
+        alert ? "rounded-xl border border-destructive/25 bg-danger-soft px-4 py-3" : "paper-panel rounded-xl px-4 py-3"
+      }
+    >
+      <p className={cn("text-[12px]", alert ? "text-destructive/90" : "text-muted-foreground")}>{label}</p>
+      <p className="flex items-baseline gap-1.5">
+        <span
+          className={cn(
+            "font-display tabular-nums",
+            alert ? "text-3xl leading-tight" : "text-2xl",
+            tone === "ok" && "text-success",
+            tone === "warn" && "text-destructive",
+          )}
+        >
+          {value}
+        </span>
+        {alert && <span className="text-[13px] text-destructive/90 tabular-nums">su {outOf}</span>}
       </p>
     </div>
   );

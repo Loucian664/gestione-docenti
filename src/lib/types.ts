@@ -33,10 +33,35 @@ export type Teacher = {
   dispHours?: number;
   /** Ore a disposizione (non lezione). In copertura non sono eccedenti. */
   dispSlots?: { day: DayOfWeek; periodId: string }[];
-  /** Ore preferite su questo plesso (✓ in Costruisci). Non è un vincolo duro. */
+  /** Versione precedente («Vorrei», ✓): quando i dati si aprono diventa «Classe · se possibile · tutte». */
   preferSlots?: { day: DayOfWeek; periodId: string }[];
-  /** Obbligo: in quell’ora, in una delle classi indicate. */
-  mustSlots?: { day: DayOfWeek; periodId: string; classId?: string; classIds?: string[] }[];
+  /** Ore «no» (es. famiglia): mai in quell’ora, ma solo quella (niente ora di spostamento come per ×). */
+  avoidSlots?: { day: DayOfWeek; periodId: string }[];
+  /**
+   * In quell’ora, una delle classi indicate. `level`: "preferenza" (se possibile, predefinito)
+   * oppure "obbligo" (deve stare lì).
+   */
+  mustSlots?: {
+    day: DayOfWeek;
+    periodId: string;
+    classId?: string;
+    classIds?: string[];
+    /** «Tutte»: una qualunque classe del docente, anche assegnata dopo (`classIds` ne tiene una copia). */
+    allClasses?: boolean;
+    level?: "preferenza" | "obbligo";
+  }[];
+  /**
+   * Ore al giorno scelte in Costruisci: una o più suddivisioni, in qualsiasi ordine
+   * (es. [[4, 4, 4, 3, 3], [4, 4, 4, 4, 2]]); ne basta una. Contano lezioni, pomeriggio e ore a
+   * disposizione. Vuoto = decide l’app.
+   */
+  dayPatterns?: number[][];
+  /** Versione precedente, con una sola suddivisione: vale come `dayPatterns: [dayPattern]`. */
+  dayPattern?: number[];
+  /** Ore bloccate: in Costruisci la lezione di quel giorno, ora e classe resta dov’è. */
+  lockedSlots?: { day: DayOfWeek; periodId: string; classId: string }[];
+  /** Tutta la settimana del docente bloccata. */
+  lockWeek?: boolean;
   /** Righe della scheda (classe, materia, ore). Restano sul docente anche se le cattedre globali si perdono. */
   cardRows?: { classId: string; subject: string; hours: number }[];
 };
@@ -137,6 +162,8 @@ export type PersistedData = {
   selectedDate: string;
   cattedre?: Cattedra[];
   cattedraBackup?: TimetableSlot[];
+  /** Disposizioni prima dell'ultima proposta di Costruisci (per Annulla). */
+  cattedraDispBackup?: Record<string, { day: DayOfWeek; periodId: string }[]>;
   /** Unix ms of last user save. 0 = example seed, never overwrite a real save. */
   savedAt?: number;
   /** "user" = this device's registro. "seed" = example data. */

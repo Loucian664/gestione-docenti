@@ -18,6 +18,7 @@ import { ABSENCE_REASONS, dayNameUpper, DAY_SHORT, SUBSTITUTION_TYPES, type DayO
 import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "./periods";
 import { teacherSheetName } from "./teacher-print";
 import { sideMark } from "./class-grid";
+import { mergedAbbr, mergedUpper } from "./subject-groups";
 
 
 const PAPER = "#F3EFE6";
@@ -572,7 +573,7 @@ const SUBJECT_ABBR: Record<string, string> = {
 };
 
 export function subjectAbbr(subject: string): string {
-  return SUBJECT_ABBR[subject] ?? subject.slice(0, 3).toUpperCase();
+  return SUBJECT_ABBR[subject] ?? mergedAbbr(subject) ?? subject.slice(0, 3).toUpperCase();
 }
 
 export function weekCellLines(data: PersistedData, classId: string, day: DayOfWeek): {
@@ -737,7 +738,7 @@ const SCHOOL_SUBJECT: Record<string, string> = {
 };
 
 function schoolSubjectLabel(subject: string): string {
-  return SCHOOL_SUBJECT[subject] ?? subject.toUpperCase();
+  return SCHOOL_SUBJECT[subject] ?? mergedUpper(subject) ?? subject.toUpperCase();
 }
 
 function plessoHeading(data: PersistedData): string {

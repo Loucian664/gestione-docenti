@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type {
   Absence,
   Cattedra,
+  DayOfWeek,
   PersistedData,
   SchoolClass,
   Settings,
@@ -22,6 +23,22 @@ import {
   withOrigin,
   writePersistSync,
 } from "./persist-storage";
+
+/** Un'assenza eliminata e le coperture tolte con lei, ciascuna con la sua posizione. */
+export type RemovedAbsence = {
+  absence: { item: Absence; index: number };
+  substitutions: { item: Substitution; index: number }[];
+};
+
+/** Rimette gli elementi al loro posto, senza doppioni se nel frattempo ci sono già. */
+function reinsert<T extends { id: string }>(list: T[], removed: { item: T; index: number }[]): T[] {
+  const out = [...list];
+  for (const r of [...removed].sort((a, b) => a.index - b.index)) {
+    if (out.some((x) => x.id === r.item.id)) continue;
+    out.splice(Math.min(r.index, out.length), 0, r.item);
+  }
+  return out;
+}
 
 type Actions = {
   snapToToday: () => void;
@@ -43,11 +60,16 @@ type Actions = {
   clearSlot: (id: string) => void;
   addAbsence: (a: Omit<Absence, "id">) => string;
   updateAbsence: (id: string, patch: Partial<Absence>) => void;
-  removeAbsence: (id: string) => void;
+  /** Restituisce cosa ha tolto, per poterlo rimettere con restoreAbsence. */
+  removeAbsence: (id: string) => RemovedAbsence | null;
+  restoreAbsence: (removed: RemovedAbsence) => void;
   saveSubstitution: (s: Omit<Substitution, "id"> & { id?: string }) => void;
   removeSubstitution: (id: string) => void;
   applyAutoAssign: (items: Substitution[]) => void;
-  replaceCattedraSlots: (slots: TimetableSlot[]) => void;
+  replaceCattedraSlots: (
+    slots: TimetableSlot[],
+    dispSlots?: Record<string, { day: DayOfWeek; periodId: string }[]>,
+  ) => void;
   undoCattedraSlots: () => void;
   setCattedre: (cattedre: Cattedra[]) => void;
   importData: (data: PersistedData, fileName?: string) => void;
@@ -68,6 +90,7 @@ export function snapshot(state: AppStore): PersistedData {
     selectedDate: state.selectedDate,
     cattedre: state.cattedre,
     cattedraBackup: state.cattedraBackup,
+    cattedraDispBackup: state.cattedraDispBackup,
     savedAt: state.savedAt,
     origin: state.origin,
     importedBackupName: state.importedBackupName,
@@ -174,21 +197,28 @@ export const useAppStore = create<AppStore>()(
           save({ absences: get().absences.map((a) => (a.id === id ? { ...a, ...patch } : a)) }),
 
         removeAbsence: (id) => {
-          const abs = get().absences.find((a) => a.id === id);
+          const absences = get().absences;
+          const subs = get().substitutions;
+          const absIndex = absences.findIndex((a) => a.id === id);
+          const abs = absences[absIndex];
+          const linked = (s: Substitution) =>
+            Boolean(abs) && s.absentTeacherId === abs!.teacherId && s.date >= abs!.dateFrom && s.date <= abs!.dateTo;
           save({
-            absences: get().absences.filter((a) => a.id !== id),
-            substitutions: abs
-              ? get().substitutions.filter(
-                  (s) =>
-                    !(
-                      s.absentTeacherId === abs.teacherId &&
-                      s.date >= abs.dateFrom &&
-                      s.date <= abs.dateTo
-                    ),
-                )
-              : get().substitutions,
+            absences: absences.filter((a) => a.id !== id),
+            substitutions: abs ? subs.filter((s) => !linked(s)) : subs,
           });
+          if (!abs) return null;
+          return {
+            absence: { item: abs, index: absIndex },
+            substitutions: subs.flatMap((item, index) => (linked(item) ? [{ item, index }] : [])),
+          };
         },
+
+        restoreAbsence: (removed) =>
+          save({
+            absences: reinsert(get().absences, [removed.absence]),
+            substitutions: reinsert(get().substitutions, removed.substitutions),
+          }),
 
         saveSubstitution: (s) => {
           const existing = get().substitutions.find(
@@ -217,7 +247,7 @@ export const useAppStore = create<AppStore>()(
           for (const item of items) get().saveSubstitution(item);
         },
 
-        replaceCattedraSlots: (next) => {
+        replaceCattedraSlots: (next, dispSlots) => {
           const teachers = get().teachers;
           const periods = get().settings.periods;
           const keep = get().slots.filter((s) => {
@@ -230,7 +260,22 @@ export const useAppStore = create<AppStore>()(
             const t = teachers.find((x) => x.id === s.teacherId);
             return Boolean(t && isTimetableTeacher(t));
           });
-          save({ cattedraBackup: backup, slots: [...keep, ...next] });
+          if (!dispSlots) {
+            save({ cattedraBackup: backup, cattedraDispBackup: undefined, slots: [...keep, ...next] });
+            return;
+          }
+          const dispBackup: Record<string, { day: DayOfWeek; periodId: string }[]> = {};
+          const nextTeachers = teachers.map((t) => {
+            if (!(t.id in dispSlots)) return t;
+            dispBackup[t.id] = t.dispSlots ?? [];
+            return { ...t, dispSlots: dispSlots[t.id] };
+          });
+          save({
+            cattedraBackup: backup,
+            cattedraDispBackup: dispBackup,
+            slots: [...keep, ...next],
+            teachers: nextTeachers,
+          });
         },
 
         undoCattedraSlots: () => {
@@ -243,7 +288,16 @@ export const useAppStore = create<AppStore>()(
             const t = teachers.find((x) => x.id === s.teacherId);
             return !t || !isTimetableTeacher(t);
           });
-          save({ slots: [...keep, ...backup], cattedraBackup: undefined });
+          const dispBackup = get().cattedraDispBackup;
+          const nextTeachers = dispBackup
+            ? teachers.map((t) => (t.id in dispBackup ? { ...t, dispSlots: dispBackup[t.id] } : t))
+            : teachers;
+          save({
+            slots: [...keep, ...backup],
+            cattedraBackup: undefined,
+            cattedraDispBackup: undefined,
+            teachers: nextTeachers,
+          });
         },
 
         setCattedre: (cattedre) => save({ cattedre }),
@@ -287,6 +341,7 @@ export const useAppStore = create<AppStore>()(
         selectedDate: state.selectedDate,
         cattedre: state.cattedre,
         cattedraBackup: state.cattedraBackup,
+        cattedraDispBackup: state.cattedraDispBackup,
         savedAt: state.savedAt,
         origin: state.origin,
         importedBackupName: state.importedBackupName,

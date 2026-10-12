@@ -35,12 +35,18 @@ import {
 } from "@/lib/sheet-image";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ScrollGrid } from "@/components/scroll-grid";
+import { teacherCell } from "@/lib/teacher-palette";
 import { CostruisciOrario } from "@/components/costruisci-orario";
 import { BucheList } from "@/components/buche-list";
 import { gapsOf, gapsRanking, isTimetableTeacher } from "@/lib/build-timetable";
 import { ensureTpPeriods, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "@/lib/periods";
 
 type OrarioSearch = { docente?: string };
+
+/** Prima colonna ferma delle griglie: fondo pieno e ombra leggera quando la griglia è scorsa di lato. */
+const STICKY_COL =
+  "sticky left-0 z-10 bg-card group-data-[scrolled=true]:shadow-[6px_0_8px_-6px_rgba(0,0,0,0.28)]";
 
 export const Route = createFileRoute("/orario")({
   component: OrarioPage,
@@ -346,11 +352,11 @@ function OrarioPage() {
       {view === "costruisci" && <CostruisciOrario />}
 
       {view === "quadro" && (
-        <div className="paper-panel overflow-x-auto rounded-xl">
+        <ScrollGrid unit={["Classe", "Classi"]}>
           <table className="w-full min-w-[820px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
-                <th className="sticky left-0 z-10 w-24 bg-card px-3 py-2 font-medium">Ora</th>
+                <th className={cn(STICKY_COL, "w-24 px-3 py-2 font-medium")}>Ora</th>
                 {classOrder.map((c) => (
                   <th key={c.id} className="px-2 py-2 font-medium">
                     <div className="text-foreground">{c.name}</div>
@@ -362,7 +368,7 @@ function OrarioPage() {
             <tbody>
               {quadroPeriods.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
-                  <td className="sticky left-0 z-10 bg-card px-3 py-2 align-top">
+                  <td className={cn(STICKY_COL, "px-3 py-2 align-top")}>
                     <div className="text-[13px] font-medium">{p.label}</div>
                     <div className="text-[11px] text-ink-faint">
                       {p.start}–{p.end}
@@ -379,13 +385,17 @@ function OrarioPage() {
                         <td key={c.id} className="bg-muted/40 p-1 align-top" />
                       );
                     }
+                    const tc = teacherCell(t?.color);
                     return (
                       <td key={c.id} className="p-1 align-top">
                         <button
                           type="button"
                           onClick={() => setCellEdit({ day: quadroDay, periodId: p.id, classId: c.id })}
-                          className="flex min-h-[4.25rem] w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
-                          style={t ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` } : undefined}
+                          className={cn(
+                            "flex min-h-[4.25rem] w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted",
+                            tc.className,
+                          )}
+                          style={tc.style}
                         >
                           {occupants.length === 0 ? (
                             <span className="text-[11px] text-ink-faint">—</span>
@@ -398,7 +408,7 @@ function OrarioPage() {
                                   className={cn("flex flex-col leading-tight", i > 0 && "mt-1")}
                                 >
                                   <span className="text-[12px] font-medium">{doc ? teacherShort(doc, data.teachers) : ""}</span>
-                                  <span className="text-[11px] text-muted-foreground">
+                                  <span className={cn("text-[11px]", tc.text2)}>
                                     {s.subject}
                                     {i > 0 ? " · compr." : ""}
                                   </span>
@@ -414,7 +424,7 @@ function OrarioPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollGrid>
       )}
 
       {view === "settimana" && (
@@ -422,11 +432,11 @@ function OrarioPage() {
           <p className="mb-3 text-sm text-muted-foreground">
             Questo quadro è il foglio di lavoro. Foto e PDF in alto lo salvano così, con i docenti.
           </p>
-          <div className="paper-panel overflow-x-auto rounded-xl">
+          <ScrollGrid unit={["Giorno", "Giorni"]}>
             <table className="w-full min-w-[720px] border-collapse text-[12px]">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="sticky left-0 z-10 w-20 bg-card px-3 py-2 font-medium">Classe</th>
+                  <th className={cn(STICKY_COL, "w-20 px-3 py-2 font-medium")}>Classe</th>
                   {days.map((d) => (
                     <th key={d} className="px-2 py-2 font-medium text-foreground">
                       {DAY_SHORT[d]}
@@ -437,7 +447,7 @@ function OrarioPage() {
               <tbody>
                 {classOrder.map((c) => (
                   <tr key={c.id} className="border-b border-border last:border-0 align-top">
-                    <td className="sticky left-0 z-10 bg-card px-3 py-2">
+                    <td className={cn(STICKY_COL, "px-3 py-2")}>
                       <div className="text-[13px] font-medium">{c.name}</div>
                       <div className="text-[10px] tracking-wide text-ink-faint">{c.tempo}</div>
                     </td>
@@ -467,17 +477,17 @@ function OrarioPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollGrid>
           <BucheList className="paper-panel mt-3 rounded-xl p-5" rows={weekGaps} />
         </div>
       )}
 
       {view === "class" && (
-        <div className="paper-panel overflow-x-auto rounded-xl">
+        <ScrollGrid unit={["Giorno", "Giorni"]}>
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
-                <th className="w-24 px-3 py-2 font-medium">Ora</th>
+                <th className={cn(STICKY_COL, "w-24 px-3 py-2 font-medium")}>Ora</th>
                 {days.map((d) => (
                   <th key={d} className="px-2 py-2 font-medium">
                     {DAY_SHORT[d]}
@@ -488,7 +498,7 @@ function OrarioPage() {
             <tbody>
               {classPeriods.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 align-top">
+                  <td className={cn(STICKY_COL, "px-3 py-2 align-top")}>
                     <div className="text-[13px] font-medium">{p.label}</div>
                     <div className="text-[11px] text-ink-faint">
                       {p.start}–{p.end}
@@ -498,13 +508,17 @@ function OrarioPage() {
                     const occupants = classSlots.filter((s) => s.day === d && s.periodId === p.id);
                     const primary = occupants[0];
                     const t = primary ? data.teachers.find((x) => x.id === primary.teacherId) : null;
+                    const tc = teacherCell(t?.color);
                     return (
                       <td key={d} className="p-1.5 align-top">
                         <button
                           type="button"
                           onClick={() => setCellEdit({ day: d, periodId: p.id, classId })}
-                          className="flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
-                          style={t ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` } : undefined}
+                          className={cn(
+                            "flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted",
+                            tc.className,
+                          )}
+                          style={tc.style}
                         >
                           {occupants.length === 0 ? (
                             <span className="text-[12px] text-ink-faint">Vuoto</span>
@@ -517,7 +531,7 @@ function OrarioPage() {
                                   className={cn("flex flex-col leading-tight", i > 0 && "mt-1")}
                                 >
                                   <span className="text-[13px] font-medium">{s.subject}</span>
-                                  <span className="text-[12px] text-muted-foreground">
+                                  <span className={cn("text-[12px]", tc.text2)}>
                                     {doc ? teacherShort(doc, data.teachers) : ""}
                                     {i > 0 ? " · compr." : ""}
                                   </span>
@@ -533,15 +547,15 @@ function OrarioPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollGrid>
       )}
 
       {view === "teacher" && (
-        <div className="paper-panel overflow-x-auto rounded-xl">
+        <ScrollGrid unit={["Giorno", "Giorni"]}>
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
-                <th className="w-24 px-3 py-2 font-medium">Ora</th>
+                <th className={cn(STICKY_COL, "w-24 px-3 py-2 font-medium")}>Ora</th>
                 {days.map((d) => (
                   <th key={d} className="px-2 py-2 font-medium">
                     {DAY_SHORT[d]}
@@ -552,7 +566,7 @@ function OrarioPage() {
             <tbody>
               {teacherPeriods.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 align-top">
+                  <td className={cn(STICKY_COL, "px-3 py-2 align-top")}>
                     <div className="text-[13px] font-medium">{p.label}</div>
                     <div className="text-[11px] text-ink-faint">
                       {p.start}–{p.end}
@@ -570,26 +584,29 @@ function OrarioPage() {
                         p.index <= win.last,
                     );
                     const disp = Boolean(currentTeacher && !slot && isDispHour(currentTeacher, d, p.id));
+                    const tc = teacherCell(slot ? currentTeacher?.color : undefined);
                     return (
                       <td key={d} className="p-1.5 align-top">
                         <button
                           type="button"
                           onClick={() => setTeacherEdit({ day: d, periodId: p.id, teacherId })}
-                          className="flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                          className={cn(
+                            "flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted",
+                            tc.className,
+                          )}
                           style={
-                            slot && currentTeacher
-                              ? { background: `color-mix(in srgb, ${currentTeacher.color} var(--teacher-wash), transparent)` }
-                              : disp
-                                ? { background: "color-mix(in oklab, var(--color-accent) 45%, transparent)" }
-                                : undefined
+                            tc.style ??
+                            (disp ? { background: "color-mix(in oklab, var(--color-accent) 45%, transparent)" } : undefined)
                           }
                         >
                           {slot ? (
                             <>
                               <span className="text-[13px] font-medium">{cls?.name}</span>
-                              <span className="text-[12px] text-muted-foreground">{slot.subject}</span>
+                              <span className={cn("text-[12px]", tc.text2)}>
+                                {slot.subject}
+                              </span>
                               {others.length > 0 && (
-                                <span className="text-[11px] text-ink-faint">Compresenza</span>
+                                <span className={cn("text-[11px]", tc.text2)}>Compresenza</span>
                               )}
                             </>
                           ) : (
@@ -605,7 +622,7 @@ function OrarioPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollGrid>
       )}
 
       {cellEdit && (
