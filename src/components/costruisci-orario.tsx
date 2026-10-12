@@ -377,17 +377,22 @@ export function CostruisciOrario() {
       )}
 
       {!edit && previewSlots && previewData && result && (
-        <section ref={previewRef} className="mt-1">
-          <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background/95 px-1 py-2 backdrop-blur-sm">
+        <section ref={previewRef} className="mt-1 max-md:pb-16">
+          <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm">
             <h2 className="mr-auto font-display text-lg">Proposta</h2>
             <span className="hidden text-[13px] text-muted-foreground sm:inline">Non ancora salvata</span>
-            <Button variant="outline" onClick={propose} disabled={Boolean(running)}>
-              Riprova
-            </Button>
-            <Button variant="outline" onClick={() => openEdit("proposta")}>
-              Ritocca
-            </Button>
-            <Button onClick={() => setConfirmFor("proposta")}>Usa questa proposta</Button>
+            {/* sul telefono i bottoni stanno in una barra fissa in basso */}
+            <div className="fixed inset-x-0 bottom-14 z-30 flex items-center gap-2 border-t border-border bg-background/95 px-4 py-2 backdrop-blur-sm md:contents">
+              <Button variant="outline" onClick={propose} disabled={Boolean(running)}>
+                Riprova
+              </Button>
+              <Button variant="outline" onClick={() => openEdit("proposta")}>
+                Ritocca
+              </Button>
+              <Button className="max-md:flex-1" onClick={() => setConfirmFor("proposta")}>
+                Usa questa proposta
+              </Button>
+            </div>
           </div>
           <ReportPanel current={currentReport} proposal={result.report} mode={resultMode} />
           <div className="mt-4 flex flex-col gap-3">
@@ -1008,8 +1013,8 @@ function Ritocchi({
   };
 
   return (
-    <section ref={sectionRef} className="mt-1">
-      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background/95 px-1 py-2 backdrop-blur-sm">
+    <section ref={sectionRef} className="mt-1 max-md:pb-16">
+      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm">
         <h2 className="mr-auto font-display text-lg">Ritocchi</h2>
         <span className="hidden text-[13px] text-muted-foreground sm:inline">
           {edit.history.length === 0
@@ -1020,30 +1025,33 @@ function Ritocchi({
               ? "1 cambio, non ancora salvato"
               : `${edit.history.length} cambi, non ancora salvati`}
         </span>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="Annulla l’ultimo cambio"
-          title="Annulla l’ultimo cambio"
-          onClick={undo}
-          disabled={!edit.history.length}
-        >
-          <Undo2 className="size-4" aria-hidden />
-        </Button>
-        <Button
-          variant="outline"
-          className={cn(confirmClose && "border-destructive text-destructive")}
-          onClick={() => {
-            if (edit.history.length && !confirmClose) setConfirmClose(true);
-            else onClose();
-          }}
-        >
-          {confirmClose ? "Esci senza salvare?" : "Chiudi"}
-        </Button>
-        <Button onClick={onApply} disabled={!canApply} aria-label="Usa questo orario">
-          <span className="sm:hidden">Usa</span>
-          <span className="hidden sm:inline">Usa questo orario</span>
-        </Button>
+        {/* sul telefono i bottoni stanno in una barra fissa in basso */}
+        <div className="fixed inset-x-0 bottom-14 z-30 flex items-center gap-2 border-t border-border bg-background/95 px-4 py-2 backdrop-blur-sm md:contents">
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="Annulla l’ultimo cambio"
+            title="Annulla l’ultimo cambio"
+            onClick={undo}
+            disabled={!edit.history.length}
+          >
+            <Undo2 className="size-4" aria-hidden />
+          </Button>
+          <Button
+            variant="outline"
+            className={cn(confirmClose && "border-destructive text-destructive")}
+            onClick={() => {
+              if (edit.history.length && !confirmClose) setConfirmClose(true);
+              else onClose();
+            }}
+          >
+            {confirmClose ? "Esci senza salvare?" : "Chiudi"}
+          </Button>
+          <Button className="max-md:flex-1" onClick={onApply} disabled={!canApply} aria-label="Usa questo orario">
+            <span className="md:hidden">{confirmClose ? "Usa" : "Usa questo orario"}</span>
+            <span className="hidden md:inline">Usa questo orario</span>
+          </Button>
+        </div>
       </div>
 
       <ReportPanel current={current} proposal={report} mode="edit" />
