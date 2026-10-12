@@ -777,6 +777,9 @@ function Ritocchi({
   const [find, setFind] = useState<FindState | null>(null);
   /** «Ferma»: la ricerca finisce e tiene le migliori trovate fin lì */
   const findStop = useRef(false);
+  const headRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLTableElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const findJob = find?.job ?? null;
   const findDone = Boolean(find?.result);
@@ -825,6 +828,31 @@ function Ritocchi({
   const gapCell = view === "teacher" && gapZ !== null ? editor.teacherAt(teacherId, gapZ) : null;
   const gapNow = gapCell && gapCell.kind !== "lesson" && gapCell.gap ? gapZ : null;
   const shownFind = find && find.job.forEditor === editor ? find : null;
+
+  /**
+   * Il riquadro in basso copre le ultime righe della tabella: quando si tocca una casella, o il riquadro
+   * cresce, la pagina scorre quel tanto che basta a lasciare la casella visibile sopra il riquadro
+   * (senza farla finire sotto l'intestazione in alto).
+   */
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel || (!sel && gapNow === null)) return;
+    const keepVisible = () => {
+      const grid = gridRef.current;
+      const cell =
+        grid?.querySelector<HTMLElement>("[data-target]") ?? grid?.querySelector<HTMLElement>('button[aria-pressed="true"]');
+      if (!cell) return;
+      const c = cell.getBoundingClientRect();
+      const overlap = c.bottom + 8 - panel.getBoundingClientRect().top;
+      if (overlap <= 0) return;
+      const room = c.top - (headRef.current?.getBoundingClientRect().bottom ?? 0) - 8;
+      const by = Math.min(overlap, room);
+      if (by > 0) window.scrollBy({ top: by, behavior: "smooth" });
+    };
+    const ro = new ResizeObserver(keepVisible);
+    ro.observe(panel);
+    return () => ro.disconnect();
+  }, [sel, gapNow, target, view]);
 
   function reset() {
     setSel(null);
@@ -1034,7 +1062,10 @@ function Ritocchi({
 
   return (
     <section ref={sectionRef} className="mt-1 max-md:pb-16">
-      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm">
+      <div
+        ref={headRef}
+        className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm"
+      >
         <h2 className="mr-auto font-display text-lg">Ritocchi</h2>
         <span className="hidden text-[13px] text-muted-foreground sm:inline">
           {edit.history.length === 0
@@ -1170,7 +1201,7 @@ function Ritocchi({
             })()}
           </p>
         )}
-        <table className="mt-3 w-full table-fixed border-collapse">
+        <table ref={gridRef} className="mt-3 w-full table-fixed border-collapse">
           <thead>
             <tr>
               <th className="w-8 sm:w-10" />
@@ -1201,6 +1232,7 @@ function Ritocchi({
                           type="button"
                           aria-label={`${DAY_SHORT[d]} ${p.index}ª: ${lesson ? `${lesson.subject}, ${short(t)}` : "libera"}${lesson?.locked ? ", bloccata" : ""}${eff ? `. Spostando qui: ${VERDICT_WORD[eff.verdict]}` : ""}`}
                           aria-pressed={isSel}
+                          data-target={!isSel && target === z ? "" : undefined}
                           onClick={() => tap(z, lesson ? classId : null)}
                           className={cn(cellClass(z, isSel, Boolean(lesson)), tc.className)}
                           style={tc.style}
@@ -1258,6 +1290,7 @@ function Ritocchi({
                                   : `${cellT.kind === "no" ? "no" : "libera"}${cellT.gap ? ", ora buca" : ""}`
                         }${eff ? `. Spostando qui: ${VERDICT_WORD[eff.verdict]}` : ""}`}
                         aria-pressed={isSel}
+                        data-target={!isSel && target === z ? "" : undefined}
                         onClick={() => tap(z, lessonClass, isGap)}
                         className={cn(cellClass(z, isSel, cellT.kind === "lesson"), tcT.className)}
                         style={tcT.style}
@@ -1302,8 +1335,10 @@ function Ritocchi({
         </table>
       </div>
 
+      {/* sul telefono sta sopra la barra dei tasti e il menu in basso (113 px), con 8 px di stacco */}
       <div
-        className="sticky bottom-[57px] z-10 mt-3 max-h-[46dvh] overflow-y-auto rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur md:bottom-3"
+        ref={panelRef}
+        className="sticky bottom-[121px] z-10 mt-3 max-h-[46dvh] overflow-y-auto rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur md:bottom-3"
         aria-live="polite"
       >
         {(!sel || !selLesson) && gapNow !== null ? (
