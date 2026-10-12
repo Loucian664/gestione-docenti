@@ -35,12 +35,17 @@ import {
 } from "@/lib/sheet-image";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ScrollGrid } from "@/components/scroll-grid";
 import { CostruisciOrario } from "@/components/costruisci-orario";
 import { BucheList } from "@/components/buche-list";
 import { gapsOf, gapsRanking, isTimetableTeacher } from "@/lib/build-timetable";
 import { ensureTpPeriods, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "@/lib/periods";
 
 type OrarioSearch = { docente?: string };
+
+/** Prima colonna ferma delle griglie: fondo pieno e ombra leggera quando la griglia è scorsa di lato. */
+const STICKY_COL =
+  "sticky left-0 z-10 bg-card group-data-[scrolled=true]:shadow-[6px_0_8px_-6px_rgba(0,0,0,0.28)]";
 
 export const Route = createFileRoute("/orario")({
   component: OrarioPage,
@@ -346,11 +351,11 @@ function OrarioPage() {
       {view === "costruisci" && <CostruisciOrario />}
 
       {view === "quadro" && (
-        <div className="paper-panel overflow-x-auto rounded-xl">
+        <ScrollGrid unit={["Classe", "Classi"]}>
           <table className="w-full min-w-[820px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
-                <th className="sticky left-0 z-10 w-24 bg-card px-3 py-2 font-medium">Ora</th>
+                <th className={cn(STICKY_COL, "w-24 px-3 py-2 font-medium")}>Ora</th>
                 {classOrder.map((c) => (
                   <th key={c.id} className="px-2 py-2 font-medium">
                     <div className="text-foreground">{c.name}</div>
@@ -362,7 +367,7 @@ function OrarioPage() {
             <tbody>
               {quadroPeriods.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
-                  <td className="sticky left-0 z-10 bg-card px-3 py-2 align-top">
+                  <td className={cn(STICKY_COL, "px-3 py-2 align-top")}>
                     <div className="text-[13px] font-medium">{p.label}</div>
                     <div className="text-[11px] text-ink-faint">
                       {p.start}–{p.end}
@@ -414,7 +419,7 @@ function OrarioPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollGrid>
       )}
 
       {view === "settimana" && (
@@ -422,11 +427,11 @@ function OrarioPage() {
           <p className="mb-3 text-sm text-muted-foreground">
             Questo quadro è il foglio di lavoro. Foto e PDF in alto lo salvano così, con i docenti.
           </p>
-          <div className="paper-panel overflow-x-auto rounded-xl">
+          <ScrollGrid unit={["Giorno", "Giorni"]}>
             <table className="w-full min-w-[720px] border-collapse text-[12px]">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="sticky left-0 z-10 w-20 bg-card px-3 py-2 font-medium">Classe</th>
+                  <th className={cn(STICKY_COL, "w-20 px-3 py-2 font-medium")}>Classe</th>
                   {days.map((d) => (
                     <th key={d} className="px-2 py-2 font-medium text-foreground">
                       {DAY_SHORT[d]}
@@ -437,7 +442,7 @@ function OrarioPage() {
               <tbody>
                 {classOrder.map((c) => (
                   <tr key={c.id} className="border-b border-border last:border-0 align-top">
-                    <td className="sticky left-0 z-10 bg-card px-3 py-2">
+                    <td className={cn(STICKY_COL, "px-3 py-2")}>
                       <div className="text-[13px] font-medium">{c.name}</div>
                       <div className="text-[10px] tracking-wide text-ink-faint">{c.tempo}</div>
                     </td>
@@ -467,17 +472,17 @@ function OrarioPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollGrid>
           <BucheList className="paper-panel mt-3 rounded-xl p-5" rows={weekGaps} />
         </div>
       )}
 
       {view === "class" && (
-        <div className="paper-panel overflow-x-auto rounded-xl">
+        <ScrollGrid unit={["Giorno", "Giorni"]}>
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
-                <th className="w-24 px-3 py-2 font-medium">Ora</th>
+                <th className={cn(STICKY_COL, "w-24 px-3 py-2 font-medium")}>Ora</th>
                 {days.map((d) => (
                   <th key={d} className="px-2 py-2 font-medium">
                     {DAY_SHORT[d]}
@@ -488,7 +493,7 @@ function OrarioPage() {
             <tbody>
               {classPeriods.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 align-top">
+                  <td className={cn(STICKY_COL, "px-3 py-2 align-top")}>
                     <div className="text-[13px] font-medium">{p.label}</div>
                     <div className="text-[11px] text-ink-faint">
                       {p.start}–{p.end}
@@ -533,15 +538,15 @@ function OrarioPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollGrid>
       )}
 
       {view === "teacher" && (
-        <div className="paper-panel overflow-x-auto rounded-xl">
+        <ScrollGrid unit={["Giorno", "Giorni"]}>
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
-                <th className="w-24 px-3 py-2 font-medium">Ora</th>
+                <th className={cn(STICKY_COL, "w-24 px-3 py-2 font-medium")}>Ora</th>
                 {days.map((d) => (
                   <th key={d} className="px-2 py-2 font-medium">
                     {DAY_SHORT[d]}
@@ -552,7 +557,7 @@ function OrarioPage() {
             <tbody>
               {teacherPeriods.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 align-top">
+                  <td className={cn(STICKY_COL, "px-3 py-2 align-top")}>
                     <div className="text-[13px] font-medium">{p.label}</div>
                     <div className="text-[11px] text-ink-faint">
                       {p.start}–{p.end}
@@ -605,7 +610,7 @@ function OrarioPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollGrid>
       )}
 
       {cellEdit && (
