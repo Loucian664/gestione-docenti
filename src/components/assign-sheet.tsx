@@ -20,6 +20,7 @@ import {
   type SubstituteBucket,
 } from "@/lib/coverage";
 import { toast } from "sonner";
+import { teacherDotColor } from "@/lib/teacher-palette";
 
 const GROUPS: { bucket: SubstituteBucket | SubstituteBucket[]; title: string; hint: string }[] = [
   {
@@ -347,7 +348,7 @@ function TeacherPickRow({
               : "flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted"
         }
       >
-        <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: row.teacher.color }} />
+        <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: teacherDotColor(row.teacher.color) }} />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
             <span className="font-medium">{teacherShort(row.teacher, teachers)}</span>
