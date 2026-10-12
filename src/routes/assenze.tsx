@@ -22,7 +22,7 @@ import {
 import { absencesRangeText, absencesRangeXlsx, assemblySummary } from "@/lib/export";
 import { shareOrSaveFile, toastSave, openPdfTab, copyText } from "@/lib/share-file";
 import { textToPdf } from "@/lib/pdf";
-import { ChevronLeft, ChevronRight, Plus, Download, FileText, Copy } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Download, FileText, Copy, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +43,17 @@ function AssenzePage() {
   const initialRange = monthRange(data.selectedDate);
   const [from, setFrom] = useState(initialRange.from);
   const [to, setTo] = useState(initialRange.to);
+
+  /** Elimina subito; per 8 secondi «Annulla» rimette l'assenza e le sue coperture com'erano. */
+  function removeWithUndo(a: Absence) {
+    const removed = store.removeAbsence(a.id);
+    if (!removed) return;
+    const t = data.teachers.find((x) => x.id === a.teacherId);
+    toast(`Assenza di ${t ? teacherName(t) : "un docente rimosso"} eliminata`, {
+      duration: 8000,
+      action: { label: "Annulla", onClick: () => store.restoreAbsence(removed) },
+    });
+  }
 
   const list = useMemo(
     () =>
@@ -256,16 +267,16 @@ function AssenzePage() {
               const t = data.teachers.find((x) => x.id === a.teacherId);
               const reason = ABSENCE_REASONS.find((r) => r.value === a.reason)?.label;
               return (
-                <li key={a.id}>
+                <li key={a.id} className="paper-panel flex items-center gap-1 rounded-xl pr-2">
                   <button
                     type="button"
                     onClick={() => {
                       setEditing(a);
                       setOpen(true);
                     }}
-                    className="paper-panel flex w-full flex-col gap-1 rounded-xl px-4 py-3 text-left sm:flex-row sm:items-center sm:justify-between"
+                    className="flex min-w-0 flex-1 flex-col gap-1 rounded-xl py-3 pl-4 text-left sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                   >
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-medium">{t ? teacherName(t) : "Docente rimosso"}</p>
                       <p className="text-[13px] text-muted-foreground">
                         {formatMedium(a.dateFrom)}
@@ -273,21 +284,21 @@ function AssenzePage() {
                         {a.notes ? ` · ${a.notes}` : ""}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="outline">{a.allDay ? "Giornata" : `${a.periodIds.length} ore`}</Badge>
                       <Badge variant="warning">{reason}</Badge>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          store.removeAbsence(a.id);
-                        }}
-                      >
-                        Elimina
-                      </Button>
                     </div>
                   </button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Elimina"
+                    className="shrink-0 text-destructive/80 hover:bg-danger-soft hover:text-destructive"
+                    onClick={() => removeWithUndo(a)}
+                  >
+                    <Trash2 className="sm:hidden" aria-hidden />
+                    <span className="hidden sm:inline">Elimina</span>
+                  </Button>
                 </li>
               );
             })}

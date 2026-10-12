@@ -24,6 +24,22 @@ import {
   writePersistSync,
 } from "./persist-storage";
 
+/** Un'assenza eliminata e le coperture tolte con lei, ciascuna con la sua posizione. */
+export type RemovedAbsence = {
+  absence: { item: Absence; index: number };
+  substitutions: { item: Substitution; index: number }[];
+};
+
+/** Rimette gli elementi al loro posto, senza doppioni se nel frattempo ci sono già. */
+function reinsert<T extends { id: string }>(list: T[], removed: { item: T; index: number }[]): T[] {
+  const out = [...list];
+  for (const r of [...removed].sort((a, b) => a.index - b.index)) {
+    if (out.some((x) => x.id === r.item.id)) continue;
+    out.splice(Math.min(r.index, out.length), 0, r.item);
+  }
+  return out;
+}
+
 type Actions = {
   snapToToday: () => void;
   resumeTodayIfStale: () => void;
@@ -44,7 +60,9 @@ type Actions = {
   clearSlot: (id: string) => void;
   addAbsence: (a: Omit<Absence, "id">) => string;
   updateAbsence: (id: string, patch: Partial<Absence>) => void;
-  removeAbsence: (id: string) => void;
+  /** Restituisce cosa ha tolto, per poterlo rimettere con restoreAbsence. */
+  removeAbsence: (id: string) => RemovedAbsence | null;
+  restoreAbsence: (removed: RemovedAbsence) => void;
   saveSubstitution: (s: Omit<Substitution, "id"> & { id?: string }) => void;
   removeSubstitution: (id: string) => void;
   applyAutoAssign: (items: Substitution[]) => void;
@@ -179,21 +197,28 @@ export const useAppStore = create<AppStore>()(
           save({ absences: get().absences.map((a) => (a.id === id ? { ...a, ...patch } : a)) }),
 
         removeAbsence: (id) => {
-          const abs = get().absences.find((a) => a.id === id);
+          const absences = get().absences;
+          const subs = get().substitutions;
+          const absIndex = absences.findIndex((a) => a.id === id);
+          const abs = absences[absIndex];
+          const linked = (s: Substitution) =>
+            Boolean(abs) && s.absentTeacherId === abs!.teacherId && s.date >= abs!.dateFrom && s.date <= abs!.dateTo;
           save({
-            absences: get().absences.filter((a) => a.id !== id),
-            substitutions: abs
-              ? get().substitutions.filter(
-                  (s) =>
-                    !(
-                      s.absentTeacherId === abs.teacherId &&
-                      s.date >= abs.dateFrom &&
-                      s.date <= abs.dateTo
-                    ),
-                )
-              : get().substitutions,
+            absences: absences.filter((a) => a.id !== id),
+            substitutions: abs ? subs.filter((s) => !linked(s)) : subs,
           });
+          if (!abs) return null;
+          return {
+            absence: { item: abs, index: absIndex },
+            substitutions: subs.flatMap((item, index) => (linked(item) ? [{ item, index }] : [])),
+          };
         },
+
+        restoreAbsence: (removed) =>
+          save({
+            absences: reinsert(get().absences, [removed.absence]),
+            substitutions: reinsert(get().substitutions, removed.substitutions),
+          }),
 
         saveSubstitution: (s) => {
           const existing = get().substitutions.find(
