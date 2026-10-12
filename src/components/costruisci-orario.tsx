@@ -1534,13 +1534,35 @@ function AvailabilityPanel({
 }) {
   const [brush, setBrush] = useState<Brush>("away");
   const [query, setQuery] = useState("");
-  // Sul telefono le schede partono chiuse; lo stato non si salva.
-  const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
+  // Sul telefono le schede partono chiuse, sul computer aperte; lo stato non si salva.
+  // «flipped»: le schede aperte o chiuse a mano, al contrario di come partono.
+  const [startOpen, setStartOpen] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
+  );
+  const [flipped, setFlipped] = useState<Set<string>>(() => new Set());
   const current = BRUSHES.find((b) => b.value === brush) ?? BRUSHES[0]!;
   const q = query.trim().toLowerCase();
   const shown = q
     ? teachers.filter((t) => `${teacherName(t)} ${t.subjects.join(" ")}`.toLowerCase().includes(q))
     : teachers;
+  const isOpen = (id: string) => startOpen !== flipped.has(id);
+
+  /** «Apri tutte» / «Chiudi tutte»: le schede mostrate (con la ricerca, solo quelle trovate). */
+  function setAllOpen(open: boolean) {
+    if (!q) {
+      setStartOpen(open);
+      setFlipped(new Set());
+      return;
+    }
+    setFlipped((prev) => {
+      const next = new Set(prev);
+      for (const t of shown) {
+        if (open === startOpen) next.delete(t.id);
+        else next.add(t.id);
+      }
+      return next;
+    });
+  }
 
   function paintCell(t: Teacher, day: DayOfWeek, periodId: string) {
     if (brush === "class") {
@@ -1620,23 +1642,23 @@ function AvailabilityPanel({
       )}
 
       {shown.length > 0 && (
-        <div className="mt-4 flex justify-end gap-1 md:hidden">
-          <Button size="sm" variant="ghost" onClick={() => setOpenIds(new Set(shown.map((t) => t.id)))}>
+        <div className="mt-4 flex justify-end gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setAllOpen(true)}>
             Apri tutte
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setOpenIds(new Set())}>
+          <Button size="sm" variant="ghost" onClick={() => setAllOpen(false)}>
             Chiudi tutte
           </Button>
         </div>
       )}
 
-      <ul className="mt-2 grid gap-3 md:mt-4 md:grid-cols-2">
+      <ul className="mt-2 grid gap-3 md:grid-cols-2">
         {shown.map((t) => (
           <TeacherCard
             key={t.id}
-            open={openIds.has(t.id)}
+            open={isOpen(t.id)}
             onToggle={() =>
-              setOpenIds((prev) => {
+              setFlipped((prev) => {
                 const next = new Set(prev);
                 if (next.has(t.id)) next.delete(t.id);
                 else next.add(t.id);
@@ -1715,14 +1737,14 @@ function TeacherCard({
   }
   const markCount = marks.away + marks.no + marks.hard + marks.soft;
   return (
-    <li className="rounded-lg border border-border bg-card px-3 py-3">
+    <li className={cn("rounded-lg border border-border bg-card px-3 py-3", !open && "self-start")}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <button
             type="button"
             onClick={onToggle}
             aria-expanded={open}
-            className="flex w-full min-w-0 items-start gap-1.5 text-left md:hidden"
+            className="flex w-full min-w-0 items-start gap-1.5 text-left"
           >
             <ChevronDown
               className={cn("mt-1 size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
@@ -1745,10 +1767,6 @@ function TeacherCard({
               </span>
             </span>
           </button>
-          <div className="hidden md:block">
-            <p className="truncate text-[15px] font-medium">{teacherName(t)}</p>
-            <p className="truncate text-[12px] text-muted-foreground">{subtitle}</p>
-          </div>
         </div>
         <button
           type="button"
@@ -1766,7 +1784,7 @@ function TeacherCard({
         </button>
       </div>
 
-      <div className={cn(!open && "max-md:hidden")}>
+      <div className={cn(!open && "hidden")}>
         <div className="mt-2 flex flex-wrap items-center gap-1">
           <span className="mr-1 text-[12px] text-muted-foreground">Rientro T.P.</span>
           {days.map((d) => {
