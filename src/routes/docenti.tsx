@@ -16,6 +16,14 @@ import { Plus, Search, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { corePeriods } from "@/lib/periods";
+import {
+  TEACHER_PALETTE,
+  TONE_NAMES,
+  VIVID_TONE,
+  nextTeacherColor,
+  teacherCell,
+  teacherDotColor,
+} from "@/lib/teacher-palette";
 
 export const Route = createFileRoute("/docenti")({ component: DocentiPage });
 
@@ -53,7 +61,38 @@ function DocentiPage() {
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-faint" />
         <Input className="pl-9" placeholder="Cerca per cognome o materia" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      <div className="paper-panel overflow-x-auto rounded-xl">
+      <ul className="paper-panel divide-y divide-border rounded-xl md:hidden">
+        {list.map((t) => {
+          const covers = counts[t.id] ?? 0;
+          return (
+            <li key={t.id} className="flex items-start gap-2 py-3 pr-2 pl-4">
+              <button type="button" onClick={() => setEditing(t)} className="min-w-0 flex-1 text-left">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="size-2.5 shrink-0 rounded-full" style={{ background: teacherDotColor(t.color) }} />
+                  <span className="font-medium">{teacherName(t)}</span>
+                  <Badge variant="outline">{ROLE_LABELS[t.role]}</Badge>
+                </span>
+                <span className="mt-0.5 block text-[13px] text-muted-foreground">{t.subjects.join(", ")}</span>
+                <span className="block text-[13px] text-muted-foreground">{classLabels(data, t.id) || "—"}</span>
+              </button>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <span className="pt-0.5 text-[13px] whitespace-nowrap text-muted-foreground tabular-nums">
+                  {t.weeklyHours} h · {covers} {covers === 1 ? "copertura" : "coperture"}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void navigate({ to: "/orario", search: { docente: t.id } })}
+                >
+                  <LayoutGrid />
+                  Orario
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="paper-panel hidden overflow-x-auto rounded-xl md:block">
         <table className="w-full min-w-[52rem] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
@@ -76,7 +115,7 @@ function DocentiPage() {
               >
                 <td className="whitespace-nowrap px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <span className="size-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
+                    <span className="size-2.5 shrink-0 rounded-full" style={{ background: teacherDotColor(t.color) }} />
                     <span className="font-medium">{teacherName(t)}</span>
                   </div>
                 </td>
@@ -167,7 +206,9 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
   const [dispHours, setDispHours] = useState(String(current?.dispHours ?? 0));
   const [role, setRole] = useState<TeacherRole>(current?.role ?? "cattedra");
   const [notes, setNotes] = useState(current?.notes ?? "");
-  const [color, setColor] = useState(current?.color ?? "#3d5a4c");
+  const [color, setColor] = useState(
+    () => current?.color ?? nextTeacherColor(store.teachers.map((t) => t.color)),
+  );
   const [dispSlots, setDispSlots] = useState<{ day: DayOfWeek; periodId: string }[]>(
     current?.dispSlots ?? [],
   );
@@ -237,7 +278,8 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
-        <DialogHeader>
+        {/* intestazione e piede restano fermi, il contenuto scorre in mezzo */}
+        <DialogHeader className="sticky top-0 z-10 mb-0 bg-popover pb-4">
           <DialogTitle>{isNew ? "Nuovo docente" : "Scheda docente"}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-3">
@@ -396,7 +438,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
           </Field>
           )}
           <Field label="Colore in orario">
-            <Input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-10 w-20 p-1" />
+            <ColorSwatches value={color} onChange={setColor} />
           </Field>
           <Field label="Note">
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
@@ -405,7 +447,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             Se insegna anche in un altro plesso, segnalalo in Orario → Costruisci, insieme alle ore in cui è
             altrove.
           </p>
-          <div className="flex justify-between pt-2">
+          <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-popover pt-3">
             {!isNew && current && (
               <Button
                 variant="outline"
@@ -418,13 +460,56 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                 Elimina
               </Button>
             )}
-            <Button className="ml-auto" onClick={save}>
-              Salva
+            <Button variant="outline" className="ml-auto" onClick={onClose}>
+              Annulla
             </Button>
+            <Button onClick={save}>Salva</Button>
           </div>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** «Colore in orario»: 12 tinte in due gruppi da 6; in ogni colonna tenue, medio, deciso e, staccato, il vivace. */
+function ColorSwatches({ value, onChange }: { value: string; onChange: (color: string) => void }) {
+  const isOn = (c: string) => value.toUpperCase() === c.toUpperCase();
+  const groups = [TEACHER_PALETTE.slice(0, 6), TEACHER_PALETTE.slice(6)];
+  return (
+    <div className="flex flex-col gap-3">
+      {groups.map((group) => (
+        <div key={group[0]!.name} className="grid grid-cols-6 gap-1">
+          {group.map((hue) => (
+            <div key={hue.name} className="flex min-w-0 flex-col gap-1">
+              <span className="truncate text-center text-[10px] tracking-tight text-muted-foreground" title={hue.name}>
+                {hue.name}
+              </span>
+              {hue.tones.map((tone, i) => {
+                const tc = teacherCell(tone);
+                return (
+                  <button
+                    key={tone}
+                    type="button"
+                    aria-label={`${hue.name} ${TONE_NAMES[i]}`}
+                    aria-pressed={isOn(tone)}
+                    title={`${hue.name} ${TONE_NAMES[i]}`}
+                    onClick={() => onChange(tone)}
+                    className={cn(
+                      "h-7 rounded-md border border-black/10 dark:border-white/10",
+                      i === VIVID_TONE && "mt-1",
+                      isOn(tone) && "ring-2 ring-primary ring-offset-2 ring-offset-popover",
+                      tc.className,
+                    )}
+                    style={tc.style}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      ))}
+      <p className="text-[12px] text-muted-foreground">Ultima riga: colori vivaci, per far risaltare un docente.</p>
+    </div>
   );
 }
 

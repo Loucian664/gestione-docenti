@@ -11,6 +11,7 @@ import type {
 import { ABSENCE_REASONS } from "./types";
 import { dateInRange, eachIsoInRange, isWeekend, monthRange, toSchoolDay } from "./dates";
 import { isMensaPeriod } from "./periods";
+import { subjectParts } from "./subject-groups";
 
 export type CoverageNeed = {
   key: string;
@@ -577,7 +578,7 @@ export function rankSubstitutes(
         score += 24;
         reasons.push("Stessa classe");
       }
-      if (teacher.subjects.includes(need.slot.subject)) {
+      if (subjectParts(need.slot.subject).some((part) => teacher.subjects.includes(part))) {
         score += 18;
         reasons.push("Stessa materia");
       }
