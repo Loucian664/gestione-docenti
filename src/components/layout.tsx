@@ -272,22 +272,22 @@ export function PageHeader({
   title,
   description,
   actions,
-  actionsCentered = false,
+  actionsFullWidth = false,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
   /**
-   * Sotto i 1024 px i tasti vanno sotto la descrizione, al centro (come la data in Oggi);
-   * più larghi, a destra e sempre su una riga.
+   * Sotto i 1024 px i tasti vanno sotto la descrizione, affiancati e larghi quanto la pagina
+   * (come in Oggi); più larghi, a destra e sempre su una riga.
    */
-  actionsCentered?: boolean;
+  actionsFullWidth?: boolean;
 }) {
   return (
     <div
       className={cn(
         "mb-6 flex flex-col gap-3",
-        actionsCentered
+        actionsFullWidth
           ? "lg:flex-row lg:items-end lg:justify-between"
           : "sm:flex-row sm:items-end sm:justify-between",
       )}
@@ -300,10 +300,11 @@ export function PageHeader({
       </div>
       {actions && (
         <div
-          className={cn(
-            "flex flex-wrap items-center gap-2",
-            actionsCentered && "justify-center lg:shrink-0 lg:justify-end",
-          )}
+          className={
+            actionsFullWidth
+              ? "grid auto-cols-fr grid-flow-col gap-2 *:w-full lg:flex lg:shrink-0 lg:items-center lg:*:w-auto"
+              : "flex flex-wrap items-center gap-2"
+          }
         >
           {actions}
         </div>
