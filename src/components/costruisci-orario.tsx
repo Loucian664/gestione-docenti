@@ -615,18 +615,37 @@ const VERDICT_WORD: Record<MoveEffect["verdict"], string> = {
   breaks: "non rispetta un vincolo",
   same: "non cambia niente",
 };
-const LEGEND: { label: string; dot: string }[] = [
-  { label: "meglio", dot: "bg-success" },
-  { label: "in parte", dot: "bg-warning" },
-  { label: "peggio", dot: "bg-destructive/60" },
+/** Legenda dei Ritocchi: quadratini come le celle, con lo stesso simbolo. */
+const LEGEND: { label: string; verdict: MoveEffect["verdict"]; swatch: string }[] = [
+  { label: "meglio", verdict: "better", swatch: VERDICT_CELL.better },
+  { label: "in parte", verdict: "mixed", swatch: VERDICT_CELL.mixed },
+  { label: "peggio", verdict: "worse", swatch: VERDICT_CELL.worse },
+  { label: "vietato", verdict: "breaks", swatch: "bg-muted" },
 ];
-const VERDICT_DOT: Record<MoveEffect["verdict"], string> = {
-  better: "bg-success",
-  mixed: "bg-warning",
-  worse: "bg-destructive/60",
-  breaks: "bg-destructive",
-  same: "bg-ink-faint",
+/** L'esito non è affidato solo al colore: ↑ meglio, ≈ in parte, ↓ peggio, ⚠ vietato. */
+const VERDICT_SYMBOL: Record<MoveEffect["verdict"], string> = {
+  better: "↑",
+  mixed: "≈",
+  worse: "↓",
+  breaks: "⚠",
+  same: "=",
 };
+const VERDICT_TEXT: Record<MoveEffect["verdict"], string> = {
+  better: "text-success",
+  mixed: "text-warning",
+  worse: "text-destructive",
+  breaks: "text-destructive",
+  same: "text-muted-foreground",
+};
+
+function VerdictMark({ verdict, className }: { verdict: MoveEffect["verdict"]; className?: string }) {
+  if (verdict === "breaks") return <TriangleAlert className={cn("size-3 shrink-0 text-destructive", className)} aria-hidden />;
+  return (
+    <span className={cn("shrink-0 text-[12px] font-bold leading-none", VERDICT_TEXT[verdict], className)} aria-hidden>
+      {VERDICT_SYMBOL[verdict]}
+    </span>
+  );
+}
 
 /** «Trova»: cosa si cerca, su quale orario (se cambia, le proposte non valgono più) e a che punto è. */
 type FindJob = { target: FindTarget; forEditor: TimetableEditor; data: PersistedData };
@@ -913,7 +932,8 @@ function Ritocchi({
       "relative flex h-14 w-full min-w-0 touch-manipulation flex-col items-start justify-center rounded-md px-1.5 text-left leading-tight transition-colors",
       isSel && "ring-2 ring-primary",
       !isSel && eff && VERDICT_CELL[eff.verdict],
-      !isSel && sel && eff === null && "opacity-40",
+      !isSel && sel && eff === null && "border border-dashed border-ink-faint",
+      !isSel && eff && eff.verdict !== "same" && "pr-4",
       !isSel && target === z && "outline outline-2 outline-offset-1 outline-foreground",
       !hasLesson && !eff && "bg-muted",
     );
@@ -988,7 +1008,7 @@ function Ritocchi({
         {options.map((opt, i) => (
           <div key={i} className="rounded-lg border border-border bg-background/70 p-2.5">
             <p className="flex items-center gap-1.5 font-medium">
-              <span className={cn("size-2.5 shrink-0 rounded-full", VERDICT_DOT[opt.effect.verdict])} aria-hidden />
+              <VerdictMark verdict={opt.effect.verdict} />
               Proposta {i + 1} · {opt.steps.length === 1 ? "1 mossa" : `${opt.steps.length} mosse`}
               <span className="sr-only">: {VERDICT_WORD[opt.effect.verdict]}</span>
             </p>
@@ -1201,8 +1221,11 @@ function Ritocchi({
                             <span className="text-[12px] text-ink-faint">—</span>
                           )}
                           {lesson?.locked && <Lock className="absolute right-1 top-1 size-3 text-muted-foreground" aria-hidden />}
-                          {!isSel && eff?.verdict === "breaks" && (
-                            <TriangleAlert className="absolute bottom-1 right-1 size-3 text-destructive" aria-hidden />
+                          {!isSel && eff && eff.verdict !== "same" && (
+                            <VerdictMark
+                              verdict={eff.verdict}
+                              className={cn("absolute top-1", lesson?.locked ? "right-5" : "right-1")}
+                            />
                           )}
                         </button>
                       </td>
@@ -1263,8 +1286,11 @@ function Ritocchi({
                         {cellT.kind === "lesson" && cellT.locked && (
                           <Lock className="absolute right-1 top-1 size-3 text-muted-foreground" aria-hidden />
                         )}
-                        {!isSel && eff?.verdict === "breaks" && (
-                          <TriangleAlert className="absolute bottom-1 right-1 size-3 text-destructive" aria-hidden />
+                        {!isSel && eff && eff.verdict !== "same" && (
+                          <VerdictMark
+                            verdict={eff.verdict}
+                            className={cn("absolute top-1", cellT.kind === "lesson" && cellT.locked ? "right-5" : "right-1")}
+                          />
                         )}
                       </button>
                     </td>
@@ -1330,14 +1356,12 @@ function Ritocchi({
                     <span>Tocca dove spostarla:</span>
                     {LEGEND.map((l) => (
                       <span key={l.label} className="inline-flex items-center gap-1">
-                        <span className={cn("size-2.5 rounded-full", l.dot)} aria-hidden />
+                        <span className={cn("inline-flex size-4 items-center justify-center rounded-[3px]", l.swatch)} aria-hidden>
+                          <VerdictMark verdict={l.verdict} />
+                        </span>
                         {l.label}
                       </span>
                     ))}
-                    <span className="inline-flex items-center gap-1">
-                      <TriangleAlert className="size-3.5 text-destructive" aria-hidden />
-                      vietato
-                    </span>
                   </p>
                 )}
                 {findBlock({ kind: "lesson", classId: sel.classId, z: sel.z })}
