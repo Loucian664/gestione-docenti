@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Check, ChevronDown, Eraser, Lock, LockOpen, Search, TriangleAlert, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,19 +12,33 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Tabs } from "@/components/ui/tabs";
 import { useAppStore, snapshot } from "@/lib/store";
 import {
-  buildTimetable,
   isTimetableTeacher,
   timetableDemand,
   resolveCattedre,
   cattedreOfTeacher,
   MONTE_ORE,
-  gapsRanking,
-  type BuildOptions,
-  type BuildReport,
 } from "@/lib/build-timetable";
-import { BucheList } from "@/components/buche-list";
+import {
+  dayPatternOptions,
+  dispAfterLessons,
+  evaluateCurrent,
+  teacherDayInfo,
+  teacherDayPatterns,
+  teacherHoursHere,
+  TimetableEditor,
+  type FindResult,
+  type FindTarget,
+  type FixOption,
+  type FixStep,
+  type MoveEffect,
+  type RowKey,
+  type SolveMode,
+  type SolveResult,
+  type TimetableReport,
+} from "@/lib/timetable-solver";
+import { runTimetable, type RunHandle, type RunProgress } from "@/lib/timetable-runner";
 import { teacherName, teacherShort } from "@/lib/coverage";
-import { weekCellLines } from "@/lib/sheet-image";
+import { subjectAbbr, weekCellLines } from "@/lib/sheet-image";
 import {
   DAY_SHORT,
   SUBJECTS,
@@ -36,412 +51,246 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { corePeriods } from "@/lib/periods";
+import { corePeriods, isTpPeriodId } from "@/lib/periods";
+
+type Cell = { day: DayOfWeek; periodId: string };
+type CellState = "empty" | "no" | "away" | "class";
+type Brush = "away" | "no" | "class" | "erase";
+type ClassPick = {
+  teacherId: string;
+  day: DayOfWeek;
+  periodId: string;
+  selected: string[];
+  level: "preferenza" | "obbligo";
+  existing: boolean;
+};
+type MorningPeriod = ReturnType<typeof corePeriods>[number];
+
+const BRUSHES: { value: Brush; label: string; hint: string }[] = [
+  { value: "away", label: "Altrove", hint: "altro plesso o impegno" },
+  { value: "no", label: "No", hint: "mai a quell’ora" },
+  { value: "class", label: "Classe", hint: "una o tutte le sue classi" },
+  { value: "erase", label: "Cancella", hint: "decide l’app" },
+];
+
+const sameCell = (a: Cell, day: DayOfWeek, periodId: string) => a.day === day && a.periodId === periodId;
+
+function cellState(t: Teacher, day: DayOfWeek, periodId: string): CellState {
+  if ((t.awaySlots ?? []).some((a) => sameCell(a, day, periodId))) return "away";
+  if ((t.mustSlots ?? []).some((a) => sameCell(a, day, periodId))) return "class";
+  if ((t.avoidSlots ?? []).some((a) => sameCell(a, day, periodId))) return "no";
+  return "empty";
+}
+
+/** Le caselle date passano allo stato voluto; tutto il resto del docente resta com’è. */
+function withCells(t: Teacher, cells: Cell[], state: Exclude<CellState, "class">): Partial<Teacher> {
+  const hit = (a: Cell) => cells.some((c) => sameCell(a, c.day, c.periodId));
+  const rest = <T extends Cell>(list: T[] | undefined) => (list ?? []).filter((a) => !hit(a));
+  return {
+    awaySlots: [...rest(t.awaySlots), ...(state === "away" ? cells : [])],
+    avoidSlots: [...rest(t.avoidSlots), ...(state === "no" ? cells : [])],
+    mustSlots: rest(t.mustSlots),
+  };
+}
+
+/** Pieno = va sempre rispettato, chiaro con bordo = se possibile. Divieto rosso, obbligo blu. */
+const CELL_STYLE: Record<CellState, string> = {
+  empty: "bg-muted text-muted-foreground hover:bg-secondary",
+  away: "bg-primary text-primary-foreground",
+  no: "bg-destructive text-destructive-foreground text-[12px] font-semibold",
+  class: "bg-class-mark/20 text-foreground text-[11px] font-semibold ring-1 ring-inset ring-class-mark/65",
+};
+const HARD_CLASS_STYLE = "bg-class-mark text-class-mark-foreground text-[11px] font-semibold";
+
+/** Il segno nella casella: la × è un’icona, così ha la stessa misura del resto. */
+function MarkGlyph({ state, label }: { state: CellState; label?: string }) {
+  if (state === "away") return <X className="size-4" strokeWidth={2.5} aria-hidden />;
+  if (state === "no") return <>no</>;
+  if (state === "class") return <>{label}</>;
+  return null;
+}
 
 export function CostruisciOrario() {
   const store = useAppStore();
   const data = snapshot(store);
   const previewRef = useRef<HTMLElement>(null);
-  const [opts, setOpts] = useState<BuildOptions>({
-    avoidGaps: true,
-    balanceLastHour: true,
-    noAdjacentPlessi: true,
-    noFreeDay: true,
-    variety: true,
-    avoidFiveHours: true,
-    allowThreeConsecutive: true,
-    maxFiveAtSchool: false,
-    avoidHeavyBlocks: true,
-  });
-  const [report, setReport] = useState<BuildReport | null>(null);
-  const [pendingSlots, setPendingSlots] = useState<TimetableSlot[] | null>(null);
-  const [confirm, setConfirm] = useState(false);
+  const [mode, setMode] = useState<SolveMode>("scratch");
+  const [speed, setSpeed] = useState<"rapida" | "accurata">("rapida");
+  const [running, setRunning] = useState<RunProgress | null>(null);
+  const handleRef = useRef<RunHandle | null>(null);
+  const [result, setResult] = useState<SolveResult | null>(null);
+  const [resultMode, setResultMode] = useState<SolveMode>("scratch");
+  const [currentReport, setCurrentReport] = useState<TimetableReport | null>(null);
+  const [confirmFor, setConfirmFor] = useState<"proposta" | "ritocchi" | null>(null);
+  const [edit, setEdit] = useState<EditState | null>(null);
+  const editRef = useRef<HTMLElement>(null);
   const [newSubject, setNewSubject] = useState("");
   const [newHours, setNewHours] = useState("1");
   const [previewMode, setPreviewMode] = useState<"settimana" | "docenti" | "class" | "quadro">("settimana");
   const [previewClassId, setPreviewClassId] = useState(data.classes[0]?.id ?? "");
   const [previewDay, setPreviewDay] = useState<DayOfWeek>(data.settings.days[0] ?? 1);
-  const [mustPick, setMustPick] = useState<{
-    teacherId: string;
-    day: DayOfWeek;
-    periodId: string;
-    selected: string[];
-  } | null>(null);
-
-  const included = useMemo(
-    () =>
-      data.teachers
-        .filter(isTimetableTeacher)
-        .slice()
-        .sort(
-          (a, b) =>
-            a.lastName.localeCompare(b.lastName, "it") || a.firstName.localeCompare(b.firstName, "it"),
-        ),
-    [data.teachers],
-  );
-  const skipped = useMemo(
-    () =>
-      data.teachers
-        .filter((t) => !isTimetableTeacher(t))
-        .slice()
-        .sort(
-          (a, b) =>
-            a.lastName.localeCompare(b.lastName, "it") || a.firstName.localeCompare(b.firstName, "it"),
-        ),
-    [data.teachers],
-  );
-  const demand = useMemo(() => timetableDemand(data), [data]);
-  const cattedre = useMemo(() => resolveCattedre(data), [data]);
+  const [classPick, setClassPick] = useState<ClassPick | null>(null);
+  const [patternFor, setPatternFor] = useState<string | null>(null);
   const [cattedraClassId, setCattedraClassId] = useState(data.classes[0]?.id ?? "");
+  const morning = corePeriods(data.settings.periods);
+
+  const byName = (a: Teacher, b: Teacher) =>
+    a.lastName.localeCompare(b.lastName, "it") || a.firstName.localeCompare(b.firstName, "it");
+  const included = useMemo(() => data.teachers.filter(isTimetableTeacher).sort(byName), [data.teachers]);
+  const skipped = useMemo(() => data.teachers.filter((t) => !isTimetableTeacher(t)).sort(byName), [data.teachers]);
+  const demand = useMemo(() => timetableDemand(data), [data]);
+  const hoursHere = useMemo(() => teacherHoursHere(data), [data]);
+  const cattedre = useMemo(() => resolveCattedre(data), [data]);
   const classOrder = useMemo(
     () => [...data.classes].sort((a, b) => a.name.localeCompare(b.name, "it")),
     [data.classes],
   );
 
+  // Anteprima: solo docenti di materia (sostegno, potenziamento e strumento non si vedono).
+  const pendingSlots: TimetableSlot[] | null = result?.slots ?? null;
   const previewSlots = useMemo(() => {
     if (!pendingSlots) return null;
     const keep = data.slots.filter((s) => {
+      if (!isTpPeriodId(data.settings.periods, s.periodId)) return false;
       const t = data.teachers.find((x) => x.id === s.teacherId);
-      return !t || !isTimetableTeacher(t);
+      return Boolean(t && isTimetableTeacher(t));
     });
     return [...keep, ...pendingSlots];
-  }, [pendingSlots, data.slots, data.teachers]);
-
-  const previewData = useMemo(() => {
-    if (!previewSlots) return null;
-    return { ...data, slots: previewSlots };
-  }, [data, previewSlots]);
-  const previewBuche = useMemo(
-    () => (previewData ? gapsRanking(previewData) : []),
-    [previewData],
+  }, [pendingSlots, data.slots, data.teachers, data.settings.periods]);
+  const previewData = useMemo(() => (previewSlots ? { ...data, slots: previewSlots } : null), [data, previewSlots]);
+  // lezioni del mattino dei docenti di materia: quelle che Costruisci e i ritocchi cambiano
+  const pool = useMemo(() => new Set(included.map((t) => t.id)), [included]);
+  const inUseDraft = useMemo(
+    () => data.slots.filter((s) => pool.has(s.teacherId) && !isTpPeriodId(data.settings.periods, s.periodId)),
+    [data.slots, data.settings.periods, pool],
   );
-  const morning = corePeriods(data.settings.periods);
+  const applySlots =
+    confirmFor === "ritocchi" ? (edit?.draft ?? null) : confirmFor === "proposta" ? (result?.slots ?? null) : null;
+  const applyInfo = useMemo(() => (applySlots ? dispAfterLessons(data, applySlots) : null), [data, applySlots]);
+  // ore al giorno scelte: con le disposizioni che restano dopo «Usa…», chi va sistemato a mano
+  // «Da zero»: le disposizioni le rimette il responsabile dove indicato (nelle buche)
+  const fillTodo = confirmFor === "proposta" && resultMode === "scratch" && result ? result.report.dispFill : [];
+  const patternTodo = useMemo(() => {
+    if (fillTodo.length || !applySlots || !applyInfo || !data.teachers.some((t) => teacherDayPatterns(t).length))
+      return [[], []];
+    const teachers = data.teachers.map((t) =>
+      applyInfo.dispSlots[t.id] ? { ...t, dispSlots: applyInfo.dispSlots[t.id] } : t,
+    );
+    const ids = new Set(inUseDraft.map((s) => s.id));
+    const keep = data.slots.filter((s) => !ids.has(s.id));
+    const rows = evaluateCurrent({ ...data, teachers, slots: [...keep, ...applySlots] }).patterns.rows;
+    return [
+      rows.filter((r) => r.excess > 0).map((r) => r.name),
+      rows.filter((r) => r.excess === 0 && r.missing > 0).map((r) => r.name),
+    ];
+  }, [applyInfo, applySlots, data, inUseDraft, fillTodo.length]);
+  // ore bloccate che corrispondono a una lezione dell'orario in uso
+  const lockCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of data.teachers) {
+      const n = (t.lockedSlots ?? []).filter((a) =>
+        data.slots.some((s) => s.teacherId === t.id && s.day === a.day && s.periodId === a.periodId && s.classId === a.classId),
+      ).length;
+      if (n) m.set(t.id, n);
+    }
+    return m;
+  }, [data.teachers, data.slots]);
 
   function propose() {
-    const alreadyOpen = pendingSlots != null;
-    const y = typeof window !== "undefined" ? window.scrollY : 0;
-    const result = buildTimetable(data, opts);
-    setPendingSlots(result.slots);
-    setReport(result.report);
-    if (result.report.total === 0) {
+    if (handleRef.current) return;
+    if (timetableDemand(data).lessons.length === 0) {
       toast.message("Niente da piazzare: inserisci prima docenti, classi e ore in orario.");
       return;
     }
-    if (alreadyOpen) {
-      requestAnimationFrame(() => window.scrollTo(0, y));
-      return;
-    }
-    window.setTimeout(() => {
-      previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
-  }
-
-  function writeCattedre(next: Cattedra[]) {
-    store.setCattedre(next);
+    setCurrentReport(evaluateCurrent(data));
+    setRunning({ fraction: 0, iterations: 0, bestHard: 0, bestSoft: 0, bestGaps: 0, workers: 0 });
+    const runMode = mode;
+    const handle = runTimetable(data, {
+      timeMs: speed === "accurata" ? 35000 : 12000,
+      mode: runMode,
+      onProgress: (p) => setRunning(p),
+    });
+    handleRef.current = handle;
+    handle.result
+      .then((res) => {
+        setResult(res);
+        setResultMode(runMode);
+        window.setTimeout(() => {
+          previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 50);
+      })
+      .catch((err: unknown) => {
+        toast.error(`La costruzione si è fermata: ${err instanceof Error ? err.message : String(err)}`);
+      })
+      .finally(() => {
+        handleRef.current = null;
+        setRunning(null);
+      });
   }
 
   function apply() {
-    if (!pendingSlots) return;
-    store.replaceCattedraSlots(pendingSlots);
-    setConfirm(false);
-    setPendingSlots(null);
-    toast.success("Orario aggiornato. Se non va, Annulla ultima proposta.");
+    if (!applySlots || !applyInfo) return;
+    store.replaceCattedraSlots(applySlots, applyInfo.dispSlots);
+    const removed = applyInfo.removed.length;
+    setConfirmFor(null);
+    setResult(null);
+    setEdit(null);
+    toast.success(
+      removed
+        ? `Orario aggiornato. Tolte ${removed} ore a disposizione che cadevano su una lezione.`
+        : "Orario aggiornato.",
+    );
   }
 
+  function openEdit(from: EditState["from"]) {
+    setEdit({ draft: from === "proposta" && result ? result.slots : inUseDraft, history: [], from });
+    window.setTimeout(() => editRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+
+  function undo() {
+    store.undoCattedraSlots();
+    toast.message("Ripristinato l’orario di prima.");
+  }
+
+  function openClassPick(t: Teacher, day: DayOfWeek, periodId: string) {
+    const must = (t.mustSlots ?? []).find((a) => sameCell(a, day, periodId));
+    const ids = must?.allClasses
+      ? [...new Set(cattedreOfTeacher(data, t.id).map((c) => c.classId))]
+      : must
+        ? must.classIds?.length
+          ? must.classIds
+          : must.classId
+            ? [must.classId]
+            : []
+        : [];
+    setClassPick({
+      teacherId: t.id,
+      day,
+      periodId,
+      selected: ids,
+      level: must?.level === "obbligo" ? "obbligo" : "preferenza",
+      existing: Boolean(must),
+    });
+  }
+
+  const canUndo = Boolean(store.cattedraBackup?.length);
+
   return (
-    <div>
-      <p className="max-w-3xl text-sm text-muted-foreground">
-        Prova un orario più equilibrato. Non tocca sostegno, potenziamento e strumento (chitarra, flauto,
-        oboe, pianoforte). Criteri e plessi in alto, poi le cattedre, poi Proponi e l’anteprima.
-      </p>
+    <div className="flex flex-col gap-4">
+      <HowItWorks />
 
-      <section className="paper-panel mt-4 max-w-3xl rounded-xl p-5">
-        <h2 className="font-display text-lg">Criteri</h2>
-        <ul className="mt-3 flex flex-col gap-2.5">
-          <Toggle
-            checked={opts.avoidFiveHours}
-            onChange={(v) => setOpts({ ...opts, avoidFiveHours: v })}
-            label="Max 5 lezioni al giorno"
-            hint="Mai 6 lezioni. I buchi non contano: 5 lezioni + 1 buco = 6 ore a scuola, va bene."
-          />
-          <Toggle
-            checked={opts.maxFiveAtSchool}
-            onChange={(v) => setOpts({ ...opts, maxFiveAtSchool: v })}
-            label="Max 5 ore a scuola"
-            hint="Se è accesa, vieta 1ª+6ª (più ore fuori). Spenta: dopo un orario pieno, l’obiettivo è zero giornate 1ª–6ª."
-          />
-          <Toggle
-            checked={opts.avoidGaps}
-            onChange={(v) => setOpts({ ...opts, avoidGaps: v })}
-            label="Pochi buchi"
-            hint="Qualche buco è normale. Tra due orari pieni vince chi ha meno gente dalla 1ª alla 6ª, poi i buchi."
-          />
-          <Toggle
-            checked={opts.balanceLastHour}
-            onChange={(v) => setOpts({ ...opts, balanceLastHour: v })}
-            label="Ultime ore distribuite"
-            hint="Non sempre lo stesso docente in sesta ora."
-          />
-          <Toggle
-            checked={opts.variety}
-            onChange={(v) => setOpts({ ...opts, variety: v })}
-            label="Varietà in classe"
-            hint="Preferite in giorni diversi. Se serve (buchi o ore fuori), va il blocco da 2 attaccate. Mai 3 della stessa materia in un giorno. Italiano e matematica: blocco da 2 ok."
-          />
-          <Toggle
-            checked={opts.avoidHeavyBlocks}
-            onChange={(v) => setOpts({ ...opts, avoidHeavyBlocks: v })}
-            label="Niente 4 ore pesanti di fila"
-            hint="In una classe, niente 4 ore consecutive di italiano/storia/geografia/matematica/scienze. Francese, arte, motoria ecc. spezzano il blocco."
-          />
-          <Toggle
-            checked={opts.allowThreeConsecutive}
-            onChange={(v) => setOpts({ ...opts, allowThreeConsecutive: v })}
-            label="Fino a 3 ore di fila nella stessa classe"
-            hint="Eccezione alla varietà: 3 compatte ok (meglio che due buche in mezzo). 4 o 5 nella stessa classe restano vietate."
-          />
-          <Toggle
-            checked={opts.noFreeDay}
-            onChange={(v) => setOpts({ ...opts, noFreeDay: v })}
-            label="Nessun giorno libero"
-            hint="Chi insegna solo qui: almeno un’ora ogni giorno. Chi ha X o altro plesso può avere giorni vuoti."
-          />
-          <Toggle
-            checked={opts.noAdjacentPlessi}
-            onChange={(v) => setOpts({ ...opts, noAdjacentPlessi: v })}
-            label="Niente ore attaccate tra plessi"
-            hint="X in 2ª ⇒ niente 1ª né 3ª qui. Stesso per ogni ora. Giorni pieni, non spezzati, se si può."
-          />
-        </ul>
-      </section>
-
-      <section className="paper-panel mt-4 max-w-3xl rounded-xl p-5">
-        <h2 className="font-display text-lg">Docenti in questo orario</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Altro plesso: spunta e, se serve lo spezzato, metti la X. Rientro T.P.: il giorno in cui restano per 7ª e
-          8ª (4ª–6ª al mattino; il pomeriggio lo metti a mano). ✓ = vorrei. Il nome classe nella casella = deve
-          stare lì.
-        </p>
-        <ul className="mt-3 flex flex-col gap-3">
-          {included.map((t) => (
-            <li key={t.id} className="rounded-lg border border-border px-3 py-2.5">
-              <label className="flex min-h-10 items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-1 size-4 accent-primary"
-                  checked={Boolean(t.otherPlesso)}
-                  onChange={(e) => store.updateTeacher(t.id, { otherPlesso: e.target.checked })}
-                />
-                <span>
-                  <span className="font-medium">{teacherName(t)}</span>
-                  <span className="text-muted-foreground">
-                    {" "}
-                    · {t.subjects.slice(0, 3).join(", ")} · {t.weeklyHours} h
-                    {(t.dispHours ?? 0) > 0 ? ` · ${t.dispHours} disp.` : ""}
-                  </span>
-                  <span className="mt-0.5 block text-[12px] text-muted-foreground">
-                    Anche in un altro plesso
-                  </span>
-                </span>
-              </label>
-              <div className="mt-2">
-                <p className="mb-1 text-[12px] text-muted-foreground">Rientro T.P. (quel giorno 4ª–6ª)</p>
-                <div className="flex flex-wrap gap-1">
-                  {data.settings.days.map((d) => {
-                    const on = (t.rientroDays ?? []).includes(d);
-                    return (
-                      <button
-                        key={d}
-                        type="button"
-                        aria-label={
-                          on
-                            ? `Togli rientro ${DAY_SHORT[d]}`
-                            : `Rientro ${DAY_SHORT[d]}: 4ª–6ª`
-                        }
-                        onClick={() => {
-                          const cur = t.rientroDays ?? [];
-                          const next = on ? cur.filter((x) => x !== d) : [...cur, d];
-                          store.updateTeacher(t.id, { rientroDays: next });
-                        }}
-                        className={cn(
-                          "flex h-10 min-w-10 items-center justify-center rounded-md px-2 text-[11px] font-medium",
-                          on
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-muted-foreground",
-                        )}
-                      >
-                        {DAY_SHORT[d]}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="mt-2 overflow-x-auto">
-                <p className="mb-1.5 text-[12px] text-muted-foreground">
-                  Vuoto = decide l’app. ✓ = vorrei. Tocco su ✓: spunta una o più classi (obbligo: basta una). × =
-                  non c’è. Tocca Lun, Mar… per tutto il giorno in X.
-                </p>
-                <table className="w-full min-w-[280px] border-collapse text-[11px]">
-                  <thead>
-                    <tr className="text-muted-foreground">
-                      <th className="px-1 py-1 text-left font-medium">Ore</th>
-                      {data.settings.days.map((d) => {
-                        const n = morning.filter((p) =>
-                          (t.awaySlots ?? []).some((a) => a.day === d && a.periodId === p.id),
-                        ).length;
-                        const allOn = n === morning.length && n > 0;
-                        const some = n > 0;
-                        return (
-                          <th key={d} className="px-0.5 py-1 font-medium">
-                            <button
-                              type="button"
-                              aria-label={
-                                n > 0
-                                  ? `Togli tutte le X di ${DAY_SHORT[d]}`
-                                  : `Metti ${DAY_SHORT[d]} intero in altro plesso`
-                              }
-                              onClick={() => {
-                                const cur = t.awaySlots ?? [];
-                                const prefs = (t.preferSlots ?? []).filter((a) => a.day !== d);
-                                const musts = (t.mustSlots ?? []).filter((a) => a.day !== d);
-                                const next =
-                                  n > 0
-                                    ? cur.filter((a) => a.day !== d)
-                                    : [
-                                        ...cur.filter((a) => a.day !== d),
-                                        ...morning.map((p) => ({
-                                          day: d as DayOfWeek,
-                                          periodId: p.id,
-                                        })),
-                                      ];
-                                store.updateTeacher(t.id, {
-                                  awaySlots: next,
-                                  preferSlots: prefs,
-                                  mustSlots: musts,
-                                });
-                              }}
-                              className={cn(
-                                "mx-auto flex h-10 min-w-10 items-center justify-center rounded-md px-1.5 text-[11px] font-medium",
-                                allOn
-                                  ? "bg-primary text-primary-foreground"
-                                  : some
-                                    ? "bg-primary/25 text-foreground"
-                                    : "bg-muted text-muted-foreground",
-                              )}
-                            >
-                              {DAY_SHORT[d]}
-                            </button>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {morning.map((p) => (
-                      <tr key={p.id}>
-                        <td className="px-1 py-1 text-muted-foreground">{p.index}ª</td>
-                        {data.settings.days.map((d) => {
-                          const away = (t.awaySlots ?? []).some((a) => a.day === d && a.periodId === p.id);
-                          const prefer = (t.preferSlots ?? []).some((a) => a.day === d && a.periodId === p.id);
-                          const must = (t.mustSlots ?? []).find((a) => a.day === d && a.periodId === p.id);
-                          const mustIds = must
-                            ? must.classIds && must.classIds.length
-                              ? must.classIds
-                              : must.classId
-                                ? [must.classId]
-                                : []
-                            : [];
-                          const mustTags = mustIds
-                            .map((id) => data.classes.find((c) => c.id === id))
-                            .filter((c): c is NonNullable<typeof c> => Boolean(c))
-                            .map((c) => `${c.grade}${c.section}`);
-                          const mustLabel =
-                            mustTags.length === 0
-                              ? ""
-                              : mustTags.length === 1
-                                ? mustTags[0]
-                                : mustTags.length === 2
-                                  ? `${mustTags[0]}+`
-                                  : `${mustTags.length}`;
-                          return (
-                            <td key={d} className="p-0.5 text-center">
-                              <button
-                                type="button"
-                                aria-label={
-                                  away
-                                    ? `${DAY_SHORT[d]} ${p.label}: togli X`
-                                    : must
-                                      ? `${DAY_SHORT[d]} ${p.label}: ${mustTags.join(", ")}, passa a X`
-                                      : prefer
-                                        ? `${DAY_SHORT[d]} ${p.label}: scegli classi obbligo`
-                                        : `${DAY_SHORT[d]} ${p.label}: preferisci`
-                                }
-                                onClick={() => {
-                                  const awayCur = t.awaySlots ?? [];
-                                  const prefCur = t.preferSlots ?? [];
-                                  const mustCur = t.mustSlots ?? [];
-                                  const notCell = (a: { day: DayOfWeek; periodId: string }) =>
-                                    !(a.day === d && a.periodId === p.id);
-                                  if (!prefer && !must && !away) {
-                                    store.updateTeacher(t.id, {
-                                      preferSlots: [...prefCur, { day: d as DayOfWeek, periodId: p.id }],
-                                      mustSlots: mustCur.filter(notCell),
-                                      awaySlots: awayCur.filter(notCell),
-                                    });
-                                  } else if (prefer) {
-                                    setMustPick({
-                                      teacherId: t.id,
-                                      day: d as DayOfWeek,
-                                      periodId: p.id,
-                                      selected: [],
-                                    });
-                                  } else if (must) {
-                                    store.updateTeacher(t.id, {
-                                      preferSlots: prefCur.filter(notCell),
-                                      mustSlots: mustCur.filter(notCell),
-                                      awaySlots: [
-                                        ...awayCur.filter(notCell),
-                                        { day: d as DayOfWeek, periodId: p.id },
-                                      ],
-                                    });
-                                  } else {
-                                    store.updateTeacher(t.id, {
-                                      awaySlots: awayCur.filter(notCell),
-                                      mustSlots: mustCur.filter(notCell),
-                                      preferSlots: prefCur.filter(notCell),
-                                    });
-                                  }
-                                }}
-                                className={cn(
-                                  "inline-flex size-9 touch-manipulation items-center justify-center rounded-md text-[10px] font-semibold",
-                                  away
-                                    ? "bg-primary text-primary-foreground text-sm font-medium"
-                                    : must
-                                      ? "bg-amber-700 text-white"
-                                      : prefer
-                                        ? "bg-emerald-700 text-white text-sm font-medium"
-                                        : "bg-muted text-muted-foreground",
-                                )}
-                              >
-                                {away ? "×" : must ? mustLabel : prefer ? "✓" : ""}
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </li>
-          ))}
-        </ul>
-        {skipped.length > 0 && (
-          <p className="mt-3 text-[12px] text-muted-foreground">
-            Esclusi: {skipped.map((t) => teacherName(t)).join(", ")}.
-          </p>
-        )}
-      </section>
+      <AvailabilityPanel
+        teachers={included}
+        skipped={skipped}
+        days={data.settings.days}
+        morning={morning}
+        classes={data.classes}
+        hoursHere={hoursHere}
+        lockCount={lockCount}
+        onUpdate={(id, patch) => store.updateTeacher(id, patch)}
+        onClassPick={openClassPick}
+        onPattern={(t) => setPatternFor(t.id)}
+      />
 
       <CattedrePanel
         classId={cattedraClassId || classOrder[0]?.id || ""}
@@ -454,57 +303,97 @@ export function CostruisciOrario() {
         newHours={newHours}
         onNewSubject={setNewSubject}
         onNewHours={setNewHours}
-        onWrite={writeCattedre}
+        onWrite={(next) => store.setCattedre(next)}
       />
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button onClick={propose}>Proponi orario</Button>
-        <Button variant="outline" disabled={!pendingSlots} onClick={() => setConfirm(true)}>
-          Usa questa proposta
-        </Button>
-        <Button
-          variant="outline"
-          disabled={!store.cattedraBackup?.length}
-          onClick={() => {
-            store.undoCattedraSlots();
-            toast.message("Ripristinato l’orario di cattedra precedente.");
-          }}
-        >
-          Annulla ultima proposta
-        </Button>
-      </div>
-
-      {previewSlots && (
-        <section ref={previewRef} className="mt-5">
-          <h2 className="font-display text-lg">Anteprima</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Non è ancora salvata. Scorri le classi o i giorni. Se va bene, usa la proposta.
-          </p>
-          <div className="sticky top-0 z-20 mt-3 flex flex-wrap gap-2 border-b border-border bg-background/95 py-2 backdrop-blur-sm">
-            <Button disabled={!pendingSlots} onClick={() => setConfirm(true)}>
-              Usa questa proposta
-            </Button>
-            <Button variant="outline" onClick={propose}>
-              Proponi di nuovo
-            </Button>
-            <Button
-              variant="outline"
-              disabled={!store.cattedraBackup?.length}
-              onClick={() => {
-                store.undoCattedraSlots();
-                toast.message("Ripristinato l’orario di cattedra precedente.");
-              }}
+      <section className="paper-panel max-w-4xl rounded-xl p-5">
+        <StepTitle n={3} title="Proponi l’orario" />
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Segmented
+            label="Punto di partenza"
+            value={mode}
+            onChange={setMode}
+            disabled={Boolean(running)}
+            options={[
+              { value: "scratch", label: "Da zero" },
+              { value: "improve", label: "Migliora l’attuale" },
+            ]}
+          />
+          <Segmented
+            label="Tempo di ricerca"
+            value={speed}
+            onChange={setSpeed}
+            disabled={Boolean(running)}
+            options={[
+              { value: "rapida", label: "Rapida · 12 s" },
+              { value: "accurata", label: "Accurata · 35 s" },
+            ]}
+          />
+        </div>
+        <p className="mt-2 text-[13px] text-muted-foreground">
+          {mode === "scratch"
+            ? "Cerca l’orario migliore partendo da capo. Le buche dove possono andare le disposizioni del docente non contano."
+            : "Corregge l’orario in uso senza peggiorare nessuna voce del confronto. Le tue disposizioni restano dove sono."}
+          {speed === "accurata" ? " Con più tempo trova di solito qualcosa di meglio." : ""}
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button onClick={propose} disabled={Boolean(running)}>
+            {running ? "Sto cercando…" : "Proponi orario"}
+          </Button>
+          <Button variant="outline" onClick={() => openEdit("uso")} disabled={Boolean(running) || !inUseDraft.length}>
+            Ritocca a mano
+          </Button>
+          {canUndo && !running && (
+            <button
+              type="button"
+              onClick={undo}
+              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             >
-              Annulla ultima proposta
+              Annulla l’ultimo orario usato
+            </button>
+          )}
+        </div>
+        {running && <SearchProgress progress={running} onStop={() => handleRef.current?.stop()} />}
+      </section>
+
+      {edit && (
+        <Ritocchi
+          sectionRef={editRef}
+          edit={edit}
+          settings={data.settings}
+          teachersAll={data.teachers}
+          classesAll={data.classes}
+          slots={data.slots}
+          cattedre={data.cattedre}
+          teachers={included}
+          classes={classOrder}
+          morning={morning}
+          onChange={setEdit}
+          onClose={() => setEdit(null)}
+          onApply={() => setConfirmFor("ritocchi")}
+          onUpdateTeacher={(id, patch) => store.updateTeacher(id, patch)}
+        />
+      )}
+
+      {!edit && previewSlots && previewData && result && (
+        <section ref={previewRef} className="mt-1">
+          <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background/95 px-1 py-2 backdrop-blur-sm">
+            <h2 className="mr-auto font-display text-lg">Proposta</h2>
+            <span className="hidden text-[13px] text-muted-foreground sm:inline">Non ancora salvata</span>
+            <Button variant="outline" onClick={propose} disabled={Boolean(running)}>
+              Riprova
             </Button>
+            <Button variant="outline" onClick={() => openEdit("proposta")}>
+              Ritocca
+            </Button>
+            <Button onClick={() => setConfirmFor("proposta")}>Usa questa proposta</Button>
           </div>
-          <div className="mt-3 flex flex-col gap-3">
+          <ReportPanel current={currentReport} proposal={result.report} mode={resultMode} />
+          <div className="mt-4 flex flex-col gap-3">
             <Tabs
               className="flex-wrap overflow-visible"
               value={previewMode}
-              onValueChange={(v) =>
-                setPreviewMode(v as "settimana" | "docenti" | "class" | "quadro")
-              }
+              onValueChange={(v) => setPreviewMode(v as "settimana" | "docenti" | "class" | "quadro")}
               items={[
                 { value: "settimana", label: "Settimana" },
                 { value: "docenti", label: "Docenti" },
@@ -546,7 +435,7 @@ export function CostruisciOrario() {
             )}
           </div>
 
-          {previewMode === "settimana" && previewData && (
+          {previewMode === "settimana" && (
             <div className="paper-panel mt-3 overflow-x-auto rounded-xl">
               <table className="w-full min-w-[720px] border-collapse text-[12px]">
                 <thead>
@@ -561,13 +450,13 @@ export function CostruisciOrario() {
                 </thead>
                 <tbody>
                   {classOrder.map((c) => (
-                    <tr key={c.id} className="border-b border-border last:border-0 align-top">
+                    <tr key={c.id} className="border-b border-border align-top last:border-0">
                       <td className="sticky left-0 z-10 bg-card px-3 py-2">
                         <div className="text-[13px] font-medium">{c.name}</div>
                         <div className="text-[10px] tracking-wide text-ink-faint">{c.tempo}</div>
                       </td>
                       {data.settings.days.map((d) => (
-                        <td key={d} className="px-2 py-2 font-normal leading-[1.35] text-[11px]">
+                        <td key={d} className="px-2 py-2 text-[11px] font-normal leading-[1.35]">
                           {weekCellLines(previewData, c.id, d).map((line, i) => (
                             <div
                               key={`${c.id}-${d}-${i}`}
@@ -593,16 +482,19 @@ export function CostruisciOrario() {
             </div>
           )}
 
-          {previewMode === "docenti" && previewData && (
+          {previewMode === "docenti" && (
             <TeacherWeekPreview
               data={previewData}
+              report={result.report}
+              scratch={resultMode === "scratch"}
+              disp={dispAfterLessons(data, result.slots).dispSlots}
               teachers={included}
               days={data.settings.days}
               periods={morning}
             />
           )}
 
-          {previewMode === "class" && previewSlots && (
+          {previewMode === "class" && (
             <ClassPreview
               slots={previewSlots}
               classId={previewClassId || classOrder[0]?.id || ""}
@@ -611,7 +503,7 @@ export function CostruisciOrario() {
               teachers={data.teachers}
             />
           )}
-          {previewMode === "quadro" && previewSlots && (
+          {previewMode === "quadro" && (
             <DayPreview
               slots={previewSlots}
               day={previewDay}
@@ -620,138 +512,72 @@ export function CostruisciOrario() {
               teachers={data.teachers}
             />
           )}
-
-          {report && (
-            <div className="paper-panel mt-4 rounded-xl p-5">
-              <p className="text-sm">
-                Piazzate {report.placed}/{report.total} ore
-                {report.leftover ? ` · ${report.leftover} fuori` : ""}.
-              </p>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                {report.notes.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
-              <BucheList className="mt-4 border-t border-border pt-4" rows={previewBuche} />
-            </div>
-          )}
-
         </section>
       )}
 
-      <Dialog open={Boolean(mustPick)} onOpenChange={(open) => !open && setMustPick(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Obbligo: quali classi?</DialogTitle>
-            <DialogDescription>
-              {(() => {
-                if (!mustPick) return "";
-                const t = data.teachers.find((x) => x.id === mustPick.teacherId);
-                const lab = morning.find((p) => p.id === mustPick.periodId)?.label ?? mustPick.periodId;
-                return `${t ? teacherName(t) : ""} · ${DAY_SHORT[mustPick.day]} ${lab}. Spunta una o più classi: basta che stia in una di quelle.`;
-              })()}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-wrap gap-2 pb-2">
-            {[
-              ...new Map(
-                (mustPick ? cattedreOfTeacher(data, mustPick.teacherId) : [])
-                  .map((c) => data.classes.find((cl) => cl.id === c.classId))
-                  .filter((c): c is NonNullable<typeof c> => Boolean(c))
-                  .map((c) => [c.id, c]),
-              ).values(),
-            ].map((cls) => {
-              const on = mustPick?.selected.includes(cls.id);
-              return (
-                <Button
-                  key={cls.id}
-                  type="button"
-                  variant={on ? "default" : "outline"}
-                  className="min-h-10"
-                  onClick={() => {
-                    setMustPick((cur) => {
-                      if (!cur) return cur;
-                      const has = cur.selected.includes(cls.id);
-                      return {
-                        ...cur,
-                        selected: has
-                          ? cur.selected.filter((id) => id !== cls.id)
-                          : [...cur.selected, cls.id],
-                      };
-                    });
-                  }}
-                >
-                  {cls.name}
-                </Button>
-              );
-            })}
-          </div>
-          <div className="mt-8 flex flex-wrap justify-end gap-2 border-t border-border pt-6">
-            <Button variant="outline" type="button" onClick={() => setMustPick(null)}>
-              Lascia ✓
-            </Button>
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => {
-                if (!mustPick) return;
-                const t = data.teachers.find((x) => x.id === mustPick.teacherId);
-                if (!t) return;
-                const notCell = (a: { day: DayOfWeek; periodId: string }) =>
-                  !(a.day === mustPick.day && a.periodId === mustPick.periodId);
-                store.updateTeacher(t.id, {
-                  preferSlots: (t.preferSlots ?? []).filter(notCell),
-                  mustSlots: (t.mustSlots ?? []).filter(notCell),
-                  awaySlots: [
-                    ...(t.awaySlots ?? []).filter(notCell),
-                    { day: mustPick.day, periodId: mustPick.periodId },
-                  ],
-                });
-                setMustPick(null);
-              }}
-            >
-              Metti X
-            </Button>
-            <Button
-              type="button"
-              disabled={!mustPick || mustPick.selected.length === 0}
-              onClick={() => {
-                if (!mustPick || mustPick.selected.length === 0) return;
-                const t = data.teachers.find((x) => x.id === mustPick.teacherId);
-                if (!t) return;
-                const notCell = (a: { day: DayOfWeek; periodId: string }) =>
-                  !(a.day === mustPick.day && a.periodId === mustPick.periodId);
-                store.updateTeacher(t.id, {
-                  preferSlots: (t.preferSlots ?? []).filter(notCell),
-                  awaySlots: (t.awaySlots ?? []).filter(notCell),
-                  mustSlots: [
-                    ...(t.mustSlots ?? []).filter(notCell),
-                    { day: mustPick.day, periodId: mustPick.periodId, classIds: mustPick.selected },
-                  ],
-                });
-                setMustPick(null);
-              }}
-            >
-              Conferma
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ClassPickDialog
+        pick={classPick}
+        data={data}
+        morning={morning}
+        onChange={setClassPick}
+        onSave={(pick, remove, all) => {
+          const t = data.teachers.find((x) => x.id === pick.teacherId);
+          if (!t) return;
+          const cell = { day: pick.day, periodId: pick.periodId };
+          const patch = withCells(t, [cell], "empty");
+          store.updateTeacher(t.id, {
+            ...patch,
+            mustSlots: remove
+              ? patch.mustSlots
+              : [
+                  ...(patch.mustSlots ?? []),
+                  { ...cell, classIds: pick.selected, level: pick.level, ...(all ? { allClasses: true } : {}) },
+                ],
+          });
+          setClassPick(null);
+        }}
+      />
 
-      <Dialog open={confirm} onOpenChange={setConfirm}>
+      <DayPatternDialog
+        teacher={patternFor ? (data.teachers.find((t) => t.id === patternFor) ?? null) : null}
+        data={data}
+        onClose={() => setPatternFor(null)}
+        onChange={(t, list) => store.updateTeacher(t.id, { dayPatterns: list, dayPattern: undefined })}
+      />
+
+      <Dialog open={confirmFor !== null} onOpenChange={(open) => !open && setConfirmFor(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Sostituire l’orario di cattedra?</DialogTitle>
-            <DialogDescription>
-              Le lezioni di sostegno, potenziamento e strumento (chitarra, flauto, oboe, pianoforte) restano.
-              Poi puoi spostare le celle nel quadro. Se non va, Annulla ultima proposta.
-            </DialogDescription>
+            <DialogTitle>{confirmFor === "ritocchi" ? "Usare questo orario?" : "Usare questa proposta?"}</DialogTitle>
+            <DialogDescription>Cambiano solo le lezioni del mattino dei docenti di materia.</DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setConfirm(false)}>
+          <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
+            <li>
+              Le ore a disposizione restano dove sono
+              {applyInfo?.removed.length
+                ? `; ${applyInfo.removed.length} cadono su una lezione nuova e vengono tolte.`
+                : "."}
+            </li>
+            {fillTodo.length > 0 && (
+              <li>
+                Poi sposta le disposizioni nelle buche indicate («+ disp.» nella scheda «Docenti»):{" "}
+                {fillTodo.map((x) => x.text).join("; ")}.
+              </li>
+            )}
+            {patternTodo[0]!.length > 0 && (
+              <li className="text-destructive">Ore al giorno scelte non rispettate: {joinNames(patternTodo[0]!)}.</li>
+            )}
+            {patternTodo[1]!.length > 0 && (
+              <li>Ore al giorno scelte: poi aggiungi le disposizioni di {joinNames(patternTodo[1]!)}.</li>
+            )}
+            <li>Sostegno, potenziamento, strumento e pomeriggio non cambiano: il sostegno va risistemato a mano.</li>
+            <li>Se non va, puoi tornare indietro con «Annulla l’ultimo orario usato».</li>
+          </ul>
+          <div className="mt-2 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmFor(null)}>
               Annulla
             </Button>
-            <Button onClick={apply}>Sostituisci orario</Button>
+            <Button onClick={apply}>{confirmFor === "ritocchi" ? "Usa questo orario" : "Usa la proposta"}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -759,20 +585,1528 @@ export function CostruisciOrario() {
   );
 }
 
+type EditState = {
+  /** lezioni del mattino dei docenti di materia, con i ritocchi */
+  draft: TimetableSlot[];
+  /** per «Annulla»: com’era prima di ogni cambio */
+  history: TimetableSlot[][];
+  /** da dove si parte: l’orario in uso o una proposta */
+  from: "uso" | "proposta";
+};
+
+const VERDICT_CELL: Record<MoveEffect["verdict"], string> = {
+  better: "bg-success-soft ring-1 ring-inset ring-success/70",
+  mixed: "bg-warning-soft ring-1 ring-inset ring-warning/70",
+  worse: "bg-danger-soft ring-1 ring-inset ring-destructive/50",
+  // vietato: resta in secondo piano, con il segnale
+  breaks: "bg-muted opacity-60",
+  same: "bg-muted",
+};
+const VERDICT_WORD: Record<MoveEffect["verdict"], string> = {
+  better: "meglio",
+  mixed: "in parte meglio, in parte peggio",
+  worse: "peggio",
+  breaks: "non rispetta un vincolo",
+  same: "non cambia niente",
+};
+const LEGEND: { label: string; dot: string }[] = [
+  { label: "meglio", dot: "bg-success" },
+  { label: "in parte", dot: "bg-warning" },
+  { label: "peggio", dot: "bg-destructive/60" },
+];
+const VERDICT_DOT: Record<MoveEffect["verdict"], string> = {
+  better: "bg-success",
+  mixed: "bg-warning",
+  worse: "bg-destructive/60",
+  breaks: "bg-destructive",
+  same: "bg-ink-faint",
+};
+
+/** «Trova»: cosa si cerca, su quale orario (se cambia, le proposte non valgono più) e a che punto è. */
+type FindJob = { target: FindTarget; forEditor: TimetableEditor; data: PersistedData };
+type FindState = { job: FindJob; progress: number; result: FindResult | null };
+
+function sameTarget(a: FindTarget, b: FindTarget): boolean {
+  if (a.z !== b.z) return false;
+  if (a.kind === "gap") return b.kind === "gap" && a.teacherId === b.teacherId;
+  return b.kind === "lesson" && a.classId === b.classId;
+}
+
+function describeRow(r: MoveEffect["rows"][number]): string {
+  return `${ROW_SHORT[r.key]} ${r.from} → ${r.to}${r.total !== undefined ? ` su ${r.total}` : ""}`;
+}
+
+function sortRows(list: MoveEffect["rows"]): MoveEffect["rows"] {
+  return [...list].sort((a, b) => ROW_ORDER.indexOf(a.key) - ROW_ORDER.indexOf(b.key));
+}
+
+/** Cosa cambia con uno spostamento o con le mosse di una proposta. */
+function EffectLines({ effect }: { effect: MoveEffect }) {
+  const better = effect.rows.filter((r) => r.better);
+  const worse = effect.rows.filter((r) => !r.better);
+  return (
+    <>
+      {effect.hard < 0 && (
+        <p className="text-success">
+          Sistema {effect.hard === -1 ? "un vincolo non rispettato" : `${-effect.hard} vincoli non rispettati`}.
+        </p>
+      )}
+      {better.length > 0 && <p className="text-success">Meglio: {sortRows(better).map(describeRow).join(" · ")}</p>}
+      {worse.length > 0 && <p className="text-destructive">Peggio: {sortRows(worse).map(describeRow).join(" · ")}</p>}
+      {effect.rows.length === 0 && effect.hard === 0 && (
+        <p className="text-muted-foreground">Nessuna voce del confronto cambia.</p>
+      )}
+      {effect.also.length > 0 && (
+        <p className="text-muted-foreground">
+          Si spostano anche: {effect.also.join(", ")} (un docente non può stare in due classi).
+        </p>
+      )}
+      {effect.dispLost.length > 0 && (
+        <p className="text-muted-foreground">Toglie l’ora a disposizione: {effect.dispLost.join(", ")}.</p>
+      )}
+    </>
+  );
+}
+
+function Ritocchi({
+  sectionRef,
+  edit,
+  settings,
+  teachersAll,
+  classesAll,
+  slots,
+  cattedre,
+  teachers,
+  classes,
+  morning,
+  onChange,
+  onClose,
+  onApply,
+  onUpdateTeacher,
+}: {
+  sectionRef: React.RefObject<HTMLElement | null>;
+  edit: EditState;
+  settings: PersistedData["settings"];
+  teachersAll: Teacher[];
+  classesAll: PersistedData["classes"];
+  slots: TimetableSlot[];
+  cattedre: PersistedData["cattedre"];
+  /** docenti di materia */
+  teachers: Teacher[];
+  classes: { id: string; name: string; tempo: string }[];
+  morning: MorningPeriod[];
+  onChange: (next: EditState) => void;
+  onClose: () => void;
+  onApply: () => void;
+  onUpdateTeacher: (id: string, patch: Partial<Teacher>) => void;
+}) {
+  const days = useMemo(() => [...settings.days].sort((a, b) => a - b), [settings.days]);
+  const rows = useMemo(() => [...morning].sort((a, b) => a.index - b.index), [morning]);
+  const pool = useMemo(() => new Set(teachers.map((t) => t.id)), [teachers]);
+  const inUse = useMemo<PersistedData>(
+    () => ({
+      settings,
+      teachers: teachersAll,
+      classes: classesAll,
+      slots,
+      cattedre,
+      absences: [],
+      substitutions: [],
+      selectedDate: "",
+    }),
+    [settings, teachersAll, classesAll, slots, cattedre],
+  );
+  // le altre ore (pomeriggio, sostegno…) restano; cambiano solo le lezioni del mattino dei docenti di materia
+  const keep = useMemo(
+    () => slots.filter((s) => !(pool.has(s.teacherId) && !isTpPeriodId(settings.periods, s.periodId))),
+    [slots, pool, settings.periods],
+  );
+  const draftData = useMemo<PersistedData>(
+    () => ({ ...inUse, slots: [...keep, ...edit.draft] }),
+    [inUse, keep, edit.draft],
+  );
+  const editor = useMemo(() => new TimetableEditor(draftData), [draftData]);
+  const current = useMemo(() => evaluateCurrent(inUse), [inUse]);
+  const report = useMemo(() => editor.report(current.lessonsExpected), [editor, current]);
+  const tById = useMemo(() => new Map(teachersAll.map((t) => [t.id, t])), [teachersAll]);
+  const withLessons = useMemo(() => new Set(edit.draft.map((s) => s.teacherId)), [edit.draft]);
+  const cells = useMemo(() => {
+    const out: { day: DayOfWeek; periodId: string; label: string }[] = [];
+    for (const day of days)
+      for (const p of rows) {
+        const z = editor.cell(day, p.id);
+        if (z >= 0) out[z] = { day, periodId: p.id, label: `${DAY_SHORT[day]} ${p.index}ª` };
+      }
+    return out;
+  }, [editor, days, rows]);
+
+  const [view, setView] = useState<"class" | "teacher">("class");
+  const [classId, setClassId] = useState(classes[0]?.id ?? "");
+  const [teacherId, setTeacherId] = useState(teachers.find((t) => withLessons.has(t.id))?.id ?? "");
+  const [sel, setSel] = useState<{ classId: string; z: number } | null>(null);
+  const [target, setTarget] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
+  /** ora buca scelta nella vista per docente */
+  const [gapZ, setGapZ] = useState<number | null>(null);
+  const [find, setFind] = useState<FindState | null>(null);
+  /** «Ferma»: la ricerca finisce e tiene le migliori trovate fin lì */
+  const findStop = useRef(false);
+
+  const findJob = find?.job ?? null;
+  const findDone = Boolean(find?.result);
+  useEffect(() => {
+    // la ricerca va avanti a pezzi, così la pagina resta libera; si ferma se l'orario cambia
+    if (!findJob || findDone || findJob.forEditor !== editor) return;
+    let alive = true;
+    let timer = 0;
+    let gen: Generator<number, FindResult, boolean | undefined> | null = null;
+    const pump = () => {
+      if (!alive) return;
+      // le mosse si provano su una copia: l'orario mostrato non si tocca
+      gen ??= new TimetableEditor(findJob.data).findFixes(findJob.target);
+      const end = performance.now() + 24;
+      let r = gen.next(findStop.current);
+      while (!r.done && performance.now() < end) r = gen.next(findStop.current);
+      if (r.done) {
+        const result = r.value;
+        setFind((f) => (f && f.job === findJob ? { ...f, progress: 1, result } : f));
+      } else {
+        const progress = r.value;
+        setFind((f) => (f && f.job === findJob ? { ...f, progress } : f));
+        timer = window.setTimeout(pump, 0);
+      }
+    };
+    timer = window.setTimeout(pump, 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [findJob, findDone, editor]);
+
+  const effects = useMemo(() => (sel ? editor.effects(sel.classId, sel.z) : null), [editor, sel]);
+  const effect = target !== null && effects ? (effects[target] ?? null) : null;
+  const issues = useMemo(
+    () => (sel && target !== null && effect?.verdict === "breaks" ? editor.newHardIssues(sel.classId, sel.z, target) : []),
+    [editor, sel, target, effect],
+  );
+  const selLesson = sel ? editor.lessonAt(sel.classId, sel.z) : null;
+  const selTeacher = selLesson ? tById.get(selLesson.teacherId) : undefined;
+  const tgtLesson = sel && target !== null ? editor.lessonAt(sel.classId, target) : null;
+  const tgtTeacher = tgtLesson ? tById.get(tgtLesson.teacherId) : undefined;
+  const className = (id: string) => classes.find((c) => c.id === id)?.name ?? "";
+  const short = (t: Teacher | undefined) => (t ? teacherShort(t, teachersAll) : "");
+  const canApply = edit.from === "proposta" || edit.history.length > 0;
+  const gapCell = view === "teacher" && gapZ !== null ? editor.teacherAt(teacherId, gapZ) : null;
+  const gapNow = gapCell && gapCell.kind !== "lesson" && gapCell.gap ? gapZ : null;
+  const shownFind = find && find.job.forEditor === editor ? find : null;
+
+  function reset() {
+    setSel(null);
+    setTarget(null);
+    setConfirmClose(false);
+    setGapZ(null);
+    setFind(null);
+  }
+
+  function tap(z: number, lessonClassId: string | null, gap = false) {
+    setConfirmClose(false);
+    setNotice(null);
+    setFind(null);
+    if (!sel) {
+      if (lessonClassId) {
+        setGapZ(null);
+        setSel({ classId: lessonClassId, z });
+      } else setGapZ(gap && gapNow !== z ? z : null);
+      return;
+    }
+    if (z === sel.z && (lessonClassId === sel.classId || view === "teacher")) {
+      reset();
+      return;
+    }
+    if (effects?.[z]) {
+      if (target === z) move();
+      else setTarget(z);
+      return;
+    }
+    if (lessonClassId) {
+      setSel({ classId: lessonClassId, z });
+      setTarget(null);
+    }
+  }
+
+  function move() {
+    if (!sel || target === null) return;
+    const out = editor.apply(sel.classId, sel.z, target);
+    if (!out) return;
+    const ids = new Set(out.slots.map((x) => x.id));
+    const carry = edit.draft.filter((x) => !ids.has(x.id));
+    onChange({ ...edit, draft: [...out.slots, ...carry], history: [...edit.history, edit.draft] });
+    setNotice(out.also.length ? `Fatto. Si sono spostate anche: ${out.also.join(", ")}.` : "Fatto.");
+    reset();
+  }
+
+  function startFind(t: FindTarget) {
+    findStop.current = false;
+    setNotice(null);
+    setFind({ job: { target: t, forEditor: editor, data: draftData }, progress: 0, result: null });
+  }
+
+  /** Fa le mosse di una proposta di «Trova», tutte insieme: un solo «Annulla» le toglie. */
+  function applyFix(opt: FixOption) {
+    // si rifanno sull'orario di adesso, lo stesso su cui sono state trovate
+    const ed = new TimetableEditor(draftData);
+    let out: { slots: TimetableSlot[]; also: string[] } | null = null;
+    const also = new Set<string>();
+    for (const st of opt.steps) {
+      out = ed.apply(st.classId, st.from, st.to);
+      if (!out) break;
+      for (const x of out.also) also.add(x);
+    }
+    if (!out) {
+      setFind(null);
+      setNotice("Queste mosse non si possono più fare: riprova «Trova».");
+      return;
+    }
+    const ids = new Set(out.slots.map((x) => x.id));
+    const carry = edit.draft.filter((x) => !ids.has(x.id));
+    onChange({ ...edit, draft: [...out.slots, ...carry], history: [...edit.history, edit.draft] });
+    reset();
+    const n = opt.steps.length;
+    setNotice(
+      `Fatto: ${n === 1 ? "1 mossa" : `${n} mosse`}.${also.size ? ` Si sono spostate anche: ${[...also].join(", ")}.` : ""}`,
+    );
+  }
+
+  function undo() {
+    const prev = edit.history[edit.history.length - 1];
+    if (!prev) return;
+    onChange({ ...edit, draft: prev, history: edit.history.slice(0, -1) });
+    setNotice("Annullato l’ultimo cambio.");
+    reset();
+  }
+
+  function toggleLock() {
+    if (!sel || !selTeacher) return;
+    const c = cells[sel.z];
+    if (!c) return;
+    const list = selTeacher.lockedSlots ?? [];
+    const hit = (a: { day: DayOfWeek; periodId: string; classId: string }) =>
+      a.day === c.day && a.periodId === c.periodId && a.classId === sel.classId;
+    onUpdateTeacher(selTeacher.id, {
+      lockedSlots: list.some(hit) ? list.filter((a) => !hit(a)) : [...list, { day: c.day, periodId: c.periodId, classId: sel.classId }],
+    });
+    setTarget(null);
+  }
+
+  const shownTeacher = tById.get(teacherId);
+  const verdictOf = (z: number) => (sel && effects ? effects[z] : undefined);
+  const cellClass = (z: number, isSel: boolean, hasLesson: boolean) => {
+    const eff = verdictOf(z);
+    return cn(
+      "relative flex h-14 w-full min-w-0 touch-manipulation flex-col items-start justify-center rounded-md px-1.5 text-left leading-tight transition-colors",
+      isSel && "ring-2 ring-primary",
+      !isSel && eff && VERDICT_CELL[eff.verdict],
+      !isSel && sel && eff === null && "opacity-40",
+      !isSel && target === z && "outline outline-2 outline-offset-1 outline-foreground",
+      !hasLesson && !eff && "bg-muted",
+    );
+  };
+  const lessonText = (l: { subject: string; teacherId: string }) => `${l.subject} · ${short(tById.get(l.teacherId))}`;
+  const stepText = (st: FixStep) => {
+    const at = (z: number) => cells[z]?.label ?? "";
+    if (st.a && st.b) return `${className(st.classId)}: ${lessonText(st.a)} (${at(st.from)}) ↔ ${lessonText(st.b)} (${at(st.to)})`;
+    const l = st.a ?? st.b;
+    if (!l) return "";
+    const [x, y] = st.a ? [st.from, st.to] : [st.to, st.from];
+    return `${className(st.classId)}: ${lessonText(l)} da ${at(x)} a ${at(y)} (ora libera)`;
+  };
+
+  /** Il tasto «Trova», la ricerca in corso o le proposte, per la buca o la lezione scelta. */
+  const findBlock = (t: FindTarget) => {
+    const f = shownFind && sameTarget(shownFind.job.target, t) ? shownFind : null;
+    if (!f)
+      return (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Button size="sm" variant="outline" onClick={() => startFind(t)}>
+            <Search className="size-3.5" aria-hidden />
+            {t.kind === "gap" ? "Trova come toglierla" : "Trova dove spostarla"}
+          </Button>
+          <span className="text-[13px] text-muted-foreground">prova una o due mosse e propone le migliori</span>
+        </div>
+      );
+    if (!f.result) {
+      const pct = Math.round(f.progress * 100);
+      return (
+        <div className="flex items-center gap-3">
+          <div
+            className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-label="Ricerca"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={pct}
+          >
+            <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+          </div>
+          <span className="text-[13px] text-muted-foreground">
+            Cerco…<span className="tabular-nums" aria-hidden>{` ${pct}%`}</span>
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              findStop.current = true;
+            }}
+          >
+            Ferma
+          </Button>
+        </div>
+      );
+    }
+    const { options, partial } = f.result;
+    return (
+      <div className="flex flex-col gap-2 text-[13px] leading-snug">
+        {partial ? (
+          <p className="text-muted-foreground">
+            Ricerca fermata prima della fine:{" "}
+            {options.length ? "ecco le migliori trovate fin lì." : "nessuna proposta trovata fin lì."}
+          </p>
+        ) : options.length === 0 ? (
+          <p className="text-muted-foreground">
+            {t.kind === "gap"
+              ? "Nessuna combinazione di una o due mosse toglie questa buca senza crearne un’altra o senza violare un vincolo rigido."
+              : "Nessuna combinazione di una o due mosse sposta questa lezione senza violare un vincolo rigido."}
+          </p>
+        ) : null}
+        {options.map((opt, i) => (
+          <div key={i} className="rounded-lg border border-border bg-background/70 p-2.5">
+            <p className="flex items-center gap-1.5 font-medium">
+              <span className={cn("size-2.5 shrink-0 rounded-full", VERDICT_DOT[opt.effect.verdict])} aria-hidden />
+              Proposta {i + 1} · {opt.steps.length === 1 ? "1 mossa" : `${opt.steps.length} mosse`}
+              <span className="sr-only">: {VERDICT_WORD[opt.effect.verdict]}</span>
+            </p>
+            <ol className="mt-1 flex flex-col gap-0.5">
+              {opt.steps.map((st, k) => (
+                <li key={k}>
+                  {opt.steps.length > 1 ? `${k + 1}. ` : ""}
+                  {stepText(st)}
+                </li>
+              ))}
+            </ol>
+            <div className="mt-1 flex flex-col gap-0.5">
+              <EffectLines effect={opt.effect} />
+            </div>
+            <Button size="sm" className="mt-2" onClick={() => applyFix(opt)}>
+              {opt.steps.length === 1 ? "Fai la mossa" : `Fai le ${opt.steps.length} mosse`}
+            </Button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <section ref={sectionRef} className="mt-1">
+      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background/95 px-1 py-2 backdrop-blur-sm">
+        <h2 className="mr-auto font-display text-lg">Ritocchi</h2>
+        <span className="hidden text-[13px] text-muted-foreground sm:inline">
+          {edit.history.length === 0
+            ? edit.from === "proposta"
+              ? "Sulla proposta"
+              : "Nessun cambio"
+            : edit.history.length === 1
+              ? "1 cambio, non ancora salvato"
+              : `${edit.history.length} cambi, non ancora salvati`}
+        </span>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Annulla l’ultimo cambio"
+          title="Annulla l’ultimo cambio"
+          onClick={undo}
+          disabled={!edit.history.length}
+        >
+          <Undo2 className="size-4" aria-hidden />
+        </Button>
+        <Button
+          variant="outline"
+          className={cn(confirmClose && "border-destructive text-destructive")}
+          onClick={() => {
+            if (edit.history.length && !confirmClose) setConfirmClose(true);
+            else onClose();
+          }}
+        >
+          {confirmClose ? "Esci senza salvare?" : "Chiudi"}
+        </Button>
+        <Button onClick={onApply} disabled={!canApply} aria-label="Usa questo orario">
+          <span className="sm:hidden">Usa</span>
+          <span className="hidden sm:inline">Usa questo orario</span>
+        </Button>
+      </div>
+
+      <ReportPanel current={current} proposal={report} mode="edit" />
+
+      <div className="paper-panel mt-3 rounded-xl p-4 sm:p-5">
+        <p className="text-sm text-muted-foreground">
+          Tocca una lezione, poi l’ora dove spostarla: il colore dice cosa cambia. Con il lucchetto la blocchi e
+          «Proponi orario» non la sposta più.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Segmented
+            label="Vista"
+            value={view}
+            onChange={(v) => {
+              setView(v);
+              setTarget(null);
+              setGapZ(null);
+              if (find?.job.target.kind === "gap") setFind(null);
+              if (sel && v === "teacher" && selLesson) setTeacherId(selLesson.teacherId);
+              if (sel && v === "class") setClassId(sel.classId);
+            }}
+            options={[
+              { value: "class", label: "Per classe" },
+              { value: "teacher", label: "Per docente" },
+            ]}
+          />
+          {view === "class" ? (
+            <NativeSelect
+              className="w-auto min-w-28"
+              aria-label="Classe"
+              value={classId}
+              onChange={(e) => {
+                setClassId(e.target.value);
+                reset();
+              }}
+            >
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </NativeSelect>
+          ) : (
+            <NativeSelect
+              className="w-auto min-w-40"
+              aria-label="Docente"
+              value={teacherId}
+              onChange={(e) => {
+                setTeacherId(e.target.value);
+                reset();
+              }}
+            >
+              {teachers
+                .filter((t) => withLessons.has(t.id))
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {teacherName(t)}
+                  </option>
+                ))}
+            </NativeSelect>
+          )}
+          {view === "teacher" && shownTeacher && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={Boolean(shownTeacher.lockWeek)}
+              onClick={() => {
+                onUpdateTeacher(shownTeacher.id, { lockWeek: !shownTeacher.lockWeek });
+                setTarget(null);
+              }}
+              className={cn(
+                "inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors",
+                shownTeacher.lockWeek
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {shownTeacher.lockWeek ? <Lock className="size-4" aria-hidden /> : <LockOpen className="size-4" aria-hidden />}
+              {shownTeacher.lockWeek ? "Settimana bloccata" : "Blocca la settimana"}
+            </button>
+          )}
+        </div>
+
+        {view === "teacher" && shownTeacher && (
+          <p className="mt-3 text-[13px] text-muted-foreground">
+            {(() => {
+              const g = report.gapsByTeacher.find((x) => x.id === shownTeacher.id);
+              return g && g.gaps > 0 ? (
+                <>
+                  <span className="font-medium text-warning">{g.gaps === 1 ? "1 ora buca" : `${g.gaps} ore buche`}</span>: {g.where}.{" "}
+                  {g.gaps === 1 ? "Toccala" : "Toccane una"} per cercare come toglierla.
+                </>
+              ) : (
+                "Nessuna ora buca."
+              );
+            })()}
+          </p>
+        )}
+        <table className="mt-3 w-full table-fixed border-collapse">
+          <thead>
+            <tr>
+              <th className="w-8 sm:w-10" />
+              {days.map((d) => (
+                <th key={d} className="pb-1 text-[12px] font-medium text-muted-foreground">
+                  {DAY_SHORT[d]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((p) => (
+              <tr key={p.id}>
+                <td className="pr-1 text-center text-[11px] font-medium text-muted-foreground">{p.index}ª</td>
+                {days.map((d) => {
+                  const z = editor.cell(d, p.id);
+                  if (z < 0) return <td key={d} />;
+                  const eff = verdictOf(z);
+                  if (view === "class") {
+                    const lesson = editor.lessonAt(classId, z);
+                    const t = lesson ? tById.get(lesson.teacherId) : undefined;
+                    const isSel = Boolean(sel && sel.classId === classId && sel.z === z);
+                    const tint = !isSel && eff && eff.verdict !== "same";
+                    return (
+                      <td key={d} className="p-0.5">
+                        <button
+                          type="button"
+                          aria-label={`${DAY_SHORT[d]} ${p.index}ª: ${lesson ? `${lesson.subject}, ${short(t)}` : "libera"}${lesson?.locked ? ", bloccata" : ""}${eff ? `. Spostando qui: ${VERDICT_WORD[eff.verdict]}` : ""}`}
+                          aria-pressed={isSel}
+                          onClick={() => tap(z, lesson ? classId : null)}
+                          className={cellClass(z, isSel, Boolean(lesson))}
+                          style={
+                            t && !tint
+                              ? { background: `color-mix(in srgb, ${t.color} var(--teacher-wash), transparent)` }
+                              : undefined
+                          }
+                        >
+                          {lesson ? (
+                            <>
+                              <span className="w-full truncate text-[12px] font-medium">
+                                <span className="sm:hidden">{subjectAbbr(lesson.subject)}</span>
+                                <span className="hidden sm:inline">{lesson.subject}</span>
+                              </span>
+                              <span className="w-full truncate text-[11px] text-muted-foreground">{short(t)}</span>
+                            </>
+                          ) : (
+                            <span className="text-[12px] text-ink-faint">—</span>
+                          )}
+                          {lesson?.locked && <Lock className="absolute right-1 top-1 size-3 text-muted-foreground" aria-hidden />}
+                          {!isSel && eff?.verdict === "breaks" && (
+                            <TriangleAlert className="absolute bottom-1 right-1 size-3 text-destructive" aria-hidden />
+                          )}
+                        </button>
+                      </td>
+                    );
+                  }
+                  const cellT = editor.teacherAt(teacherId, z);
+                  const isGap = cellT.kind !== "lesson" && Boolean(cellT.gap);
+                  const isSel =
+                    Boolean(sel && sel.z === z && cellT.kind === "lesson" && cellT.classId === sel.classId) ||
+                    (!sel && gapNow === z);
+                  const lessonClass = cellT.kind === "lesson" ? cellT.classId : null;
+                  return (
+                    <td key={d} className="p-0.5">
+                      <button
+                        type="button"
+                        aria-label={`${DAY_SHORT[d]} ${p.index}ª: ${
+                          cellT.kind === "lesson"
+                            ? `${cellT.className}, ${cellT.subject}${cellT.locked ? ", bloccata" : ""}`
+                            : cellT.kind === "disp"
+                              ? "a disposizione"
+                              : cellT.kind === "away"
+                                ? "altrove"
+                                : cellT.kind === "travel"
+                                  ? "spostamento tra plessi"
+                                  : `${cellT.kind === "no" ? "no" : "libera"}${cellT.gap ? ", ora buca" : ""}`
+                        }${eff ? `. Spostando qui: ${VERDICT_WORD[eff.verdict]}` : ""}`}
+                        aria-pressed={isSel}
+                        onClick={() => tap(z, lessonClass, isGap)}
+                        className={cellClass(z, isSel, cellT.kind === "lesson")}
+                        style={
+                          cellT.kind === "lesson" && shownTeacher && !(eff && eff.verdict !== "same" && !isSel)
+                            ? { background: `color-mix(in srgb, ${shownTeacher.color} var(--teacher-wash), transparent)` }
+                            : undefined
+                        }
+                      >
+                        {cellT.kind === "lesson" ? (
+                          <>
+                            <span className="w-full truncate text-[12px] font-medium">{cellT.className}</span>
+                            <span className="w-full truncate text-[11px] text-muted-foreground">
+                              <span className="sm:hidden">{subjectAbbr(cellT.subject)}</span>
+                              <span className="hidden sm:inline">{cellT.subject}</span>
+                            </span>
+                          </>
+                        ) : cellT.kind === "away" ? (
+                          <X className="size-4 text-muted-foreground" aria-hidden />
+                        ) : cellT.gap ? (
+                          <span className="rounded bg-warning-soft px-1 text-[11px] font-medium text-warning">
+                            {cellT.kind === "no" ? "no · buca" : "buca"}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-ink-faint">
+                            {cellT.kind === "disp" ? "disp." : cellT.kind === "travel" ? "spost." : cellT.kind === "no" ? "no" : "—"}
+                          </span>
+                        )}
+                        {cellT.kind === "lesson" && cellT.locked && (
+                          <Lock className="absolute right-1 top-1 size-3 text-muted-foreground" aria-hidden />
+                        )}
+                        {!isSel && eff?.verdict === "breaks" && (
+                          <TriangleAlert className="absolute bottom-1 right-1 size-3 text-destructive" aria-hidden />
+                        )}
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div
+        className="sticky bottom-[57px] z-10 mt-3 max-h-[46dvh] overflow-y-auto rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur md:bottom-3"
+        aria-live="polite"
+      >
+        {(!sel || !selLesson) && gapNow !== null ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 text-sm leading-snug">
+                <span className="font-semibold text-warning">Ora buca</span> · {short(shownTeacher)} · {cells[gapNow]?.label}
+              </p>
+              <Button variant="ghost" size="icon-sm" aria-label="Deseleziona" onClick={reset}>
+                <X className="size-4" aria-hidden />
+              </Button>
+            </div>
+            {findBlock({ kind: "gap", teacherId, z: gapNow })}
+          </div>
+        ) : !sel || !selLesson ? (
+          <p className="text-sm text-muted-foreground">
+            {notice ??
+              (view === "teacher"
+                ? "Tocca una lezione per spostarla, o una buca per cercare come toglierla."
+                : "Tocca una lezione per spostarla.")}
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 text-sm leading-snug">
+                <span className="font-semibold">{selLesson.subject}</span> · {short(selTeacher)} · {className(sel.classId)} ·{" "}
+                {cells[sel.z]?.label}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleLock}
+                disabled={Boolean(selTeacher?.lockWeek)}
+                aria-pressed={selLesson.locked}
+                className={cn(selLesson.locked && "border-primary text-primary")}
+              >
+                {selLesson.locked ? <Lock className="size-3.5" aria-hidden /> : <LockOpen className="size-3.5" aria-hidden />}
+                {selTeacher?.lockWeek ? "Settimana bloccata" : selLesson.locked ? "Bloccata" : "Blocca"}
+              </Button>
+              <Button variant="ghost" size="icon-sm" aria-label="Deseleziona" onClick={reset}>
+                <X className="size-4" aria-hidden />
+              </Button>
+            </div>
+            {selLesson.locked ? (
+              <p className="text-[13px] text-muted-foreground">Ora bloccata: per spostarla, sbloccala.</p>
+            ) : target === null || !effect ? (
+              <>
+                {!(shownFind && sameTarget(shownFind.job.target, { kind: "lesson", classId: sel.classId, z: sel.z })) && (
+                  <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-foreground">
+                    <span>Tocca dove spostarla:</span>
+                    {LEGEND.map((l) => (
+                      <span key={l.label} className="inline-flex items-center gap-1">
+                        <span className={cn("size-2.5 rounded-full", l.dot)} aria-hidden />
+                        {l.label}
+                      </span>
+                    ))}
+                    <span className="inline-flex items-center gap-1">
+                      <TriangleAlert className="size-3.5 text-destructive" aria-hidden />
+                      vietato
+                    </span>
+                  </p>
+                )}
+                {findBlock({ kind: "lesson", classId: sel.classId, z: sel.z })}
+              </>
+            ) : (
+              <div className="flex flex-col gap-1 text-[13px] leading-snug">
+                <p className="text-sm">
+                  ↔ {cells[target]?.label}: {tgtLesson ? `${tgtLesson.subject} · ${short(tgtTeacher)}` : "ora libera"}
+                </p>
+                {issues.length > 0 && <p className="text-destructive">Non rispetta: {issues.join("; ")}.</p>}
+                <EffectLines effect={effect} />
+                <div className="flex gap-2 pt-1">
+                  <Button size="sm" variant={effect.verdict === "breaks" ? "outline" : "default"} onClick={move}>
+                    {effect.verdict === "breaks" ? "Sposta lo stesso" : tgtLesson ? "Scambia" : "Sposta"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setTarget(null)}>
+                    Annulla
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function StepTitle({ n, title, children }: { n: number; title: string; children?: ReactNode }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-[13px] font-semibold text-primary-foreground tabular-nums">
+        {n}
+      </span>
+      <div className="min-w-0">
+        <h2 className="font-display text-lg leading-snug">{title}</h2>
+        {children && <p className="mt-0.5 text-sm text-muted-foreground">{children}</p>}
+      </div>
+    </div>
+  );
+}
+
+function HowItWorks() {
+  const groups: { title: string; items: string[] }[] = [
+    {
+      title: "Sempre",
+      items: [
+        "Rispetta le ore Altrove e No, gli obblighi di classe e i rientri",
+        "Le ore al giorno scelte per un docente (es. 4-4-4-3-3)",
+        "Le ore bloccate restano dove sono",
+        "Un’ora libera per spostarsi tra due plessi",
+        "Mai dalla 1ª alla 6ª con 2 ore buche",
+      ],
+    },
+    {
+      title: "Se possibile",
+      items: [
+        "Docenti a 18 ore: niente buche, mai dalla 1ª alla 6ª",
+        "Gli altri: al massimo una buca al giorno; 6 ore a scuola o 5 lezioni solo se inevitabili",
+        "Italiano e matematica alle prime ore almeno una volta",
+        "Materie da 2 ore in due giorni diversi",
+        "Scienze motorie nelle ultime ore",
+        "Classi senza giornate pesanti",
+        "Giorni interi in un solo plesso",
+      ],
+    },
+  ];
+  return (
+    <details open className="group paper-panel max-w-4xl rounded-xl p-5">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+        <h2 className="font-display text-lg">Come lavora</h2>
+        <ChevronDown
+          className="size-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+          aria-hidden
+        />
+      </summary>
+      <div className="mt-3 grid gap-4 sm:grid-cols-[1fr_1.4fr]">
+        {groups.map((g) => (
+          <div key={g.title}>
+            <p className="text-sm font-semibold text-foreground">{g.title}</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
+              {g.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-sm text-muted-foreground">
+        <span className="font-semibold text-foreground">Non tocca</span> ore a disposizione, sostegno, potenziamento,
+        strumento e pomeriggio.
+      </p>
+    </details>
+  );
+}
+
+function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="inline-flex flex-wrap rounded-lg bg-muted p-1">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          disabled={disabled}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "min-h-9 rounded-md px-3 text-[13px] font-medium transition-colors disabled:opacity-60",
+            value === o.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BrushSwatch({ brush }: { brush: Brush }) {
+  const base = "inline-flex size-7 shrink-0 items-center justify-center rounded-md";
+  if (brush === "erase") {
+    return (
+      <span className={cn(base, "bg-muted text-muted-foreground")}>
+        <Eraser className="size-4" aria-hidden />
+      </span>
+    );
+  }
+  return (
+    <span className={cn(base, CELL_STYLE[brush])}>
+      <MarkGlyph state={brush} label="1A" />
+    </span>
+  );
+}
+
+function AvailabilityPanel({
+  teachers,
+  skipped,
+  days,
+  morning,
+  classes,
+  hoursHere,
+  lockCount,
+  onUpdate,
+  onClassPick,
+  onPattern,
+}: {
+  teachers: Teacher[];
+  skipped: Teacher[];
+  days: DayOfWeek[];
+  morning: MorningPeriod[];
+  classes: PersistedData["classes"];
+  hoursHere: Map<string, number>;
+  lockCount: Map<string, number>;
+  onUpdate: (id: string, patch: Partial<Teacher>) => void;
+  onClassPick: (t: Teacher, day: DayOfWeek, periodId: string) => void;
+  onPattern: (t: Teacher) => void;
+}) {
+  const [brush, setBrush] = useState<Brush>("away");
+  const [query, setQuery] = useState("");
+  const current = BRUSHES.find((b) => b.value === brush) ?? BRUSHES[0]!;
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? teachers.filter((t) => `${teacherName(t)} ${t.subjects.join(" ")}`.toLowerCase().includes(q))
+    : teachers;
+
+  function paintCell(t: Teacher, day: DayOfWeek, periodId: string) {
+    if (brush === "class") {
+      onClassPick(t, day, periodId);
+      return;
+    }
+    const cur = cellState(t, day, periodId);
+    onUpdate(t.id, withCells(t, [{ day, periodId }], brush === "erase" || cur === brush ? "empty" : brush));
+  }
+
+  /** Una colonna o una riga intera: × copre tutto, «no» lascia stare × e classi. */
+  function paintLine(t: Teacher, cells: Cell[]) {
+    if (brush === "class") {
+      toast.message("La classe si segna una casella alla volta.");
+      return;
+    }
+    const target =
+      brush === "erase" || brush === "away"
+        ? cells
+        : cells.filter((c) => {
+            const s = cellState(t, c.day, c.periodId);
+            return s !== "away" && s !== "class";
+          });
+    if (!target.length) return;
+    const allSet = brush !== "erase" && target.every((c) => cellState(t, c.day, c.periodId) === brush);
+    onUpdate(t.id, withCells(t, target, brush === "erase" || allSet ? "empty" : brush));
+  }
+
+  return (
+    <section className="paper-panel max-w-4xl rounded-xl p-5">
+      <StepTitle n={1} title="Quando ci sono i docenti">
+        Scegli un segno e tocca le caselle. Toccando un giorno o un’ora segni tutta la colonna o la riga.
+      </StepTitle>
+
+      <div className="sticky top-0 z-20 -mx-5 mt-4 border-y border-border bg-card/95 px-5 py-2 backdrop-blur-sm">
+        <div role="radiogroup" aria-label="Segno da mettere" className="grid grid-cols-4 gap-1 sm:flex sm:flex-wrap">
+          {BRUSHES.map((b) => (
+            <button
+              key={b.value}
+              type="button"
+              role="radio"
+              aria-checked={brush === b.value}
+              aria-label={`${b.label}: ${b.hint}`}
+              onClick={() => setBrush(b.value)}
+              className={cn(
+                "flex min-w-0 flex-col items-center gap-1 rounded-lg border px-1 py-1.5 transition-colors sm:flex-row sm:gap-2 sm:pl-1.5 sm:pr-3 sm:text-left",
+                brush === b.value ? "border-primary bg-accent ring-1 ring-primary" : "border-transparent hover:bg-muted",
+              )}
+            >
+              <BrushSwatch brush={b.value} />
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate text-[12px] font-medium text-foreground sm:text-[13px]">{b.label}</span>
+                <span className="hidden text-[11px] text-muted-foreground sm:block">{b.hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-center text-[12px] text-muted-foreground sm:hidden">
+          {current.label}: {current.hint}
+        </p>
+      </div>
+
+      {teachers.length > 6 && (
+        <label className="relative mt-4 block max-w-xs">
+          <span className="sr-only">Cerca docente</span>
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Cerca docente o materia"
+            className="pl-9"
+          />
+        </label>
+      )}
+
+      <ul className="mt-4 grid gap-3 md:grid-cols-2">
+        {shown.map((t) => (
+          <TeacherCard
+            key={t.id}
+            t={t}
+            days={days}
+            morning={morning}
+            classes={classes}
+            hours={hoursHere.get(t.id) ?? 0}
+            locked={lockCount.get(t.id) ?? 0}
+            onUpdate={onUpdate}
+            onCell={(day, periodId) => paintCell(t, day, periodId)}
+            onLine={(cells) => paintLine(t, cells)}
+            onPattern={() => onPattern(t)}
+          />
+        ))}
+      </ul>
+      {shown.length === 0 && <p className="mt-3 text-sm text-muted-foreground">Nessun docente trovato.</p>}
+      {skipped.length > 0 && (
+        <p className="mt-4 text-[12px] text-muted-foreground">
+          Non entrano nell’orario: {skipped.map((t) => teacherName(t)).join(", ")}.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function TeacherCard({
+  t,
+  days,
+  morning,
+  classes,
+  hours,
+  locked,
+  onUpdate,
+  onCell,
+  onLine,
+  onPattern,
+}: {
+  t: Teacher;
+  days: DayOfWeek[];
+  morning: MorningPeriod[];
+  classes: PersistedData["classes"];
+  hours: number;
+  locked: number;
+  onUpdate: (id: string, patch: Partial<Teacher>) => void;
+  onCell: (day: DayOfWeek, periodId: string) => void;
+  onLine: (cells: Cell[]) => void;
+  onPattern: () => void;
+}) {
+  const rientro = t.rientroDays ?? [];
+  const pats = teacherDayPatterns(t);
+  const stale = pats.some((x) => x.reduce((a, b) => a + b, 0) !== hours);
+  const patText = pats.length === 0 ? "" : `${patternLabel(pats[0]!)}${pats.length > 1 ? ` +${pats.length - 1}` : ""}`;
+  return (
+    <li className="rounded-lg border border-border bg-card px-3 py-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-[15px] font-medium">{teacherName(t)}</p>
+          <p className="truncate text-[12px] text-muted-foreground">
+            {t.subjects.slice(0, 3).join(", ")} · {t.weeklyHours} h
+            {(t.dispHours ?? 0) > 0 ? ` · ${t.dispHours} disp.` : ""}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={Boolean(t.otherPlesso)}
+          onClick={() => onUpdate(t.id, { otherPlesso: !t.otherPlesso })}
+          className={cn(
+            "shrink-0 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors",
+            t.otherPlesso
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-border text-muted-foreground hover:bg-muted",
+          )}
+        >
+          {t.otherPlesso ? "Su più plessi" : "Solo qui"}
+        </button>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-1">
+        <span className="mr-1 text-[12px] text-muted-foreground">Rientro T.P.</span>
+        {days.map((d) => {
+          const on = rientro.includes(d);
+          return (
+            <button
+              key={d}
+              type="button"
+              aria-pressed={on}
+              aria-label={on ? `Togli rientro ${DAY_SHORT[d]}` : `Rientro ${DAY_SHORT[d]}: 4ª–6ª`}
+              onClick={() => onUpdate(t.id, { rientroDays: on ? rientro.filter((x) => x !== d) : [...rientro, d] })}
+              className={cn(
+                "h-7 min-w-9 rounded-full border px-2 text-[11px] font-medium transition-colors",
+                on
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {DAY_SHORT[d]}
+            </button>
+          );
+        })}
+      </div>
+
+      {hours > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1">
+          <span className="mr-1 text-[12px] text-muted-foreground">Ore al giorno</span>
+          <button
+            type="button"
+            onClick={onPattern}
+            aria-label={
+              pats.length
+                ? `Ore al giorno: ${pats.map(patternLabel).join(" o ")}${stale ? ", da rivedere" : ""}. Cambia`
+                : "Ore al giorno: decide l’app. Scegli"
+            }
+            className={cn(
+              "h-7 rounded-full border px-2.5 text-[11px] font-medium tabular-nums transition-colors",
+              !pats.length && "border-border text-muted-foreground hover:bg-muted",
+              pats.length > 0 && !stale && "border-primary bg-primary text-primary-foreground",
+              pats.length > 0 && stale && "border-warning bg-warning-soft text-warning",
+            )}
+          >
+            {pats.length ? patText : "Libere"}
+          </button>
+          {stale && <span className="text-[11px] text-warning">da rivedere: ora le ore sono {hours}</span>}
+        </div>
+      )}
+
+      {(t.lockWeek || locked > 0) && (
+        <p className="mt-2 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+          <Lock className="size-3.5" aria-hidden />
+          {t.lockWeek ? "Settimana bloccata" : locked === 1 ? "1 ora bloccata" : `${locked} ore bloccate`}
+          <span className="text-ink-faint">· si cambia in «Ritocca a mano»</span>
+        </p>
+      )}
+
+      <table className="mt-2 w-full border-collapse text-[11px]">
+        <thead>
+          <tr>
+            <th className="w-9" />
+            {days.map((d) => {
+              const away = morning.filter((p) => cellState(t, d, p.id) === "away").length;
+              return (
+                <th key={d} className="p-0.5 font-medium">
+                  <button
+                    type="button"
+                    aria-label={`${DAY_SHORT[d]}: tutto il giorno`}
+                    onClick={() => onLine(morning.map((p) => ({ day: d, periodId: p.id })))}
+                    className={cn(
+                      "mx-auto flex h-8 w-full min-w-9 items-center justify-center rounded-md text-[11px] font-medium transition-colors",
+                      away === morning.length && away > 0
+                        ? "bg-primary/20 text-foreground"
+                        : "text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    {DAY_SHORT[d]}
+                  </button>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {morning.map((p) => (
+            <tr key={p.id}>
+              <td className="p-0.5">
+                <button
+                  type="button"
+                  aria-label={`${p.label}: tutti i giorni`}
+                  onClick={() => onLine(days.map((d) => ({ day: d, periodId: p.id })))}
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted"
+                >
+                  {p.index}ª
+                </button>
+              </td>
+              {days.map((d) => {
+                const state = cellState(t, d, p.id);
+                const must = state === "class" ? (t.mustSlots ?? []).find((a) => sameCell(a, d, p.id)) : undefined;
+                const ids = must ? (must.classIds?.length ? must.classIds : must.classId ? [must.classId] : []) : [];
+                const tags = ids
+                  .map((id) => classes.find((c) => c.id === id))
+                  .filter((c): c is NonNullable<typeof c> => Boolean(c))
+                  .map((c) => `${c.grade}${c.section}`);
+                const classLabel = must?.allClasses
+                  ? "tutte"
+                  : tags.length <= 1
+                    ? (tags[0] ?? "")
+                    : tags.length === 2
+                      ? `${tags[0]}·${tags[1]}`
+                      : `${tags[0]} +${tags.length - 1}`;
+                const what =
+                  state === "away"
+                    ? "altrove"
+                    : state === "no"
+                      ? "no"
+                      : state === "class"
+                        ? `classe ${must?.level === "obbligo" ? "obbligatoria" : "se possibile"}: ${must?.allClasses ? "tutte le sue classi" : tags.join(", ")}`
+                        : "libera";
+                return (
+                  <td key={d} className="p-0.5 text-center">
+                    <button
+                      type="button"
+                      aria-label={`${DAY_SHORT[d]} ${p.label}: ${what}`}
+                      title={state === "class" ? `${DAY_SHORT[d]} ${p.label}: ${what}` : undefined}
+                      onClick={() => onCell(d, p.id)}
+                      className={cn(
+                        "inline-flex h-9 w-full min-w-9 touch-manipulation items-center justify-center rounded-md transition-colors",
+                        state === "class" && must?.level === "obbligo" ? HARD_CLASS_STYLE : CELL_STYLE[state],
+                      )}
+                    >
+                      <MarkGlyph state={state} label={classLabel} />
+                    </button>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </li>
+  );
+}
+
+/** 4-4-4-3-3 (i giorni liberi non si scrivono). */
+function patternLabel(pattern: number[]): string {
+  return [...pattern]
+    .filter((x) => x > 0)
+    .sort((a, b) => b - a)
+    .join("-");
+}
+
+function samePattern(a: number[] | undefined, b: number[]): boolean {
+  return Boolean(a) && patternLabel(a!) === patternLabel(b);
+}
+
+function joinNames(names: string[]): string {
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
+function DayPatternDialog({
+  teacher,
+  data,
+  onClose,
+  onChange,
+}: {
+  teacher: Teacher | null;
+  data: PersistedData;
+  onClose: () => void;
+  onChange: (t: Teacher, list: number[][]) => void;
+}) {
+  const info = useMemo(() => (teacher ? teacherDayInfo(data, teacher.id) : null), [teacher, data]);
+  const options = useMemo(() => (info ? dayPatternOptions(info.hours, info.cap) : []), [info]);
+  const groups = useMemo(() => {
+    const byDays = new Map<number, number[][]>();
+    for (const o of options) {
+      const n = o.filter((x) => x > 0).length;
+      byDays.set(n, [...(byDays.get(n) ?? []), o]);
+    }
+    return [...byDays.entries()].sort((a, b) => b[0] - a[0]);
+  }, [options]);
+  const days = [...data.settings.days].sort((a, b) => a - b);
+  const current = teacher ? teacherDayPatterns(teacher) : [];
+  const stale = info ? current.filter((x) => x.reduce((a, b) => a + b, 0) !== info.hours) : [];
+  const nowLabel = info?.now ? patternLabel(info.now) : null;
+  const chip = (selected: boolean) =>
+    cn(
+      "min-h-10 rounded-lg border px-3 text-sm font-medium tabular-nums transition-colors",
+      selected ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted",
+    );
+  const toggle = (o: number[]) => {
+    if (!teacher) return;
+    const on = current.some((x) => samePattern(x, o));
+    onChange(teacher, on ? current.filter((x) => !samePattern(x, o)) : [...current, o]);
+  };
+  return (
+    <Dialog open={Boolean(teacher)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Ore al giorno</DialogTitle>
+          <DialogDescription>
+            {teacher && info
+              ? `${teacherName(teacher)}: ${info.hours} ore qui${
+                  info.disp > 0 ? ` (${info.lessons} di lezione e ${info.disp} a disposizione)` : ""
+                }.`
+              : ""}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          {info?.now && (
+            <p className="text-sm text-muted-foreground">
+              Ora:{" "}
+              <span className="tabular-nums text-foreground">
+                {days.map((d, i) => `${DAY_SHORT[d]} ${info.now![i] ?? 0}`).join(" · ")}
+              </span>
+            </p>
+          )}
+          <button
+            type="button"
+            aria-pressed={current.length === 0}
+            className={cn(chip(current.length === 0), "w-full text-left")}
+            onClick={() => teacher && onChange(teacher, [])}
+          >
+            Libere{" "}
+            <span className={cn("font-normal", current.length ? "text-muted-foreground" : "opacity-80")}>
+              · decide l’app
+            </span>
+          </button>
+          {stale.length > 0 && (
+            <div>
+              <p className="text-[13px] font-semibold text-warning">Da rivedere: ora le ore sono {info?.hours}</p>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {stale.map((o) => (
+                  <button
+                    key={patternLabel(o)}
+                    type="button"
+                    aria-label={`Togli ${patternLabel(o)}`}
+                    className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-warning bg-warning-soft px-3 text-sm font-medium tabular-nums text-warning"
+                    onClick={() => toggle(o)}
+                  >
+                    {patternLabel(o)}
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {groups.map(([n, list]) => (
+            <div key={n}>
+              <p className="text-[13px] font-semibold text-foreground">{n === 1 ? "1 giorno" : `${n} giorni`}</p>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {list.map((o) => {
+                  const label = patternLabel(o);
+                  const selected = current.some((x) => samePattern(x, o));
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      aria-pressed={selected}
+                      aria-label={`${label}${label === nowLabel ? ", come ora" : ""}`}
+                      className={chip(selected)}
+                      onClick={() => toggle(o)}
+                    >
+                      {label}
+                      {label === nowLabel && (
+                        <span className={cn("ml-1.5 text-[11px] font-normal", selected ? "opacity-80" : "text-muted-foreground")}>
+                          ora
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {info && options.length === 0 && (
+            <p className="text-sm text-muted-foreground">Con le ore segnate (× e «no») non c’è una suddivisione possibile.</p>
+          )}
+          <p className="text-[13px] text-muted-foreground">
+            Puoi sceglierne più di una: ne basta una. I giorni li sceglie l’app.
+            {info && info.disp > 0 ? " Le ore a disposizione contano: con «Da zero» le aggiungi tu dopo." : ""}
+          </p>
+          <div className="flex justify-end">
+            <Button type="button" onClick={onClose}>
+              Fatto
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ClassPickDialog({
+  pick,
+  data,
+  morning,
+  onChange,
+  onSave,
+}: {
+  pick: ClassPick | null;
+  data: PersistedData;
+  morning: MorningPeriod[];
+  onChange: (next: ClassPick | null) => void;
+  /** all: scelte tutte le sue classi («Tutte»): vale anche per quelle assegnate dopo */
+  onSave: (pick: ClassPick, remove: boolean, all: boolean) => void;
+}) {
+  const t = pick ? data.teachers.find((x) => x.id === pick.teacherId) : undefined;
+  const hour = pick ? (morning.find((p) => p.id === pick.periodId)?.label ?? pick.periodId) : "";
+  const options = pick
+    ? [
+        ...new Map(
+          cattedreOfTeacher(data, pick.teacherId)
+            .map((c) => data.classes.find((cl) => cl.id === c.classId))
+            .filter((c): c is NonNullable<typeof c> => Boolean(c))
+            .map((c) => [c.id, c]),
+        ).values(),
+      ].sort((a, b) => a.name.localeCompare(b.name, "it"))
+    : [];
+  const allOn = options.length > 1 && options.every((c) => pick?.selected.includes(c.id));
+  const chip = (on: boolean) =>
+    cn(
+      "inline-flex min-h-10 min-w-14 items-center justify-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors",
+      on ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted",
+    );
+  return (
+    <Dialog open={Boolean(pick)} onOpenChange={(open) => !open && onChange(null)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {pick ? `${DAY_SHORT[pick.day]} ${hour}` : ""}
+          </DialogTitle>
+          <DialogDescription>{t ? `${teacherName(t)}: quale classe a quest’ora? Ne basta una.` : ""}</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          {options.length > 1 && (
+            <>
+              <button
+                type="button"
+                aria-pressed={allOn}
+                onClick={() => pick && onChange({ ...pick, selected: allOn ? [] : options.map((c) => c.id) })}
+                className={chip(allOn)}
+              >
+                {allOn && <Check className="size-4" aria-hidden />}
+                Tutte
+              </button>
+              <span className="h-7 w-px bg-border" aria-hidden />
+            </>
+          )}
+          {options.map((cls) => {
+            const on = Boolean(pick?.selected.includes(cls.id));
+            return (
+              <button
+                key={cls.id}
+                type="button"
+                aria-pressed={on}
+                onClick={() =>
+                  pick &&
+                  onChange({
+                    ...pick,
+                    selected: on ? pick.selected.filter((id) => id !== cls.id) : [...pick.selected, cls.id],
+                  })
+                }
+                className={chip(on)}
+              >
+                {cls.name}
+              </button>
+            );
+          })}
+          {options.length === 0 && (
+            <p className="text-sm text-muted-foreground">Nessuna classe: assegna prima le cattedre.</p>
+          )}
+        </div>
+        {allOn && (
+          <p className="text-[13px] text-muted-foreground">
+            Va bene una qualsiasi delle sue classi, anche quelle che gli assegnerai dopo.
+          </p>
+        )}
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <Segmented
+            label="Quanto conta"
+            value={pick?.level ?? "preferenza"}
+            onChange={(level) => pick && onChange({ ...pick, level })}
+            options={[
+              { value: "preferenza", label: "Se possibile" },
+              { value: "obbligo", label: "Obbligatorio" },
+            ]}
+          />
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-4">
+          {pick?.existing ? (
+            <Button variant="ghost" type="button" onClick={() => pick && onSave(pick, true, false)}>
+              Togli
+            </Button>
+          ) : (
+            <span />
+          )}
+          <Button
+            type="button"
+            disabled={!pick || pick.selected.length === 0}
+            onClick={() => pick && pick.selected.length > 0 && onSave(pick, false, allOn)}
+          >
+            Salva
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TeacherWeekPreview({
   data,
+  report,
+  scratch,
+  disp,
   teachers,
   days,
   periods,
 }: {
   data: PersistedData;
+  /** per le ore buche (le stesse del confronto) */
+  report: TimetableReport;
+  /** «Da zero»: le disposizioni vanno rimesse (dove indicato con «+ disp.») */
+  scratch: boolean;
+  /** disposizioni dopo la proposta (dove cambiano) */
+  disp: Record<string, { day: DayOfWeek; periodId: string }[]>;
   teachers: Teacher[];
   days: DayOfWeek[];
   periods: { id: string; index: number }[];
 }) {
-  const rows = [...teachers].sort((a, b) => a.lastName.localeCompare(b.lastName, "it"));
+  const gapsOf = new Map(report.gapsByTeacher.map((g) => [g.id, g]));
+  const has = (list: { day: DayOfWeek; periodId: string }[] | undefined, day: DayOfWeek, periodId: string) =>
+    (list ?? []).some((a) => a.day === day && a.periodId === periodId);
   return (
     <div className="paper-panel mt-3 overflow-x-auto rounded-xl">
+      <p className="px-3 pt-3 text-[12px] text-muted-foreground">
+        <span className="rounded bg-warning-soft px-1 font-medium text-warning">buca</span> ora vuota tra due lezioni ·{" "}
+        {scratch ? (
+          <>
+            <span className="rounded bg-success-soft px-1 font-medium text-success">+ disp.</span> qui va un’ora a
+            disposizione del docente (così non è una buca)
+          </>
+        ) : (
+          <>
+            <span className="text-ink-faint">disp.</span> a disposizione (non è una buca)
+          </>
+        )}
+      </p>
       <table className="w-full min-w-[720px] border-collapse text-[12px]">
         <thead>
           <tr className="border-b border-border text-left text-muted-foreground">
@@ -785,39 +2119,55 @@ function TeacherWeekPreview({
           </tr>
         </thead>
         <tbody>
-          {rows.map((t) => (
-            <tr key={t.id} className="border-b border-border last:border-0 align-top">
-              <td className="sticky left-0 z-10 bg-card px-3 py-2">
-                <div className="text-[13px] font-medium">{teacherName(t)}</div>
-                <div className="text-[10px] tracking-wide text-ink-faint">{t.weeklyHours} h</div>
-              </td>
-              {days.map((d) => (
-                <td key={d} className="px-2 py-2 font-normal leading-[1.35] text-[11px]">
-                  {periods.map((p) => {
-                    const slot = data.slots.find(
-                      (s) => s.teacherId === t.id && s.day === d && s.periodId === p.id,
-                    );
-                    const cls = slot ? data.classes.find((c) => c.id === slot.classId) : null;
-                    return (
-                      <div
-                        key={p.id}
-                        className={slot ? "text-foreground" : "text-ink-faint"}
-                      >
-                        {slot ? (
-                          <>
-                            {p.index} {cls?.name ?? ""}{" "}
-                            <span className="font-semibold">{slot.subject}</span>
-                          </>
-                        ) : (
-                          `${p.index}  —`
-                        )}
-                      </div>
-                    );
-                  })}
+          {teachers.map((t) => {
+            const g = gapsOf.get(t.id);
+            const tDisp = disp[t.id] ?? t.dispSlots;
+            return (
+              <tr key={t.id} className="border-b border-border align-top last:border-0">
+                <td className="sticky left-0 z-10 bg-card px-3 py-2">
+                  <div className="text-[13px] font-medium">{teacherName(t)}</div>
+                  <div className="text-[10px] tracking-wide text-ink-faint">
+                    {t.weeklyHours} h
+                    {g && g.gaps > 0 && (
+                      <span className="font-medium text-warning"> · {g.gaps === 1 ? "1 buca" : `${g.gaps} buche`}</span>
+                    )}
+                  </div>
                 </td>
-              ))}
-            </tr>
-          ))}
+                {days.map((d) => (
+                  <td key={d} className="px-2 py-2 text-[11px] font-normal leading-[1.35]">
+                    {periods.map((p) => {
+                      const slot = data.slots.find((s) => s.teacherId === t.id && s.day === d && s.periodId === p.id);
+                      const cls = slot ? data.classes.find((c) => c.id === slot.classId) : null;
+                      if (slot)
+                        return (
+                          <div key={p.id} className="text-foreground">
+                            {p.index} {cls?.name ?? ""} <span className="font-semibold">{slot.subject}</span>
+                          </div>
+                        );
+                      if (has(g?.cells, d, p.id))
+                        return (
+                          <div key={p.id}>
+                            {p.index} <span className="rounded bg-warning-soft px-1 font-medium text-warning">buca</span>
+                          </div>
+                        );
+                      if (has(g?.fill, d, p.id))
+                        return (
+                          <div key={p.id}>
+                            {p.index} <span className="rounded bg-success-soft px-1 font-medium text-success">+ disp.</span>
+                          </div>
+                        );
+                      return (
+                        <div key={p.id} className="text-ink-faint">
+                          {p.index}{" "}
+                          {!scratch && has(tDisp, d, p.id) ? "disp." : has(t.awaySlots, d, p.id) ? "altrove" : " —"}
+                        </div>
+                      );
+                    })}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -888,9 +2238,7 @@ function ClassPreview({
                 </div>
               </td>
               {days.map((d) => {
-                const occupants = slots.filter(
-                  (s) => s.classId === classId && s.day === d && s.periodId === p.id,
-                );
+                const occupants = slots.filter((s) => s.classId === classId && s.day === d && s.periodId === p.id);
                 const t = occupants[0] ? teachers.find((x) => x.id === occupants[0]!.teacherId) : null;
                 return (
                   <td key={d} className="p-1.5 align-top">
@@ -948,9 +2296,7 @@ function DayPreview({
                 </div>
               </td>
               {classes.map((c) => {
-                const occupants = slots.filter(
-                  (s) => s.classId === c.id && s.day === day && s.periodId === p.id,
-                );
+                const occupants = slots.filter((s) => s.classId === c.id && s.day === day && s.periodId === p.id);
                 const t = occupants[0] ? teachers.find((x) => x.id === occupants[0]!.teacherId) : null;
                 return (
                   <td key={c.id} className="p-1 align-top">
@@ -999,210 +2345,550 @@ function CattedrePanel({
   const rows = cattedre.filter((c) => c.classId === classId);
   const totale = rows.reduce((n, r) => n + r.hours, 0);
   const missing = unassigned.filter((u) => u.classId === classId);
+  const allHours = cattedre.reduce((n, r) => n + r.hours, 0);
 
   function patch(subject: string, change: Partial<Cattedra>) {
-    onWrite(
-      cattedre.map((r) => (r.classId === classId && r.subject === subject ? { ...r, ...change } : r)),
-    );
+    onWrite(cattedre.map((r) => (r.classId === classId && r.subject === subject ? { ...r, ...change } : r)));
   }
 
   return (
-    <section className="paper-panel mt-4 max-w-3xl rounded-xl p-5">
-      <h2 className="font-display text-lg">Cattedre e monte ore</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Una classe alla volta: materia, ore, docente. Poi puoi copiare le ore alle altre classi.
-      </p>
-      <NativeSelect className="mt-3 sm:max-w-xs" value={classId} onChange={(e) => onClassId(e.target.value)}>
-        {classes.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name} ({c.tempo})
-          </option>
-        ))}
-      </NativeSelect>
-      <table className="mt-3 w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
-            <th className="py-1.5 font-medium">Materia</th>
-            <th className="py-1.5 pr-2 text-right font-medium">Ore</th>
-            <th className="py-1.5 font-medium">Docente</th>
-            <th className="w-10 py-1.5" />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.subject} className="border-b border-border/70 last:border-0">
-              <td className="py-1.5 pr-2">{row.subject}</td>
-              <td className="py-1.5">
-                <Input
-                  type="number"
-                  min={0}
-                  max={18}
-                  inputMode="numeric"
-                  className="ml-auto h-10 w-16 text-right tabular-nums"
-                  value={row.hours}
-                  onChange={(e) => patch(row.subject, { hours: Math.max(0, Number(e.target.value) || 0) })}
-                  aria-label={`Ore di ${row.subject}`}
-                />
-              </td>
-              <td className="py-1.5">
-                <NativeSelect
-                  value={row.teacherId}
-                  onChange={(e) => patch(row.subject, { teacherId: e.target.value })}
-                >
-                  <option value="">— scegli —</option>
-                  {teachers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {teacherName(t)}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </td>
-              <td className="py-1.5 text-right">
-                <button
-                  type="button"
-                  className="inline-flex size-10 items-center justify-center text-muted-foreground"
-                  aria-label={`Togli ${row.subject}`}
-                  onClick={() => onWrite(cattedre.filter((r) => !(r.classId === classId && r.subject === row.subject)))}
-                >
-                  ×
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td className="pt-2 font-medium">Totale</td>
-            <td className="pt-2 pr-2 text-right font-medium tabular-nums">{totale}</td>
-            <td colSpan={2} />
-          </tr>
-        </tfoot>
-      </table>
-      <div className="mt-3 flex flex-wrap items-end gap-2">
-        <div className="min-w-[10rem] flex-1">
-          <Input
-            list="cattedra-subjects"
-            placeholder="Altra materia"
-            value={newSubject}
-            onChange={(e) => onNewSubject(e.target.value)}
-          />
-          <datalist id="cattedra-subjects">
-            {SUBJECTS.filter((s) => !rows.some((r) => r.subject === s)).map((s) => (
-              <option key={s} value={s} />
-            ))}
-          </datalist>
-        </div>
-        <Input
-          type="number"
-          min={1}
-          max={18}
-          inputMode="numeric"
-          className="h-10 w-16 text-right"
-          value={newHours}
-          onChange={(e) => onNewHours(e.target.value)}
-          aria-label="Ore della nuova materia"
+    <details className="group paper-panel max-w-4xl rounded-xl p-5">
+      <summary className="flex cursor-pointer list-none items-start justify-between gap-3 [&::-webkit-details-marker]:hidden">
+        <StepTitle n={2} title="Cattedre e ore">
+          {classes.length} classi · {allHours} ore
+          {unassigned.length ? ` · ${unassigned.length} materie senza docente` : " · tutte con il docente"}
+        </StepTitle>
+        <ChevronDown
+          className="mt-1.5 size-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+          aria-hidden
         />
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            const subject = newSubject.trim();
-            const hours = Math.max(0, Number(newHours) || 0);
-            if (!subject || hours <= 0) return;
-            if (rows.some((r) => r.subject.toLowerCase() === subject.toLowerCase())) {
-              toast.message("Questa materia c’è già in questa classe.");
-              return;
-            }
-            onWrite([...cattedre, { classId, subject, hours, teacherId: "" }]);
-            onNewSubject("");
-            onNewHours("1");
-          }}
-        >
-          Aggiungi
-        </Button>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            const rest = cattedre.filter((r) => r.classId !== classId);
-            const next = MONTE_ORE.map((r) => {
-              const prev = rows.find((x) => x.subject === r.subject);
-              return {
-                classId,
-                subject: r.subject,
-                hours: r.hours,
-                teacherId: prev?.teacherId ?? "",
-              };
-            });
-            const extras = rows.filter((r) => !MONTE_ORE.some((m) => m.subject === r.subject));
-            onWrite([...rest, ...next, ...extras]);
-            toast.message("Questa classe: quadro ministeriale (30 ore).");
-          }}
-        >
-          Ministeriale su questa classe
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            const src = cattedre.filter((r) => r.classId === classId);
-            if (src.length === 0) return;
-            const others = classes.filter((c) => c.id !== classId);
-            let next = cattedre.filter((r) => r.classId === classId);
-            for (const cls of others) {
-              const existing = cattedre.filter((r) => r.classId === cls.id);
-              const rebuilt = src.map((row) => {
-                const prev = existing.find((x) => x.subject === row.subject);
-                return {
-                  classId: cls.id,
-                  subject: row.subject,
-                  hours: row.hours,
-                  teacherId: prev?.teacherId ?? "",
-                };
-              });
-              next = [...next, ...rebuilt];
-            }
-            onWrite(next);
-            toast.message("Ore copiate a tutte le classi (i docenti restano i loro).");
-          }}
-        >
-          Copia ore alle altre classi
-        </Button>
-      </div>
-      {missing.length > 0 && (
-        <p className="mt-3 text-sm text-destructive">
-          Senza docente: {missing.map((u) => u.subject).join(" · ")}.
+      </summary>
+      <div className="mt-4">
+        <p className="text-sm text-muted-foreground">
+          Una classe alla volta: materia, ore, docente. Poi puoi copiare le ore alle altre classi.
         </p>
-      )}
-    </section>
+        <NativeSelect className="mt-3 sm:max-w-xs" value={classId} onChange={(e) => onClassId(e.target.value)}>
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} ({c.tempo})
+            </option>
+          ))}
+        </NativeSelect>
+        <table className="mt-3 w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
+              <th className="py-1.5 font-medium">Materia</th>
+              <th className="py-1.5 pr-2 text-right font-medium">Ore</th>
+              <th className="py-1.5 font-medium">Docente</th>
+              <th className="w-10 py-1.5" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.subject} className="border-b border-border/70 last:border-0">
+                <td className="py-1.5 pr-2">{row.subject}</td>
+                <td className="py-1.5">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={18}
+                    inputMode="numeric"
+                    className="ml-auto h-10 w-16 text-right tabular-nums"
+                    value={row.hours}
+                    onChange={(e) => patch(row.subject, { hours: Math.max(0, Number(e.target.value) || 0) })}
+                    aria-label={`Ore di ${row.subject}`}
+                  />
+                </td>
+                <td className="py-1.5">
+                  <NativeSelect value={row.teacherId} onChange={(e) => patch(row.subject, { teacherId: e.target.value })}>
+                    <option value="">— scegli —</option>
+                    {teachers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {teacherName(t)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </td>
+                <td className="py-1.5 text-right">
+                  <button
+                    type="button"
+                    className="inline-flex size-10 items-center justify-center text-muted-foreground"
+                    aria-label={`Togli ${row.subject}`}
+                    onClick={() => onWrite(cattedre.filter((r) => !(r.classId === classId && r.subject === row.subject)))}
+                  >
+                    <X className="size-4" aria-hidden />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td className="pt-2 font-medium">Totale</td>
+              <td className="pt-2 pr-2 text-right font-medium tabular-nums">{totale}</td>
+              <td colSpan={2} />
+            </tr>
+          </tfoot>
+        </table>
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="min-w-[10rem] flex-1">
+            <Input
+              list="cattedra-subjects"
+              placeholder="Altra materia"
+              value={newSubject}
+              onChange={(e) => onNewSubject(e.target.value)}
+            />
+            <datalist id="cattedra-subjects">
+              {SUBJECTS.filter((s) => !rows.some((r) => r.subject === s)).map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+          </div>
+          <Input
+            type="number"
+            min={1}
+            max={18}
+            inputMode="numeric"
+            className="h-10 w-16 text-right"
+            value={newHours}
+            onChange={(e) => onNewHours(e.target.value)}
+            aria-label="Ore della nuova materia"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              const subject = newSubject.trim();
+              const hours = Math.max(0, Number(newHours) || 0);
+              if (!subject || hours <= 0) return;
+              if (rows.some((r) => r.subject.toLowerCase() === subject.toLowerCase())) {
+                toast.message("Questa materia c’è già in questa classe.");
+                return;
+              }
+              onWrite([...cattedre, { classId, subject, hours, teacherId: "" }]);
+              onNewSubject("");
+              onNewHours("1");
+            }}
+          >
+            Aggiungi
+          </Button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              const rest = cattedre.filter((r) => r.classId !== classId);
+              const next = MONTE_ORE.map((r) => {
+                const prev = rows.find((x) => x.subject === r.subject);
+                return { classId, subject: r.subject, hours: r.hours, teacherId: prev?.teacherId ?? "" };
+              });
+              const extras = rows.filter((r) => !MONTE_ORE.some((m) => m.subject === r.subject));
+              onWrite([...rest, ...next, ...extras]);
+              toast.message("Questa classe: quadro ministeriale (30 ore).");
+            }}
+          >
+            Ministeriale su questa classe
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              const src = cattedre.filter((r) => r.classId === classId);
+              if (src.length === 0) return;
+              const others = classes.filter((c) => c.id !== classId);
+              let next = cattedre.filter((r) => r.classId === classId);
+              for (const cls of others) {
+                const existing = cattedre.filter((r) => r.classId === cls.id);
+                const rebuilt = src.map((row) => {
+                  const prev = existing.find((x) => x.subject === row.subject);
+                  return { classId: cls.id, subject: row.subject, hours: row.hours, teacherId: prev?.teacherId ?? "" };
+                });
+                next = [...next, ...rebuilt];
+              }
+              onWrite(next);
+              toast.message("Ore copiate a tutte le classi (i docenti restano i loro).");
+            }}
+          >
+            Copia ore alle altre classi
+          </Button>
+        </div>
+        {missing.length > 0 && (
+          <p className="mt-3 text-sm text-destructive">Senza docente: {missing.map((u) => u.subject).join(" · ")}.</p>
+        )}
+      </div>
+    </details>
   );
 }
 
-function Toggle({
-  checked,
-  onChange,
-  label,
-  hint,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-  hint: string;
-}) {
+function formatCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(".", ",")} milioni di`;
+  if (n >= 1000) return `${Math.round(n / 1000)} mila`;
+  return String(n);
+}
+
+function SearchProgress({ progress, onStop }: { progress: RunProgress; onStop: () => void }) {
+  const pct = Math.round(progress.fraction * 100);
   return (
-    <label className="flex min-h-11 items-start gap-2.5 text-sm">
-      <input
-        type="checkbox"
-        className="mt-1 size-4 accent-primary"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <span>
-        <span className="font-medium">{label}</span>
-        <span className="mt-0.5 block text-[13px] text-muted-foreground">{hint}</span>
-      </span>
-    </label>
+    <div className="mt-4 rounded-lg border border-border p-3" aria-live="polite">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium tabular-nums">Sto cercando l’orario migliore… {pct}%</p>
+        <Button variant="outline" size="sm" onClick={onStop}>
+          Basta così
+        </Button>
+      </div>
+      <div
+        className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-label="Avanzamento della ricerca"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+      >
+        <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-2 text-[12px] text-muted-foreground tabular-nums">
+        {progress.iterations > 0
+          ? `Migliore finora: ${progress.bestHard > 0 ? `${progress.bestHard} vincoli ancora da sistemare, ` : ""}${progress.bestGaps} ore buche · ${formatCount(progress.iterations)} combinazioni provate`
+          : "Preparo i dati…"}
+        {progress.workers > 1 ? ` · ${progress.workers} ricerche in parallelo` : ""}
+      </p>
+    </div>
+  );
+}
+
+type CompareRow = {
+  label: string;
+  cur: number | null;
+  prop: number;
+  better: "low" | "high";
+  curText?: string;
+  propText?: string;
+};
+
+function hardCount(r: TimetableReport): number {
+  const h = r.hard;
+  return (
+    h.conflicts.length +
+    h.away.length +
+    h.travel.length +
+    h.no.length +
+    h.longGaps.length +
+    h.rientro.length +
+    h.must.length +
+    h.holes.length +
+    h.pattern.length
+  );
+}
+
+/** Le voci del confronto (anche per l’effetto dei ritocchi). */
+const ROW_LABELS: Record<RowKey, string> = {
+  span6: "A scuola dalla 1ª alla 6ª",
+  six: "Giornate con 6 lezioni",
+  five: "Giornate con 5 lezioni",
+  gaps: "Ore buche tra le lezioni",
+  multiGap: "Giornate con 2 o più ore buche",
+  full: "Docenti a 18 ore: buche o 1ª–6ª",
+  mixed: "Giorni divisi tra due plessi",
+  single: "Giornate con una sola ora",
+  lastMax: "Ultime ore: il docente che ne ha di più",
+  firstHours: "Italiano e matematica alle prime ore",
+  twoBlock: "Materie da 2 ore nello stesso giorno",
+  pe: "Scienze motorie nelle ultime 3 ore",
+  heavy: "Giornate pesanti",
+  noLight: "Giornate senza materie leggere",
+  langBlock: "Lingue 2 ore di fila",
+  sameRun: "Stessa materia 3 ore di fila",
+  split: "Materia spezzata nello stesso giorno",
+  patterns: "Ore al giorno come scelte",
+  classPref: "Classi preferite rispettate",
+};
+const ROW_ORDER = Object.keys(ROW_LABELS) as RowKey[];
+
+/** Le stesse voci, in breve (per l’effetto di un ritocco). */
+const ROW_SHORT: Record<RowKey, string> = {
+  span6: "1ª–6ª",
+  six: "giornate di 6 lezioni",
+  five: "giornate di 5 lezioni",
+  gaps: "ore buche",
+  multiGap: "giornate con 2+ buche",
+  full: "docenti a 18 ore",
+  mixed: "giorni su due plessi",
+  single: "giornate di un’ora",
+  lastMax: "ultime ore",
+  firstHours: "prime ore",
+  twoBlock: "materie da 2 ore",
+  pe: "motoria",
+  heavy: "giornate pesanti",
+  noLight: "senza materie leggere",
+  langBlock: "lingue di fila",
+  sameRun: "3 ore di fila",
+  split: "materie spezzate",
+  patterns: "ore al giorno",
+  classPref: "classi preferite",
+};
+
+function compareGroups(cur: TimetableReport | null, prop: TimetableReport): { title: string; rows: CompareRow[] }[] {
+  const c = cur && cur.lessons > 0 ? cur : null;
+  const n = (f: (r: TimetableReport) => number) => ({ cur: c ? f(c) : null, prop: f(prop) });
+  const L = ROW_LABELS;
+  const docenti: CompareRow[] = [
+    { label: L.span6, ...n((r) => r.docenti.span6.length), better: "low" },
+    { label: L.six, ...n((r) => r.docenti.six.length), better: "low" },
+    { label: L.five, ...n((r) => r.docenti.five.length), better: "low" },
+    { label: L.gaps, ...n((r) => r.gapsTotal), better: "low" },
+    { label: L.multiGap, ...n((r) => r.docenti.multiGap.length), better: "low" },
+    { label: L.full, ...n((r) => r.docenti.full.length), better: "low" },
+    { label: L.mixed, ...n((r) => r.docenti.mixed.length), better: "low" },
+    { label: L.single, ...n((r) => r.docenti.single.length), better: "low" },
+    { label: L.lastMax, ...n((r) => r.docenti.lastHours[0]?.count ?? 0), better: "low" },
+  ];
+  const classi: CompareRow[] = [
+    {
+      label: L.firstHours,
+      ...n((r) => r.firstHours.ok),
+      better: "high",
+      curText: c ? `${c.firstHours.ok} su ${c.firstHours.total}` : undefined,
+      propText: `${prop.firstHours.ok} su ${prop.firstHours.total}`,
+    },
+    { label: L.twoBlock, ...n((r) => r.didattica.twoBlock.length), better: "low" },
+    {
+      label: L.pe,
+      ...n((r) => r.pe.ok),
+      better: "high",
+      curText: c ? `${c.pe.ok} su ${c.pe.total}` : undefined,
+      propText: `${prop.pe.ok} su ${prop.pe.total}`,
+    },
+    { label: L.heavy, ...n((r) => r.didattica.heavy.length), better: "low" },
+    { label: L.noLight, ...n((r) => r.didattica.noLight.length), better: "low" },
+    { label: L.langBlock, ...n((r) => r.didattica.langBlock.length), better: "low" },
+    { label: L.sameRun, ...n((r) => r.didattica.sameRun.length), better: "low" },
+    { label: L.split, ...n((r) => r.didattica.split.length), better: "low" },
+  ];
+  const regole: CompareRow[] = [{ label: "Vincoli rigidi non rispettati", ...n(hardCount), better: "low" }];
+  if (prop.patterns.total > 0) {
+    regole.push({
+      label: L.patterns,
+      ...n((r) => r.patterns.ok),
+      better: "high",
+      curText: c ? `${c.patterns.ok} su ${c.patterns.total}` : undefined,
+      propText: `${prop.patterns.ok} su ${prop.patterns.total}`,
+    });
+  }
+  if (prop.classPref.want > 0) {
+    regole.push({
+      label: L.classPref,
+      ...n((r) => r.classPref.hit),
+      better: "high",
+      curText: c ? `${c.classPref.hit} su ${c.classPref.want}` : undefined,
+      propText: `${prop.classPref.hit} su ${prop.classPref.want}`,
+    });
+  }
+  return [
+    { title: "Docenti", rows: docenti },
+    { title: "Classi", rows: classi },
+    { title: "Regole", rows: regole },
+  ];
+}
+
+function IssueList({ title, items }: { title: string; items: { text: string }[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="mt-3">
+      <p className="text-[13px] font-medium">{title}</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[13px] text-muted-foreground">
+        {items.map((it, i) => (
+          <li key={`${title}-${i}`}>{it.text}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ReportDetails({ r }: { r: TimetableReport }) {
+  const d = r.didattica;
+  const t = r.docenti;
+  const hard = [
+    ...r.hard.conflicts,
+    ...r.hard.away,
+    ...r.hard.travel,
+    ...r.hard.no,
+    ...r.hard.longGaps,
+    ...r.hard.rientro,
+    ...r.hard.must,
+    ...r.hard.holes,
+    ...r.hard.pattern,
+  ];
+  const dispToAdd = r.patterns.rows
+    .filter((x) => x.excess === 0 && x.missing > 0)
+    .map((x) => ({
+      text: `${x.name}: ${x.missing === 1 ? "1 ora" : `${x.missing} ore`} a disposizione da mettere, per arrivare a ${x.fits.map(patternLabel).join(" o ")}`,
+    }));
+  const gaps = r.gapsByTeacher
+    .filter((g) => g.gaps > 0)
+    .map((g) => ({ text: `${g.name}: ${g.gaps} (${g.where})` }));
+  const didattica = [
+    ...d.twoBlock,
+    ...d.sameRun,
+    ...d.sameDay,
+    ...d.split,
+    ...d.langBlock,
+    ...d.heavy,
+    ...d.noLight,
+    ...d.teacherMany,
+  ];
+  return (
+    <div className="text-sm">
+      <IssueList title="Vincoli rigidi" items={hard} />
+      <IssueList title="Ore al giorno" items={dispToAdd} />
+      <IssueList title="Docenti a 18 ore" items={t.full} />
+      <IssueList title="Giornate lunghe" items={[...t.six, ...t.span6, ...t.five]} />
+      <IssueList title="Ore buche (ore vuote tra due lezioni)" items={gaps} />
+      <IssueList title="Tra due lezioni, ma non sono buche" items={[...r.notGaps.disp, ...r.notGaps.away]} />
+      <IssueList title="Ore a disposizione da mettere nelle buche" items={r.dispFill} />
+      <IssueList title="Giornate con più ore buche" items={t.multiGap} />
+      <IssueList title="Altro per i docenti" items={[...t.empty, ...t.mixed, ...t.single]} />
+      <IssueList title="Compiti: italiano e matematica alle prime ore" items={r.firstHours.missing} />
+      <IssueList title="Prime ore spostate alla 2ª–3ª" items={r.firstHours.shifted} />
+      <IssueList title="Classi" items={didattica} />
+      <IssueList title="Scienze motorie" items={r.pe.missing} />
+      <IssueList title="Materie concentrate in pochi giorni" items={d.spread} />
+      <IssueList title="Classi preferite non rispettate" items={r.classPref.missing} />
+      {t.lastHours.length > 0 && (
+        <p className="mt-3 text-[13px] text-muted-foreground">
+          Più ultime ore: {t.lastHours.map((x) => `${x.name} ${x.count}`).join(", ")}.
+        </p>
+      )}
+      {r.warnings.length > 0 && <IssueList title="Avvisi" items={r.warnings.map((w) => ({ text: w }))} />}
+    </div>
+  );
+}
+
+function ReportPanel({
+  current,
+  proposal,
+  mode,
+}: {
+  current: TimetableReport | null;
+  proposal: TimetableReport;
+  /** edit: ritocchi a mano (la tabella si apre a richiesta) */
+  mode: SolveMode | "edit";
+}) {
+  const groups = compareGroups(current, proposal);
+  const hasCurrent = Boolean(current && current.lessons > 0);
+  const hard = hardCount(proposal);
+  let better = 0;
+  let worse = 0;
+  for (const g of groups) {
+    for (const row of g.rows) {
+      if (row.cur === null || row.cur === row.prop) continue;
+      if (row.better === "low" ? row.prop < row.cur : row.prop > row.cur) better += 1;
+      else worse += 1;
+    }
+  }
+  const counts = `${better === 0 ? "nessuna voce migliora" : better === 1 ? "migliora 1 voce" : `migliorano ${better} voci`}, ${
+    worse === 0 ? "nessuna peggiora" : worse === 1 ? "1 peggiora" : `${worse} peggiorano`
+  }`;
+  const summary = !hasCurrent
+    ? ""
+    : mode === "edit"
+      ? better === 0 && worse === 0
+        ? "Nessuna voce del confronto cambia rispetto all’orario in uso."
+        : `Rispetto all’orario in uso: ${counts}.`
+      : mode === "improve"
+      ? better === 0 && worse === 0
+        ? "Non ho trovato niente di meglio: nessuna voce migliora senza peggiorarne un’altra. Il tuo orario resta il migliore."
+        : worse === 0
+          ? `${better === 1 ? "Migliora 1 voce" : `Migliorano ${better} voci`}, nessuna peggiora.`
+          : `${better === 1 ? "Migliora 1 voce" : `Migliorano ${better} voci`}; per rispettare le tue scelte ${worse === 1 ? "ne peggiora 1" : `ne peggiorano ${worse}`}.`
+      : `${better === 1 ? "1 voce migliora" : `${better} voci migliorano`}, ${worse === 0 ? "nessuna peggiora" : worse === 1 ? "1 peggiora" : `${worse} peggiorano`}. Le disposizioni le metti tu: nella scheda «Docenti» vedi dove («+ disp.», nelle buche).`;
+  const label = mode === "edit" ? "Nuovo" : "Proposta";
+  const table = (
+    <table className="mt-3 w-full table-fixed border-collapse text-[13px] sm:text-sm">
+      <colgroup>
+        <col />
+        {hasCurrent && <col className="w-[4.25rem] sm:w-24" />}
+        <col className="w-[4.75rem] sm:w-28" />
+      </colgroup>
+      <thead>
+        <tr className="text-left text-[12px] text-muted-foreground">
+          <th className="pb-1 pr-2 font-medium" />
+          {hasCurrent && <th className="whitespace-nowrap px-1 pb-1 text-right font-medium">In uso</th>}
+          <th className="whitespace-nowrap pb-1 pl-1 text-right font-medium">{label}</th>
+        </tr>
+      </thead>
+      {groups.map((g) => (
+        <tbody key={g.title}>
+          <tr>
+            <th colSpan={hasCurrent ? 3 : 2} className="pb-1 pt-4 text-left text-[13px] font-semibold text-foreground">
+              {g.title}
+            </th>
+          </tr>
+          {g.rows.map((row) => {
+            const cmp =
+              row.cur === null || row.cur === row.prop
+                ? 0
+                : (row.better === "low" ? row.prop < row.cur : row.prop > row.cur)
+                  ? 1
+                  : -1;
+            return (
+              <tr key={row.label} className="border-t border-border">
+                <td className="py-1.5 pr-2 leading-snug">{row.label}</td>
+                {hasCurrent && (
+                  <td className="whitespace-nowrap px-1 py-1.5 text-right tabular-nums text-muted-foreground">
+                    {row.cur === null ? "—" : (row.curText ?? row.cur)}
+                  </td>
+                )}
+                <td className="whitespace-nowrap py-1.5 pl-1 text-right tabular-nums">
+                  <span
+                    className={cn(
+                      "inline-flex min-w-8 justify-end rounded-md px-1.5 py-0.5 font-medium",
+                      cmp > 0 && "bg-success-soft text-success",
+                      cmp < 0 && "bg-danger-soft text-destructive",
+                    )}
+                  >
+                    {row.propText ?? row.prop}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      ))}
+    </table>
+  );
+  return (
+    <div className="paper-panel mt-3 rounded-xl p-5">
+      <p className={cn("text-sm", hard > 0 ? "text-destructive" : "text-muted-foreground")}>
+        {hard === 0
+          ? "Tutti i vincoli rispettati"
+          : hard === 1
+            ? "1 vincolo rigido non rispettato"
+            : `${hard} vincoli rigidi non rispettati`}{" "}
+        · {proposal.lessons} ore su{" "}
+        {proposal.lessonsExpected}
+      </p>
+      {summary && <p className="mt-1 text-sm font-medium text-foreground">{summary}</p>}
+      {mode === "edit" ? (
+        <details className="mt-3 border-t border-border pt-3">
+          <summary className="cursor-pointer text-sm font-medium">Confronto voce per voce</summary>
+          {table}
+        </details>
+      ) : (
+        table
+      )}
+      <details className={cn("border-t border-border pt-3", mode === "edit" ? "mt-3" : "mt-4")}>
+        <summary className="cursor-pointer text-sm font-medium">
+          {mode === "edit" ? "Dettagli del nuovo orario" : "Dettagli della proposta"}
+        </summary>
+        <ReportDetails r={proposal} />
+      </details>
+      {hasCurrent && current && (
+        <details className="mt-3 border-t border-border pt-3">
+          <summary className="cursor-pointer text-sm font-medium">Dettagli dell’orario in uso</summary>
+          <ReportDetails r={current} />
+        </details>
+      )}
+    </div>
   );
 }
