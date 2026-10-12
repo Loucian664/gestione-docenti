@@ -441,7 +441,7 @@ function OggiPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-5">
+      <div className="grid gap-5 min-[1100px]:grid-cols-2 min-[1100px]:gap-x-6">
         {byPeriod.map(({ period, items }) => (
           <section key={period.id}>
             <div className="mb-2 flex items-baseline justify-between">
@@ -455,7 +455,7 @@ function OggiPage() {
                 {items.filter(isCovered).length}/{items.length} coperte
               </span>
             </div>
-            <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            <ul className="grid gap-2 md:max-[1100px]:grid-cols-2">
               {items.map((n) => {
                 const cls = data.classes.find((c) => c.id === n.slot.classId);
                 const absent = data.teachers.find((t) => t.id === n.absence.teacherId);
