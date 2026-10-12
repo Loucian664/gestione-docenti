@@ -11,6 +11,7 @@ import type {
   TimetableSlot,
 } from "./types";
 import { addDays, format, getDay, nextMonday, startOfDay } from "date-fns";
+import { withPaletteColors } from "./teacher-palette";
 
 export const DEFAULT_SCHOOL_NAME = "Istituto comprensivo";
 export const LEGACY_SCHOOL_NAMES = [] as const;
@@ -62,19 +63,6 @@ const PERIODS: Settings["periods"] = [
   { id: "p6", index: 6, label: "6ª ora", start: "13:05", end: "14:00" },
 ];
 
-const COLORS = [
-  "#3d5a4c",
-  "#4a6741",
-  "#5c4a32",
-  "#3d4f66",
-  "#6b3f3a",
-  "#4a5c6b",
-  "#5a4a5c",
-  "#3a5c58",
-  "#6b5a3a",
-  "#4a3d32",
-];
-
 function iso(d: Date): string {
   return format(d, "yyyy-MM-dd");
 }
@@ -103,30 +91,30 @@ export function buildSeed(): PersistedData {
     { id: "c-3B", name: "3ª B", grade: 3, section: "B", students: 18, tempo: "TP" },
   ];
 
-  const teachers: Teacher[] = [
-    t("t-ita-1", "Rossi", "Anna", ["Italiano", "Storia", "Geografia", "Educazione civica"], 14, "cattedra", 0),
-    t("t-ita-2", "Bianchi", "Luca", ["Italiano"], 6, "cattedra", 1),
-    t("t-ita-3", "Verdi", "Maria", ["Italiano", "Storia", "Geografia", "Educazione civica"], 14, "cattedra", 2),
-    t("t-ita-4", "Neri", "Paolo", ["Italiano", "Storia", "Geografia"], 14, "cattedra", 3),
-    t("t-ita-5", "Russo", "Elena", ["Italiano"], 12, "cattedra", 4),
-    t("t-mat-1", "Ferrari", "Giulia", ["Matematica", "Scienze"], 18, "cattedra", 5),
-    t("t-mat-2", "Esposito", "Marco", ["Matematica", "Scienze"], 18, "cattedra", 6),
-    t("t-ing-1", "Colombo", "Sara", ["Inglese"], 6, "cattedra", 8),
-    t("t-ing-2", "Ricci", "Davide", ["Inglese"], 12, "cattedra", 9),
-    t("t-fra-1", "Marino", "Laura", ["Francese"], 12, "cattedra", 0),
-    t("t-tec-1", "Greco", "Pietro", ["Tecnologia"], 12, "cattedra", 1),
-    t("t-art-1", "Bruno", "Chiara", ["Arte e Immagine"], 6, "cattedra", 2),
-    t("t-art-2", "Galli", "Andrea", ["Arte e Immagine"], 6, "cattedra", 3),
-    t("t-mus-1", "Conti", "Silvia", ["Musica"], 12, "cattedra", 4),
-    t("t-mot-1", "De Luca", "Fabio", ["Scienze Motorie"], 6, "cattedra", 5),
-    t("t-mot-2", "Costa", "Marta", ["Scienze Motorie"], 6, "cattedra", 6),
-    t("t-rel-1", "Fontana", "Irene", ["Religione"], 6, "religione", 7),
-    t("t-sos-1", "Moretti", "Luca", ["Sostegno"], 18, "sostegno", 8, "2ª A", ["c-2A"]),
-    t("t-sos-2", "Barbieri", "Anna", ["Sostegno"], 18, "sostegno", 9, "3ª A", ["c-3A"]),
-    t("t-sos-3", "Lombardi", "Eva", ["Sostegno"], 9, "sostegno", 0, "2ª B", ["c-2B"]),
-    t("t-sos-4", "Romano", "Daniele", ["Sostegno"], 9, "sostegno", 1, "3ª B", ["c-3B"]),
-    t("t-sos-5", "Serra", "Giorgio", ["Sostegno"], 9, "sostegno", 2, "2ª C", ["c-2C"]),
-  ];
+  const teachers: Teacher[] = withPaletteColors([
+    t("t-ita-1", "Rossi", "Anna", ["Italiano", "Storia", "Geografia", "Educazione civica"], 14, "cattedra"),
+    t("t-ita-2", "Bianchi", "Luca", ["Italiano"], 6, "cattedra"),
+    t("t-ita-3", "Verdi", "Maria", ["Italiano", "Storia", "Geografia", "Educazione civica"], 14, "cattedra"),
+    t("t-ita-4", "Neri", "Paolo", ["Italiano", "Storia", "Geografia"], 14, "cattedra"),
+    t("t-ita-5", "Russo", "Elena", ["Italiano"], 12, "cattedra"),
+    t("t-mat-1", "Ferrari", "Giulia", ["Matematica", "Scienze"], 18, "cattedra"),
+    t("t-mat-2", "Esposito", "Marco", ["Matematica", "Scienze"], 18, "cattedra"),
+    t("t-ing-1", "Colombo", "Sara", ["Inglese"], 6, "cattedra"),
+    t("t-ing-2", "Ricci", "Davide", ["Inglese"], 12, "cattedra"),
+    t("t-fra-1", "Marino", "Laura", ["Francese"], 12, "cattedra"),
+    t("t-tec-1", "Greco", "Pietro", ["Tecnologia"], 12, "cattedra"),
+    t("t-art-1", "Bruno", "Chiara", ["Arte e Immagine"], 6, "cattedra"),
+    t("t-art-2", "Galli", "Andrea", ["Arte e Immagine"], 6, "cattedra"),
+    t("t-mus-1", "Conti", "Silvia", ["Musica"], 12, "cattedra"),
+    t("t-mot-1", "De Luca", "Fabio", ["Scienze Motorie"], 6, "cattedra"),
+    t("t-mot-2", "Costa", "Marta", ["Scienze Motorie"], 6, "cattedra"),
+    t("t-rel-1", "Fontana", "Irene", ["Religione"], 6, "religione"),
+    t("t-sos-1", "Moretti", "Luca", ["Sostegno"], 18, "sostegno", "2ª A", ["c-2A"]),
+    t("t-sos-2", "Barbieri", "Anna", ["Sostegno"], 18, "sostegno", "3ª A", ["c-3A"]),
+    t("t-sos-3", "Lombardi", "Eva", ["Sostegno"], 9, "sostegno", "2ª B", ["c-2B"]),
+    t("t-sos-4", "Romano", "Daniele", ["Sostegno"], 9, "sostegno", "3ª B", ["c-3B"]),
+    t("t-sos-5", "Serra", "Giorgio", ["Sostegno"], 9, "sostegno", "2ª C", ["c-2C"]),
+  ]);
 
   type Lesson = { classId: string; subject: string; teacherId: string; hours: number };
   const L = (classId: string, subject: string, teacherId: string, hours: number): Lesson => ({
@@ -284,7 +272,6 @@ function t(
   subjects: string[],
   weeklyHours: number,
   role: TeacherRole,
-  colorIdx: number,
   notes = "",
   assignedClassIds: string[] = [],
 ): Teacher {
@@ -296,7 +283,7 @@ function t(
     weeklyHours,
     role,
     notes,
-    color: COLORS[colorIdx % COLORS.length],
+    color: "", // lo dà la tavolozza (withPaletteColors)
     assignedClassIds,
   };
 }
@@ -541,6 +528,7 @@ export function applyOrganicoFixes(data: PersistedData): PersistedData {
     return hours > 0 ? { ...x, weeklyHours: hours } : x;
   });
   teachers = teachers.map((x) => (x.preferSlots?.length ? preferToClassMarks(x, data) : x));
+  teachers = withPaletteColors(teachers);
 
   let settings = data.settings;
   const ore = settings?.monteOre;

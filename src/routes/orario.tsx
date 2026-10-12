@@ -36,7 +36,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ScrollGrid } from "@/components/scroll-grid";
-import { PASTEL_TEXT_2, teacherCell } from "@/lib/teacher-palette";
+import { teacherCell } from "@/lib/teacher-palette";
 import { CostruisciOrario } from "@/components/costruisci-orario";
 import { BucheList } from "@/components/buche-list";
 import { gapsOf, gapsRanking, isTimetableTeacher } from "@/lib/build-timetable";
@@ -408,7 +408,7 @@ function OrarioPage() {
                                   className={cn("flex flex-col leading-tight", i > 0 && "mt-1")}
                                 >
                                   <span className="text-[12px] font-medium">{doc ? teacherShort(doc, data.teachers) : ""}</span>
-                                  <span className={cn("text-[11px]", tc.pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}>
+                                  <span className={cn("text-[11px]", tc.text2)}>
                                     {s.subject}
                                     {i > 0 ? " · compr." : ""}
                                   </span>
@@ -531,7 +531,7 @@ function OrarioPage() {
                                   className={cn("flex flex-col leading-tight", i > 0 && "mt-1")}
                                 >
                                   <span className="text-[13px] font-medium">{s.subject}</span>
-                                  <span className={cn("text-[12px]", tc.pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}>
+                                  <span className={cn("text-[12px]", tc.text2)}>
                                     {doc ? teacherShort(doc, data.teachers) : ""}
                                     {i > 0 ? " · compr." : ""}
                                   </span>
@@ -602,11 +602,11 @@ function OrarioPage() {
                           {slot ? (
                             <>
                               <span className="text-[13px] font-medium">{cls?.name}</span>
-                              <span className={cn("text-[12px]", tc.pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}>
+                              <span className={cn("text-[12px]", tc.text2)}>
                                 {slot.subject}
                               </span>
                               {others.length > 0 && (
-                                <span className="text-[11px] text-ink-faint">Compresenza</span>
+                                <span className={cn("text-[11px]", tc.text2)}>Compresenza</span>
                               )}
                             </>
                           ) : (
