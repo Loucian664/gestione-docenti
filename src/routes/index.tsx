@@ -504,7 +504,7 @@ function OggiPage() {
       </Dialog>
 
       <AbsenceDialog open={absenceOpen} onOpenChange={setAbsenceOpen} />
-      <AssignSheet need={assignNeed} onClose={() => setAssignNeed(null)} />
+      <AssignSheet key={assignNeed?.key ?? "chiuso"} need={assignNeed} onClose={() => setAssignNeed(null)} />
     </div>
   );
 }
