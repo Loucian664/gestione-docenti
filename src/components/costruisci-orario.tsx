@@ -665,6 +665,15 @@ function sortRows(list: MoveEffect["rows"]): MoveEffect["rows"] {
   return [...list].sort((a, b) => ROW_ORDER.indexOf(a.key) - ROW_ORDER.indexOf(b.key));
 }
 
+/** Gli esiti in breve, per il riquadro in basso. */
+const VERDICT_SHORT: Record<MoveEffect["verdict"], string> = {
+  better: "meglio",
+  mixed: "in parte",
+  worse: "peggio",
+  breaks: "vietato",
+  same: "non cambia niente",
+};
+
 /** Cosa cambia con uno spostamento o con le mosse di una proposta. */
 function EffectLines({ effect }: { effect: MoveEffect }) {
   const better = effect.rows.filter((r) => r.better);
@@ -777,9 +786,8 @@ function Ritocchi({
   const [find, setFind] = useState<FindState | null>(null);
   /** «Ferma»: la ricerca finisce e tiene le migliori trovate fin lì */
   const findStop = useRef(false);
-  const headRef = useRef<HTMLDivElement>(null);
-  const gridRef = useRef<HTMLTableElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  /** esito di uno spostamento: tutte le righe o solo il riassunto */
+  const [details, setDetails] = useState(false);
 
   const findJob = find?.job ?? null;
   const findDone = Boolean(find?.result);
@@ -829,45 +837,10 @@ function Ritocchi({
   const gapNow = gapCell && gapCell.kind !== "lesson" && gapCell.gap ? gapZ : null;
   const shownFind = find && find.job.forEditor === editor ? find : null;
 
-  /**
-   * Il riquadro in basso, fermo sul fondo dello schermo, può coprire le ultime righe della tabella.
-   * Quando si tocca una casella, o il riquadro cresce, la pagina scorre: se la tabella intera ci sta tra
-   * l'intestazione in alto e il riquadro, la si porta tutta sopra il riquadro; se lo schermo è troppo
-   * basso, resta visibile almeno la casella toccata (o l'ora di arrivo scelta).
-   */
-  useEffect(() => {
-    const panel = panelRef.current;
-    if (!panel || (!sel && gapNow === null)) return;
-    const keepVisible = () => {
-      const grid = gridRef.current;
-      if (!grid) return;
-      // limiti quando intestazione e riquadro sono fermi: in alto e in basso, con 8 px di stacco
-      const top = (headRef.current?.offsetHeight ?? 0) + 8;
-      const pinned = parseFloat(getComputedStyle(panel).bottom) || 0;
-      const bottom = window.innerHeight - pinned - panel.offsetHeight - 8;
-      const g = grid.getBoundingClientRect();
-      const cell = (
-        grid.querySelector<HTMLElement>("[data-target]") ?? grid.querySelector<HTMLElement>('button[aria-pressed="true"]')
-      )?.getBoundingClientRect();
-      // di quanto si può scorrere (lo…hi) per vedere tutta la tabella, oppure, se non ci sta,
-      // per riempire lo spazio libero con la tabella tenendo visibile la casella; poi il minimo indispensabile
-      let lo = g.bottom - bottom;
-      let hi = g.top - top;
-      if (g.height > bottom - top) {
-        lo = Math.max(g.top - top, cell ? cell.bottom - bottom : -Infinity);
-        hi = Math.min(g.bottom - bottom, cell ? cell.top - top : Infinity);
-      }
-      const by = Math.min(Math.max(0, lo), hi);
-      if (Math.abs(by) >= 1) window.scrollBy({ top: by, behavior: "smooth" });
-    };
-    const ro = new ResizeObserver(keepVisible);
-    ro.observe(panel);
-    return () => ro.disconnect();
-  }, [sel, gapNow, target, view]);
-
   function reset() {
     setSel(null);
     setTarget(null);
+    setDetails(false);
     setConfirmClose(false);
     setGapZ(null);
     setFind(null);
@@ -890,7 +863,10 @@ function Ritocchi({
     }
     if (effects?.[z]) {
       if (target === z) move();
-      else setTarget(z);
+      else {
+        setTarget(z);
+        setDetails(false);
+      }
       return;
     }
     if (lessonClassId) {
@@ -987,19 +963,42 @@ function Ritocchi({
     return `${className(st.classId)}: ${lessonText(l)} da ${at(x)} a ${at(y)} (ora libera)`;
   };
 
-  /** Il tasto «Trova», la ricerca in corso o le proposte, per la buca o la lezione scelta. */
+  /** La ricerca di «Trova» (in corso o finita) per la buca o la lezione scelta, se c'è. */
+  const findFor = (t: FindTarget) => (shownFind && sameTarget(shownFind.job.target, t) ? shownFind : null);
+  /** Il tasto «Trova» (prova una o due mosse e propone le migliori); sparisce mentre cerca o mostra le proposte. */
+  const findButton = (t: FindTarget) =>
+    findFor(t) ? null : (
+      <Button
+        size="sm"
+        variant="outline"
+        className="shrink-0"
+        title="Prova una o due mosse e propone le migliori"
+        onClick={() => startFind(t)}
+      >
+        <Search className="size-3.5" aria-hidden />
+        {t.kind === "gap" ? "Trova come toglierla" : "Trova dove spostarla"}
+      </Button>
+    );
+  /** Blocca / sblocca la lezione scelta (con la settimana bloccata si sblocca la settimana). */
+  const lockButton = () => {
+    if (!sel || !selLesson || selTeacher?.lockWeek) return null;
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={toggleLock}
+        aria-pressed={selLesson.locked}
+        className={cn("shrink-0", selLesson.locked && "border-primary text-primary")}
+      >
+        {selLesson.locked ? <Lock className="size-3.5" aria-hidden /> : <LockOpen className="size-3.5" aria-hidden />}
+        {selLesson.locked ? "Bloccata" : "Blocca"}
+      </Button>
+    );
+  };
+  /** Avanzamento e proposte di «Trova», al posto della seconda riga del riquadro. */
   const findBlock = (t: FindTarget) => {
-    const f = shownFind && sameTarget(shownFind.job.target, t) ? shownFind : null;
-    if (!f)
-      return (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <Button size="sm" variant="outline" onClick={() => startFind(t)}>
-            <Search className="size-3.5" aria-hidden />
-            {t.kind === "gap" ? "Trova come toglierla" : "Trova dove spostarla"}
-          </Button>
-          <span className="text-[13px] text-muted-foreground">prova una o due mosse e propone le migliori</span>
-        </div>
-      );
+    const f = findFor(t);
+    if (!f) return null;
     if (!f.result) {
       const pct = Math.round(f.progress * 100);
       return (
@@ -1073,10 +1072,7 @@ function Ritocchi({
 
   return (
     <section ref={sectionRef} className="mt-1 max-md:pb-16">
-      <div
-        ref={headRef}
-        className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm"
-      >
+      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm">
         <h2 className="mr-auto font-display text-lg">Ritocchi</h2>
         <span className="hidden text-[13px] text-muted-foreground sm:inline">
           {edit.history.length === 0
@@ -1122,6 +1118,16 @@ function Ritocchi({
         <p className="text-sm text-muted-foreground">
           Tocca una lezione, poi l’ora dove spostarla: il colore dice cosa cambia. Con il lucchetto la blocchi e
           «Proponi orario» non la sposta più.
+        </p>
+        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-foreground">
+          {LEGEND.map((l) => (
+            <span key={l.label} className="inline-flex items-center gap-1">
+              <span className={cn("inline-flex size-4 items-center justify-center rounded-[3px]", l.swatch)} aria-hidden>
+                <VerdictMark verdict={l.verdict} />
+              </span>
+              {l.label}
+            </span>
+          ))}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Segmented
@@ -1212,7 +1218,7 @@ function Ritocchi({
             })()}
           </p>
         )}
-        <table ref={gridRef} className="mt-3 w-full table-fixed border-collapse">
+        <table className="mt-3 w-full table-fixed border-collapse">
           <thead>
             <tr>
               <th className="w-8 sm:w-10" />
@@ -1243,7 +1249,6 @@ function Ritocchi({
                           type="button"
                           aria-label={`${DAY_SHORT[d]} ${p.index}ª: ${lesson ? `${lesson.subject}, ${short(t)}` : "libera"}${lesson?.locked ? ", bloccata" : ""}${eff ? `. Spostando qui: ${VERDICT_WORD[eff.verdict]}` : ""}`}
                           aria-pressed={isSel}
-                          data-target={!isSel && target === z ? "" : undefined}
                           onClick={() => tap(z, lesson ? classId : null)}
                           className={cn(cellClass(z, isSel, Boolean(lesson)), tc.className)}
                           style={tc.style}
@@ -1301,7 +1306,6 @@ function Ritocchi({
                                   : `${cellT.kind === "no" ? "no" : "libera"}${cellT.gap ? ", ora buca" : ""}`
                         }${eff ? `. Spostando qui: ${VERDICT_WORD[eff.verdict]}` : ""}`}
                         aria-pressed={isSel}
-                        data-target={!isSel && target === z ? "" : undefined}
                         onClick={() => tap(z, lessonClass, isGap)}
                         className={cn(cellClass(z, isSel, cellT.kind === "lesson"), tcT.className)}
                         style={tcT.style}
@@ -1346,88 +1350,116 @@ function Ritocchi({
         </table>
       </div>
 
-      {/* sul telefono sta sopra la barra dei tasti e il menu in basso (113 px), con 8 px di stacco */}
+      {/*
+        Riquadro in basso ad altezza fissa (due righe) in ogni stato: toccando le caselle non cresce e non
+        copre la tabella più di prima, e la pagina non si muove. Si allunga solo a richiesta («dettagli» e
+        proposte di «Trova»). Sul telefono sta sopra la barra dei tasti e il menu in basso (113 px), con 8 px
+        di stacco.
+      */}
       <div
-        ref={panelRef}
-        className="sticky bottom-[121px] z-10 mt-3 max-h-[46dvh] overflow-y-auto rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur md:bottom-3"
+        className="sticky bottom-[121px] z-10 mt-3 max-h-[46dvh] overflow-y-auto rounded-xl border border-border bg-card/95 px-3 py-2 shadow-sm backdrop-blur md:bottom-3"
         aria-live="polite"
       >
         {(!sel || !selLesson) && gapNow !== null ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-start gap-2">
-              <p className="min-w-0 flex-1 text-sm leading-snug">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex h-8 items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-sm">
                 <span className="font-semibold text-warning">Ora buca</span> · {short(shownTeacher)} · {cells[gapNow]?.label}
               </p>
               <Button variant="ghost" size="icon-sm" aria-label="Deseleziona" onClick={reset}>
                 <X className="size-4" aria-hidden />
               </Button>
             </div>
-            {findBlock({ kind: "gap", teacherId, z: gapNow })}
+            {findBlock({ kind: "gap", teacherId, z: gapNow }) ?? (
+              <div className="flex h-8 items-center gap-2">{findButton({ kind: "gap", teacherId, z: gapNow })}</div>
+            )}
           </div>
         ) : !sel || !selLesson ? (
-          <p className="text-sm text-muted-foreground">
+          // l'altezza delle due righe (32 + 6 + 32 px): il messaggio può andare a capo
+          <p className="flex min-h-[70px] items-center justify-center text-balance text-center text-sm text-muted-foreground">
             {notice ??
               (view === "teacher"
                 ? "Tocca una lezione per spostarla, o una buca per cercare come toglierla."
                 : "Tocca una lezione per spostarla.")}
           </p>
         ) : (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-start gap-2">
-              <p className="min-w-0 flex-1 text-sm leading-snug">
-                <span className="font-semibold">{selLesson.subject}</span> · {short(selTeacher)} · {className(sel.classId)} ·{" "}
-                {cells[sel.z]?.label}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex h-8 items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-sm">
+                <span className="font-semibold">
+                  <span className="sm:hidden">{subjectAbbr(selLesson.subject)}</span>
+                  <span className="hidden sm:inline">{selLesson.subject}</span>
+                </span>{" "}
+                {target !== null && effect ? (
+                  <>
+                    {cells[sel.z]?.label} → {cells[target]?.label}
+                    {tgtLesson ? ` · ${tgtLesson.subject}, ${short(tgtTeacher)}` : " · ora libera"}
+                  </>
+                ) : (
+                  <>
+                    · {short(selTeacher)} · {view === "teacher" ? `${className(sel.classId)} · ` : ""}
+                    {cells[sel.z]?.label}
+                  </>
+                )}
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleLock}
-                disabled={Boolean(selTeacher?.lockWeek)}
-                aria-pressed={selLesson.locked}
-                className={cn(selLesson.locked && "border-primary text-primary")}
-              >
-                {selLesson.locked ? <Lock className="size-3.5" aria-hidden /> : <LockOpen className="size-3.5" aria-hidden />}
-                {selTeacher?.lockWeek ? "Settimana bloccata" : selLesson.locked ? "Bloccata" : "Blocca"}
-              </Button>
               <Button variant="ghost" size="icon-sm" aria-label="Deseleziona" onClick={reset}>
                 <X className="size-4" aria-hidden />
               </Button>
             </div>
             {selLesson.locked ? (
-              <p className="text-[13px] text-muted-foreground">Ora bloccata: per spostarla, sbloccala.</p>
-            ) : target === null || !effect ? (
-              <>
-                {!(shownFind && sameTarget(shownFind.job.target, { kind: "lesson", classId: sel.classId, z: sel.z })) && (
-                  <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-foreground">
-                    <span>Tocca dove spostarla:</span>
-                    {LEGEND.map((l) => (
-                      <span key={l.label} className="inline-flex items-center gap-1">
-                        <span className={cn("inline-flex size-4 items-center justify-center rounded-[3px]", l.swatch)} aria-hidden>
-                          <VerdictMark verdict={l.verdict} />
-                        </span>
-                        {l.label}
-                      </span>
-                    ))}
-                  </p>
-                )}
-                {findBlock({ kind: "lesson", classId: sel.classId, z: sel.z })}
-              </>
-            ) : (
-              <div className="flex flex-col gap-1 text-[13px] leading-snug">
-                <p className="text-sm">
-                  ↔ {cells[target]?.label}: {tgtLesson ? `${tgtLesson.subject} · ${short(tgtTeacher)}` : "ora libera"}
+              <div className="flex h-8 items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground md:mr-2 md:flex-none">
+                  {!selTeacher?.lockWeek
+                    ? "Bloccata: per spostarla, sbloccala."
+                    : view === "teacher"
+                      ? "Settimana bloccata: si sblocca qui sopra."
+                      : "Settimana bloccata: si sblocca in «Per docente»."}
                 </p>
-                {issues.length > 0 && <p className="text-destructive">Non rispetta: {issues.join("; ")}.</p>}
-                <EffectLines effect={effect} />
-                <div className="flex gap-2 pt-1">
-                  <Button size="sm" variant={effect.verdict === "breaks" ? "outline" : "default"} onClick={move}>
+                {lockButton()}
+              </div>
+            ) : target !== null && effect ? (
+              <>
+                <div className="flex h-8 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDetails((d) => !d)}
+                    aria-expanded={details}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[13px] md:mr-2 md:flex-none"
+                  >
+                    <VerdictMark verdict={effect.verdict} />
+                    <span className="truncate">{VERDICT_SHORT[effect.verdict]}</span>
+                    <span className="shrink-0 text-muted-foreground underline underline-offset-4">
+                      {details ? "meno" : "dettagli"}
+                    </span>
+                  </button>
+                  <Button
+                    size="sm"
+                    className="shrink-0"
+                    variant={effect.verdict === "breaks" ? "outline" : "default"}
+                    onClick={move}
+                  >
                     {effect.verdict === "breaks" ? "Sposta lo stesso" : tgtLesson ? "Scambia" : "Sposta"}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setTarget(null)}>
+                  <Button size="sm" variant="ghost" className="shrink-0" onClick={() => setTarget(null)}>
                     Annulla
                   </Button>
                 </div>
-              </div>
+                {details && (
+                  <div className="flex flex-col gap-1 text-[13px] leading-snug">
+                    {issues.length > 0 && <p className="text-destructive">Non rispetta: {issues.join("; ")}.</p>}
+                    <EffectLines effect={effect} />
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {findBlock({ kind: "lesson", classId: sel.classId, z: sel.z }) ?? (
+                  <div className="flex h-8 items-center gap-2">
+                    {findButton({ kind: "lesson", classId: sel.classId, z: sel.z })}
+                    {lockButton()}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
