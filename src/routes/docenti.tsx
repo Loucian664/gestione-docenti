@@ -275,7 +275,8 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
-        <DialogHeader>
+        {/* intestazione e piede restano fermi, il contenuto scorre in mezzo */}
+        <DialogHeader className="sticky top-0 z-10 mb-0 bg-popover pb-4">
           <DialogTitle>{isNew ? "Nuovo docente" : "Scheda docente"}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-3">
@@ -443,7 +444,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             Se insegna anche in un altro plesso, segnalalo in Orario → Costruisci, insieme alle ore in cui è
             altrove.
           </p>
-          <div className="flex justify-between pt-2">
+          <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-popover pt-3">
             {!isNew && current && (
               <Button
                 variant="outline"
@@ -456,9 +457,10 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                 Elimina
               </Button>
             )}
-            <Button className="ml-auto" onClick={save}>
-              Salva
+            <Button variant="outline" className="ml-auto" onClick={onClose}>
+              Annulla
             </Button>
+            <Button onClick={save}>Salva</Button>
           </div>
         </div>
       </DialogContent>
