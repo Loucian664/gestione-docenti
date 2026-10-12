@@ -10,6 +10,7 @@ import { SUBSTITUTION_TYPES, type SubstitutionType } from "@/lib/types";
 import { useAppStore, snapshot } from "@/lib/store";
 import {
   isCovered,
+  isShiftType,
   rankSubstitutes,
   teacherName,
   teacherShort,
@@ -90,11 +91,14 @@ export function AssignSheet({
   const [query, setQuery] = useState("");
 
   const current = need?.substitution;
-  const [substituteId, setSubstituteId] = useState(current?.substituteId ?? ranked[0]?.teacher.id ?? "");
+  // Si riparte da capo a ogni ora: se è già coperta è scelto chi la copre, altrimenti nessuno.
+  const coveredNow = Boolean(need && current && isCovered(need) && !isShiftType(current.type));
+  const [substituteId, setSubstituteId] = useState(coveredNow ? (current?.substituteId ?? "") : "");
   const [type, setType] = useState<SubstitutionType | "divisione">(
-    current?.type ?? ranked[0]?.inferredType ?? "disposizione",
+    coveredNow && current?.type ? current.type : "disposizione",
   );
   const [notes, setNotes] = useState(current?.notes ?? "");
+  const [barOpen, setBarOpen] = useState(coveredNow);
 
   if (!need) return null;
 
@@ -114,7 +118,29 @@ export function AssignSheet({
     setSubstituteId(id);
     const r = ranked.find((x) => x.teacher.id === id);
     if (r) setType(r.inferredType);
+    setBarOpen(true);
   }
+
+  function pickDivisione() {
+    setSubstituteId("");
+    setType("divisione");
+    setBarOpen(true);
+  }
+
+  function goToNotes() {
+    const el = document.getElementById("assign-notes");
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    el?.focus({ preventScroll: true });
+  }
+
+  const divisione = SUBSTITUTION_TYPES.find((t) => t.value === "divisione");
+  const chosenTeacher = type === "divisione" ? undefined : data.teachers.find((t) => t.id === substituteId);
+  const chosenLabel =
+    type === "divisione"
+      ? (divisione?.label ?? "Divisione classe")
+      : chosenTeacher
+        ? teacherShort(chosenTeacher, data.teachers)
+        : "—";
 
   function save() {
     store.saveSubstitution({
@@ -199,31 +225,65 @@ export function AssignSheet({
             <p className="text-sm text-muted-foreground">Nessun docente corrisponde alla ricerca.</p>
           )}
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Tipo di copertura</Label>
-            <NativeSelect value={type} onChange={(e) => setType(e.target.value as SubstitutionType)}>
-              {SUBSTITUTION_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
+          {divisione && (
+            <button
+              type="button"
+              onClick={pickDivisione}
+              aria-pressed={type === "divisione"}
+              className={
+                type === "divisione"
+                  ? "flex w-full flex-col items-start rounded-lg bg-accent px-3 py-2.5 text-left"
+                  : "flex w-full flex-col items-start rounded-lg px-3 py-2.5 text-left hover:bg-muted"
+              }
+            >
+              <span className="font-medium">{divisione.label}</span>
+              <span className="text-[12px] text-muted-foreground">{divisione.hint}</span>
+            </button>
+          )}
 
           <div className="flex flex-col gap-1.5">
-            <Label>Note</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+            <Label htmlFor="assign-notes">Note</Label>
+            <Textarea id="assign-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
           </div>
 
           <div className="flex flex-col gap-2 pt-2">
-            <Button onClick={save} className="h-11">
-              {isCovered(need) ? "Aggiorna copertura" : "Assegna"}
-            </Button>
             <Button variant="outline" onClick={clear}>
               Lascia scoperta
             </Button>
           </div>
         </div>
+
+        {barOpen && (
+          <div className="sticky bottom-0 z-10 mt-auto flex flex-col gap-2 border-t border-border bg-popover px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="min-w-0 truncate font-medium">{chosenLabel}</p>
+              <button
+                type="button"
+                onClick={goToNotes}
+                className="shrink-0 text-[13px] font-medium text-primary underline-offset-2 hover:underline"
+              >
+                Aggiungi una nota
+              </button>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <NativeSelect
+                aria-label="Tipo di copertura"
+                className="sm:flex-1"
+                value={type}
+                onChange={(e) => setType(e.target.value as SubstitutionType)}
+              >
+                {SUBSTITUTION_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </NativeSelect>
+              <Button onClick={save} className="h-11 w-full sm:h-10 sm:w-auto">
+                {isCovered(need) ? "Aggiorna copertura" : "Assegna"}
+              </Button>
+            </div>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );
