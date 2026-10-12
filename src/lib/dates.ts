@@ -121,6 +121,21 @@ export function monthCalendarDays(iso: string): string[] {
   return days;
 }
 
+/**
+ * Il mese a settimane per il calendario delle assenze: da lunedì a venerdì, o a sabato se è giorno di
+ * scuola; la domenica mai. Le settimane che restano senza giorni del mese si tolgono.
+ */
+export function monthSchoolDays(iso: string, withSaturday: boolean): string[] {
+  const all = monthCalendarDays(iso);
+  const perWeek = withSaturday ? 6 : 5;
+  const out: string[] = [];
+  for (let i = 0; i < all.length; i += 7) {
+    const week = all.slice(i, i + perWeek);
+    if (week.some((x) => sameMonth(x, iso))) out.push(...week);
+  }
+  return out;
+}
+
 export function shiftMonth(iso: string, dir: number): string {
   return isoDate(addMonths(parseDate(iso), dir));
 }

@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { dateOnLaunch, dateOnResume, formatDayName, formatItDate, formatItFileDate, formatLong } from "./dates.ts";
+import {
+  dateOnLaunch,
+  dateOnResume,
+  formatDayName,
+  formatItDate,
+  formatItFileDate,
+  formatLong,
+  monthSchoolDays,
+  toSchoolDay,
+} from "./dates.ts";
 import { dayNameUpper } from "./types.ts";
 import { dailySheetHeading } from "./export.ts";
 
@@ -35,5 +44,27 @@ describe("date italiane", () => {
   it("usa giorno/mese/anno, non anno-mese-giorno", () => {
     assert.equal(formatItDate("2026-09-21"), "21/09/2026");
     assert.equal(formatItFileDate("2026-09-21"), "21-09-2026");
+  });
+});
+
+describe("calendario delle assenze", () => {
+  it("da lunedì a venerdì: niente sabato e domenica, settimane senza giorni del mese tolte", () => {
+    // novembre 2026 comincia di domenica: la prima settimana (26–30 ottobre) non serve
+    const nov = monthSchoolDays("2026-11-15", false);
+    assert.equal(nov[0], "2026-11-02");
+    assert.equal(nov.length % 5, 0);
+    assert.ok(nov.every((d) => toSchoolDay(d) !== null && toSchoolDay(d)! <= 5));
+    assert.ok(nov.includes("2026-11-30"));
+    assert.equal(nov.at(-1), "2026-12-04");
+  });
+
+  it("con il sabato: sei giorni a settimana, mai la domenica", () => {
+    // agosto 2026 comincia di sabato: con il sabato la prima settimana resta
+    const aug = monthSchoolDays("2026-08-10", true);
+    assert.equal(aug[0], "2026-07-27");
+    assert.equal(aug[5], "2026-08-01");
+    assert.equal(aug.length % 6, 0);
+    assert.ok(aug.every((d) => toSchoolDay(d) !== null));
+    assert.equal(monthSchoolDays("2026-08-10", false)[0], "2026-08-03");
   });
 });

@@ -12,12 +12,11 @@ import {
   formatItFileDate,
   formatMedium,
   formatMonthYear,
-  monthCalendarDays,
   monthRange,
+  monthSchoolDays,
   sameMonth,
   shiftMonth,
   todayIso,
-  toSchoolDay,
 } from "@/lib/dates";
 import { absencesRangeText, absencesRangeXlsx, assemblySummary } from "@/lib/export";
 import { shareOrSaveFile, toastSave, openPdfTab, copyText } from "@/lib/share-file";
@@ -30,7 +29,7 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/assenze")({ component: AssenzePage });
 
-const WEEKDAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+const WEEKDAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
 
 function AssenzePage() {
   const store = useAppStore();
@@ -61,7 +60,9 @@ function AssenzePage() {
     [data.absences],
   );
 
-  const cells = useMemo(() => monthCalendarDays(monthIso), [monthIso]);
+  // sabato solo se è giorno di scuola (Impostazioni → «Includi il sabato»), domenica mai: più spazio per i nomi
+  const withSaturday = data.settings.days.includes(6);
+  const cells = useMemo(() => monthSchoolDays(monthIso, withSaturday), [monthIso, withSaturday]);
   const sintesi = useMemo(() => assemblySummary(data, data.selectedDate), [data]);
 
   return (
@@ -168,16 +169,14 @@ function AssenzePage() {
               <ChevronRight />
             </Button>
           </div>
-          <div className="grid grid-cols-7 gap-1">
-            {WEEKDAYS.map((d) => (
+          <div className={cn("grid gap-1", withSaturday ? "grid-cols-6" : "grid-cols-5")}>
+            {WEEKDAYS.slice(0, withSaturday ? 6 : 5).map((d) => (
               <div key={d} className="px-1 py-1 text-center text-[11px] font-medium text-muted-foreground">
                 {d}
               </div>
             ))}
             {cells.map((iso) => {
               const inMonth = sameMonth(iso, monthIso);
-              const dayNum = toSchoolDay(iso);
-              const weekend = dayNum === null || dayNum === 6;
               const summary = dayCoverage(data, iso);
               const selected = iso === data.selectedDate;
               const today = iso === todayIso();
@@ -204,7 +203,6 @@ function AssenzePage() {
                   className={cn(
                     "flex min-h-[4.75rem] flex-col rounded-lg px-1.5 py-1.5 text-left sm:min-h-[5.5rem] sm:px-2",
                     !inMonth && "opacity-40",
-                    weekend && summary.needs.length === 0 && "bg-muted/40",
                     tone === "ok" && "bg-success-soft",
                     tone === "warn" && "bg-danger-soft",
                     tone === "partial" && "bg-warning-soft",
