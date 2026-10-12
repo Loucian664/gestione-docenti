@@ -51,7 +51,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { PASTEL_TEXT_2, teacherCell } from "@/lib/teacher-palette";
+import { teacherCell } from "@/lib/teacher-palette";
 import { corePeriods, isTpPeriodId } from "@/lib/periods";
 
 type Cell = { day: DayOfWeek; periodId: string };
@@ -1212,7 +1212,7 @@ function Ritocchi({
                                 <span className="hidden sm:inline">{lesson.subject}</span>
                               </span>
                               <span
-                                className={cn("w-full truncate text-[11px]", tc.pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}
+                                className={cn("w-full truncate text-[11px]", tc.text2)}
                               >
                                 {short(t)}
                               </span>
@@ -1220,7 +1220,7 @@ function Ritocchi({
                           ) : (
                             <span className="text-[12px] text-ink-faint">—</span>
                           )}
-                          {lesson?.locked && <Lock className="absolute right-1 top-1 size-3 text-muted-foreground" aria-hidden />}
+                          {lesson?.locked && <Lock className={cn("absolute right-1 top-1 size-3", tc.text2)} aria-hidden />}
                           {!isSel && eff && eff.verdict !== "same" && (
                             <VerdictMark
                               verdict={eff.verdict}
@@ -1266,7 +1266,7 @@ function Ritocchi({
                           <>
                             <span className="w-full truncate text-[12px] font-medium">{cellT.className}</span>
                             <span
-                              className={cn("w-full truncate text-[11px]", tcT.pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}
+                              className={cn("w-full truncate text-[11px]", tcT.text2)}
                             >
                               <span className="sm:hidden">{subjectAbbr(cellT.subject)}</span>
                               <span className="hidden sm:inline">{cellT.subject}</span>
@@ -1284,7 +1284,7 @@ function Ritocchi({
                           </span>
                         )}
                         {cellT.kind === "lesson" && cellT.locked && (
-                          <Lock className="absolute right-1 top-1 size-3 text-muted-foreground" aria-hidden />
+                          <Lock className={cn("absolute right-1 top-1 size-3", tcT.text2)} aria-hidden />
                         )}
                         {!isSel && eff && eff.verdict !== "same" && (
                           <VerdictMark
@@ -2285,12 +2285,12 @@ function TeacherWeekPreview({
 function CellBody({
   occupants,
   teachers,
-  pastel = false,
+  text2 = "text-muted-foreground",
 }: {
   occupants: TimetableSlot[];
   teachers: Teacher[];
-  /** Cella col pastello del docente: testo secondario più scuro. */
-  pastel?: boolean;
+  /** Colore del testo secondario: nelle celle col colore del docente lo dà teacherCell. */
+  text2?: string;
 }) {
   if (occupants.length === 0) {
     return <span className="text-[12px] text-ink-faint">—</span>;
@@ -2302,7 +2302,7 @@ function CellBody({
         return (
           <span key={s.id} className={cn("flex flex-col leading-tight", i > 0 && "mt-1")}>
             <span className="text-[13px] font-medium">{s.subject}</span>
-            <span className={cn("text-[12px]", pastel ? PASTEL_TEXT_2 : "text-muted-foreground")}>
+            <span className={cn("text-[12px]", text2)}>
               {doc ? teacherShort(doc, teachers) : ""}
               {i > 0 ? " · compr." : ""}
             </span>
@@ -2357,7 +2357,7 @@ function ClassPreview({
                       className={cn("flex min-h-16 w-full flex-col rounded-md px-2 py-1.5", teacherCell(t?.color).className)}
                       style={teacherCell(t?.color).style}
                     >
-                      <CellBody occupants={occupants} teachers={teachers} pastel={teacherCell(t?.color).pastel} />
+                      <CellBody occupants={occupants} teachers={teachers} text2={teacherCell(t?.color).text2} />
                     </div>
                   </td>
                 );
@@ -2415,7 +2415,7 @@ function DayPreview({
                       className={cn("flex min-h-[4.25rem] w-full flex-col rounded-md px-2 py-1.5", teacherCell(t?.color).className)}
                       style={teacherCell(t?.color).style}
                     >
-                      <CellBody occupants={occupants} teachers={teachers} pastel={teacherCell(t?.color).pastel} />
+                      <CellBody occupants={occupants} teachers={teachers} text2={teacherCell(t?.color).text2} />
                     </div>
                   </td>
                 );

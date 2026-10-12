@@ -17,10 +17,11 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { corePeriods } from "@/lib/periods";
 import {
-  DEFAULT_TEACHER_COLOR,
   TEACHER_PALETTE,
   TONE_NAMES,
-  findPastel,
+  VIVID_TONE,
+  nextTeacherColor,
+  teacherCell,
   teacherDotColor,
 } from "@/lib/teacher-palette";
 
@@ -205,7 +206,9 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
   const [dispHours, setDispHours] = useState(String(current?.dispHours ?? 0));
   const [role, setRole] = useState<TeacherRole>(current?.role ?? "cattedra");
   const [notes, setNotes] = useState(current?.notes ?? "");
-  const [color, setColor] = useState(current?.color ?? DEFAULT_TEACHER_COLOR);
+  const [color, setColor] = useState(
+    () => current?.color ?? nextTeacherColor(store.teachers.map((t) => t.color)),
+  );
   const [dispSlots, setDispSlots] = useState<{ day: DayOfWeek; periodId: string }[]>(
     current?.dispSlots ?? [],
   );
@@ -435,7 +438,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
           </Field>
           )}
           <Field label="Colore in orario">
-            <ColorSwatches value={color} original={current?.color} onChange={setColor} />
+            <ColorSwatches value={color} onChange={setColor} />
           </Field>
           <Field label="Note">
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
@@ -468,56 +471,44 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
   );
 }
 
-/** «Colore in orario»: 24 pastelli; un colore di prima resta come «colore attuale» finché non se ne sceglie un altro. */
-function ColorSwatches({
-  value,
-  original,
-  onChange,
-}: {
-  value: string;
-  original: string | undefined;
-  onChange: (color: string) => void;
-}) {
-  const legacy = original && !findPastel(original) ? original : null;
+/** «Colore in orario»: 12 tinte in due gruppi da 6; in ogni colonna tenue, medio, deciso e, staccato, il vivace. */
+function ColorSwatches({ value, onChange }: { value: string; onChange: (color: string) => void }) {
   const isOn = (c: string) => value.toUpperCase() === c.toUpperCase();
-  const ring = "ring-2 ring-primary ring-offset-2 ring-offset-popover";
+  const groups = [TEACHER_PALETTE.slice(0, 6), TEACHER_PALETTE.slice(6)];
   return (
-    <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-8 gap-1">
-        {TEACHER_PALETTE.map((hue) => (
-          <div key={hue.name} className="flex min-w-0 flex-col gap-1">
-            <span className="truncate text-center text-[10px] tracking-tight text-muted-foreground" title={hue.name}>
-              {hue.name}
-            </span>
-            {hue.tones.map((tone, i) => (
-              <button
-                key={tone}
-                type="button"
-                aria-label={`${hue.name} ${TONE_NAMES[i]}`}
-                aria-pressed={isOn(tone)}
-                title={`${hue.name} ${TONE_NAMES[i]}`}
-                onClick={() => onChange(tone)}
-                className={cn("h-7 rounded-md border border-black/10", isOn(tone) && ring)}
-                style={{ background: tone }}
-              />
-            ))}
-          </div>
-        ))}
-      </div>
-      {legacy && (
-        <button
-          type="button"
-          aria-pressed={isOn(legacy)}
-          onClick={() => onChange(legacy)}
-          className="flex items-center gap-2 self-start text-[12px] text-muted-foreground"
-        >
-          <span
-            className={cn("h-7 w-10 rounded-md border border-black/10", isOn(legacy) && ring)}
-            style={{ background: legacy }}
-          />
-          colore attuale
-        </button>
-      )}
+    <div className="flex flex-col gap-3">
+      {groups.map((group) => (
+        <div key={group[0]!.name} className="grid grid-cols-6 gap-1">
+          {group.map((hue) => (
+            <div key={hue.name} className="flex min-w-0 flex-col gap-1">
+              <span className="truncate text-center text-[10px] tracking-tight text-muted-foreground" title={hue.name}>
+                {hue.name}
+              </span>
+              {hue.tones.map((tone, i) => {
+                const tc = teacherCell(tone);
+                return (
+                  <button
+                    key={tone}
+                    type="button"
+                    aria-label={`${hue.name} ${TONE_NAMES[i]}`}
+                    aria-pressed={isOn(tone)}
+                    title={`${hue.name} ${TONE_NAMES[i]}`}
+                    onClick={() => onChange(tone)}
+                    className={cn(
+                      "h-7 rounded-md border border-black/10 dark:border-white/10",
+                      i === VIVID_TONE && "mt-1",
+                      isOn(tone) && "ring-2 ring-primary ring-offset-2 ring-offset-popover",
+                      tc.className,
+                    )}
+                    style={tc.style}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      ))}
+      <p className="text-[12px] text-muted-foreground">Ultima riga: colori vivaci, per far risaltare un docente.</p>
     </div>
   );
 }
