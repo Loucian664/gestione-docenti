@@ -307,7 +307,7 @@ export function CostruisciOrario() {
         onWrite={(next) => store.setCattedre(next)}
       />
 
-      <section className="paper-panel max-w-4xl rounded-xl p-5">
+      <section className="paper-panel rounded-xl p-5">
         <StepTitle n={3} title="Proponi l’orario" />
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Segmented
@@ -1465,7 +1465,7 @@ function HowItWorks() {
     },
   ];
   return (
-    <details open className="group paper-panel max-w-4xl rounded-xl p-5">
+    <details open className="group paper-panel rounded-xl p-5">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
         <h2 className="font-display text-lg">Come lavora</h2>
         <ChevronDown
@@ -1627,7 +1627,7 @@ function AvailabilityPanel({
   }
 
   return (
-    <section className="paper-panel max-w-4xl rounded-xl p-5">
+    <section className="paper-panel rounded-xl p-5">
       <StepTitle n={1} title="Quando ci sono i docenti">
         Scegli un segno e tocca le caselle. Toccando un giorno o un’ora segni tutta la colonna o la riga.
       </StepTitle>
@@ -1687,7 +1687,8 @@ function AvailabilityPanel({
         </div>
       )}
 
-      <ul className="mt-2 grid gap-3 md:grid-cols-2">
+      {/* sul computer le schede si distribuiscono da sole: 2 per riga a 1024 px, 3 a 1440, 4 sugli schermi molto larghi */}
+      <ul className="mt-2 grid gap-3 md:grid-cols-[repeat(auto-fill,minmax(min(100%,20.5rem),1fr))]">
         {shown.map((t) => (
           <TeacherCard
             key={t.id}
@@ -2516,7 +2517,7 @@ function CattedrePanel({
   }
 
   return (
-    <details className="group paper-panel max-w-4xl rounded-xl p-5">
+    <details className="group paper-panel rounded-xl p-5">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 [&::-webkit-details-marker]:hidden">
         <StepTitle n={2} title="Cattedre e ore">
           {classes.length} classi · {allHours} ore
