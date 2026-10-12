@@ -53,7 +53,38 @@ function DocentiPage() {
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-faint" />
         <Input className="pl-9" placeholder="Cerca per cognome o materia" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      <div className="paper-panel overflow-x-auto rounded-xl">
+      <ul className="paper-panel divide-y divide-border rounded-xl md:hidden">
+        {list.map((t) => {
+          const covers = counts[t.id] ?? 0;
+          return (
+            <li key={t.id} className="flex items-start gap-2 py-3 pr-2 pl-4">
+              <button type="button" onClick={() => setEditing(t)} className="min-w-0 flex-1 text-left">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="size-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
+                  <span className="font-medium">{teacherName(t)}</span>
+                  <Badge variant="outline">{ROLE_LABELS[t.role]}</Badge>
+                </span>
+                <span className="mt-0.5 block text-[13px] text-muted-foreground">{t.subjects.join(", ")}</span>
+                <span className="block text-[13px] text-muted-foreground">{classLabels(data, t.id) || "—"}</span>
+              </button>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <span className="pt-0.5 text-[13px] whitespace-nowrap text-muted-foreground tabular-nums">
+                  {t.weeklyHours} h · {covers} {covers === 1 ? "copertura" : "coperture"}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void navigate({ to: "/orario", search: { docente: t.id } })}
+                >
+                  <LayoutGrid />
+                  Orario
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="paper-panel hidden overflow-x-auto rounded-xl md:block">
         <table className="w-full min-w-[52rem] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
