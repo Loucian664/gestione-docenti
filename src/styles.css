@@ -35,6 +35,9 @@
   --color-success: #1f4a3c;
   --color-success-soft: #dce8e2;
   --color-danger-soft: #f3e4df;
+  /* segno «Classe» in Costruisci: pieno = obbligatoria, chiaro = se possibile */
+  --color-class-mark: #2e5b88;
+  --color-class-mark-foreground: #f7f4ee;
   --color-ink-faint: #8a8276;
   --color-paper-rule: #e4d9c8;
 
@@ -87,6 +90,8 @@
   --color-success: #9dc4b3;
   --color-success-soft: #1c322c;
   --color-danger-soft: #3a221e;
+  --color-class-mark: #8fb5dd;
+  --color-class-mark-foreground: #0e1613;
   --color-ink-faint: #8f8a80;
   --color-paper-rule: #2a322e;
   --shadow-border:

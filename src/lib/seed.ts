@@ -506,6 +506,30 @@ function seedAssignments(slots: TimetableSlot[], monday: string): Substitution[]
 }
 
 /** Idempotent: keep user absences/orario; adjust monte ore if needed. */
+/**
+ * I vecchi «Vorrei» (✓) diventano «Classe → Se possibile → Tutte»: la stessa richiesta, che ora si vede nella
+ * casella e si conta nel confronto. Le caselle che hanno già un altro segno restano come sono.
+ */
+function preferToClassMarks(t: Teacher, data: PersistedData): Teacher {
+  const rows = Array.isArray(t.cardRows)
+    ? t.cardRows.filter((r) => r.hours > 0)
+    : (data.cattedre ?? []).filter((c) => c.teacherId === t.id && c.hours > 0);
+  const classIds = [...new Set([...rows.map((r) => r.classId), ...(rows.length ? [] : (t.assignedClassIds ?? []))])].filter(
+    (id) => data.classes.some((c) => c.id === id),
+  );
+  const seen = new Set(
+    [...(t.awaySlots ?? []), ...(t.avoidSlots ?? []), ...(t.mustSlots ?? [])].map((a) => `${a.day}|${a.periodId}`),
+  );
+  const added: NonNullable<Teacher["mustSlots"]> = [];
+  for (const a of t.preferSlots ?? []) {
+    const key = `${a.day}|${a.periodId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    added.push({ day: a.day, periodId: a.periodId, classIds, allClasses: true, level: "preferenza" });
+  }
+  return { ...t, preferSlots: undefined, mustSlots: [...(t.mustSlots ?? []), ...added] };
+}
+
 export function applyOrganicoFixes(data: PersistedData): PersistedData {
   let teachers = [...data.teachers];
   const slots = [...data.slots];
@@ -516,6 +540,7 @@ export function applyOrganicoFixes(data: PersistedData): PersistedData {
     const hours = slots.filter((s) => s.teacherId === x.id).length;
     return hours > 0 ? { ...x, weeklyHours: hours } : x;
   });
+  teachers = teachers.map((x) => (x.preferSlots?.length ? preferToClassMarks(x, data) : x));
 
   let settings = data.settings;
   const ore = settings?.monteOre;
