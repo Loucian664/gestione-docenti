@@ -307,7 +307,7 @@ export function CostruisciOrario() {
         onWrite={(next) => store.setCattedre(next)}
       />
 
-      <section className="paper-panel max-w-4xl rounded-xl p-5">
+      <section className="paper-panel rounded-xl p-5">
         <StepTitle n={3} title="Proponi l’orario" />
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Segmented
@@ -777,6 +777,9 @@ function Ritocchi({
   const [find, setFind] = useState<FindState | null>(null);
   /** «Ferma»: la ricerca finisce e tiene le migliori trovate fin lì */
   const findStop = useRef(false);
+  const headRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLTableElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const findJob = find?.job ?? null;
   const findDone = Boolean(find?.result);
@@ -825,6 +828,31 @@ function Ritocchi({
   const gapCell = view === "teacher" && gapZ !== null ? editor.teacherAt(teacherId, gapZ) : null;
   const gapNow = gapCell && gapCell.kind !== "lesson" && gapCell.gap ? gapZ : null;
   const shownFind = find && find.job.forEditor === editor ? find : null;
+
+  /**
+   * Il riquadro in basso copre le ultime righe della tabella: quando si tocca una casella, o il riquadro
+   * cresce, la pagina scorre quel tanto che basta a lasciare la casella visibile sopra il riquadro
+   * (senza farla finire sotto l'intestazione in alto).
+   */
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel || (!sel && gapNow === null)) return;
+    const keepVisible = () => {
+      const grid = gridRef.current;
+      const cell =
+        grid?.querySelector<HTMLElement>("[data-target]") ?? grid?.querySelector<HTMLElement>('button[aria-pressed="true"]');
+      if (!cell) return;
+      const c = cell.getBoundingClientRect();
+      const overlap = c.bottom + 8 - panel.getBoundingClientRect().top;
+      if (overlap <= 0) return;
+      const room = c.top - (headRef.current?.getBoundingClientRect().bottom ?? 0) - 8;
+      const by = Math.min(overlap, room);
+      if (by > 0) window.scrollBy({ top: by, behavior: "smooth" });
+    };
+    const ro = new ResizeObserver(keepVisible);
+    ro.observe(panel);
+    return () => ro.disconnect();
+  }, [sel, gapNow, target, view]);
 
   function reset() {
     setSel(null);
@@ -1034,7 +1062,10 @@ function Ritocchi({
 
   return (
     <section ref={sectionRef} className="mt-1 max-md:pb-16">
-      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm">
+      <div
+        ref={headRef}
+        className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm"
+      >
         <h2 className="mr-auto font-display text-lg">Ritocchi</h2>
         <span className="hidden text-[13px] text-muted-foreground sm:inline">
           {edit.history.length === 0
@@ -1170,7 +1201,7 @@ function Ritocchi({
             })()}
           </p>
         )}
-        <table className="mt-3 w-full table-fixed border-collapse">
+        <table ref={gridRef} className="mt-3 w-full table-fixed border-collapse">
           <thead>
             <tr>
               <th className="w-8 sm:w-10" />
@@ -1201,6 +1232,7 @@ function Ritocchi({
                           type="button"
                           aria-label={`${DAY_SHORT[d]} ${p.index}ª: ${lesson ? `${lesson.subject}, ${short(t)}` : "libera"}${lesson?.locked ? ", bloccata" : ""}${eff ? `. Spostando qui: ${VERDICT_WORD[eff.verdict]}` : ""}`}
                           aria-pressed={isSel}
+                          data-target={!isSel && target === z ? "" : undefined}
                           onClick={() => tap(z, lesson ? classId : null)}
                           className={cn(cellClass(z, isSel, Boolean(lesson)), tc.className)}
                           style={tc.style}
@@ -1258,6 +1290,7 @@ function Ritocchi({
                                   : `${cellT.kind === "no" ? "no" : "libera"}${cellT.gap ? ", ora buca" : ""}`
                         }${eff ? `. Spostando qui: ${VERDICT_WORD[eff.verdict]}` : ""}`}
                         aria-pressed={isSel}
+                        data-target={!isSel && target === z ? "" : undefined}
                         onClick={() => tap(z, lessonClass, isGap)}
                         className={cn(cellClass(z, isSel, cellT.kind === "lesson"), tcT.className)}
                         style={tcT.style}
@@ -1302,8 +1335,10 @@ function Ritocchi({
         </table>
       </div>
 
+      {/* sul telefono sta sopra la barra dei tasti e il menu in basso (113 px), con 8 px di stacco */}
       <div
-        className="sticky bottom-[57px] z-10 mt-3 max-h-[46dvh] overflow-y-auto rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur md:bottom-3"
+        ref={panelRef}
+        className="sticky bottom-[121px] z-10 mt-3 max-h-[46dvh] overflow-y-auto rounded-xl border border-border bg-card/95 p-3 shadow-sm backdrop-blur md:bottom-3"
         aria-live="polite"
       >
         {(!sel || !selLesson) && gapNow !== null ? (
@@ -1430,7 +1465,7 @@ function HowItWorks() {
     },
   ];
   return (
-    <details open className="group paper-panel max-w-4xl rounded-xl p-5">
+    <details open className="group paper-panel rounded-xl p-5">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
         <h2 className="font-display text-lg">Come lavora</h2>
         <ChevronDown
@@ -1534,13 +1569,35 @@ function AvailabilityPanel({
 }) {
   const [brush, setBrush] = useState<Brush>("away");
   const [query, setQuery] = useState("");
-  // Sul telefono le schede partono chiuse; lo stato non si salva.
-  const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
+  // Sul telefono le schede partono chiuse, sul computer aperte; lo stato non si salva.
+  // «flipped»: le schede aperte o chiuse a mano, al contrario di come partono.
+  const [startOpen, setStartOpen] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
+  );
+  const [flipped, setFlipped] = useState<Set<string>>(() => new Set());
   const current = BRUSHES.find((b) => b.value === brush) ?? BRUSHES[0]!;
   const q = query.trim().toLowerCase();
   const shown = q
     ? teachers.filter((t) => `${teacherName(t)} ${t.subjects.join(" ")}`.toLowerCase().includes(q))
     : teachers;
+  const isOpen = (id: string) => startOpen !== flipped.has(id);
+
+  /** «Apri tutte» / «Chiudi tutte»: le schede mostrate (con la ricerca, solo quelle trovate). */
+  function setAllOpen(open: boolean) {
+    if (!q) {
+      setStartOpen(open);
+      setFlipped(new Set());
+      return;
+    }
+    setFlipped((prev) => {
+      const next = new Set(prev);
+      for (const t of shown) {
+        if (open === startOpen) next.delete(t.id);
+        else next.add(t.id);
+      }
+      return next;
+    });
+  }
 
   function paintCell(t: Teacher, day: DayOfWeek, periodId: string) {
     if (brush === "class") {
@@ -1570,7 +1627,7 @@ function AvailabilityPanel({
   }
 
   return (
-    <section className="paper-panel max-w-4xl rounded-xl p-5">
+    <section className="paper-panel rounded-xl p-5">
       <StepTitle n={1} title="Quando ci sono i docenti">
         Scegli un segno e tocca le caselle. Toccando un giorno o un’ora segni tutta la colonna o la riga.
       </StepTitle>
@@ -1620,23 +1677,24 @@ function AvailabilityPanel({
       )}
 
       {shown.length > 0 && (
-        <div className="mt-4 flex justify-end gap-1 md:hidden">
-          <Button size="sm" variant="ghost" onClick={() => setOpenIds(new Set(shown.map((t) => t.id)))}>
+        <div className="mt-4 flex justify-end gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setAllOpen(true)}>
             Apri tutte
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setOpenIds(new Set())}>
+          <Button size="sm" variant="ghost" onClick={() => setAllOpen(false)}>
             Chiudi tutte
           </Button>
         </div>
       )}
 
-      <ul className="mt-2 grid gap-3 md:mt-4 md:grid-cols-2">
+      {/* sul computer le schede si distribuiscono da sole: 2 per riga a 1024 px, 3 a 1440, 4 sugli schermi molto larghi */}
+      <ul className="mt-2 grid gap-3 md:grid-cols-[repeat(auto-fill,minmax(min(100%,20.5rem),1fr))]">
         {shown.map((t) => (
           <TeacherCard
             key={t.id}
-            open={openIds.has(t.id)}
+            open={isOpen(t.id)}
             onToggle={() =>
-              setOpenIds((prev) => {
+              setFlipped((prev) => {
                 const next = new Set(prev);
                 if (next.has(t.id)) next.delete(t.id);
                 else next.add(t.id);
@@ -1715,14 +1773,14 @@ function TeacherCard({
   }
   const markCount = marks.away + marks.no + marks.hard + marks.soft;
   return (
-    <li className="rounded-lg border border-border bg-card px-3 py-3">
+    <li className={cn("rounded-lg border border-border bg-card px-3 py-3", !open && "self-start")}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <button
             type="button"
             onClick={onToggle}
             aria-expanded={open}
-            className="flex w-full min-w-0 items-start gap-1.5 text-left md:hidden"
+            className="flex w-full min-w-0 items-start gap-1.5 text-left"
           >
             <ChevronDown
               className={cn("mt-1 size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
@@ -1745,10 +1803,6 @@ function TeacherCard({
               </span>
             </span>
           </button>
-          <div className="hidden md:block">
-            <p className="truncate text-[15px] font-medium">{teacherName(t)}</p>
-            <p className="truncate text-[12px] text-muted-foreground">{subtitle}</p>
-          </div>
         </div>
         <button
           type="button"
@@ -1766,7 +1820,7 @@ function TeacherCard({
         </button>
       </div>
 
-      <div className={cn(!open && "max-md:hidden")}>
+      <div className={cn(!open && "hidden")}>
         <div className="mt-2 flex flex-wrap items-center gap-1">
           <span className="mr-1 text-[12px] text-muted-foreground">Rientro T.P.</span>
           {days.map((d) => {
@@ -2463,7 +2517,7 @@ function CattedrePanel({
   }
 
   return (
-    <details className="group paper-panel max-w-4xl rounded-xl p-5">
+    <details className="group paper-panel rounded-xl p-5">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 [&::-webkit-details-marker]:hidden">
         <StepTitle n={2} title="Cattedre e ore">
           {classes.length} classi · {allHours} ore

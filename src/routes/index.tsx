@@ -168,7 +168,7 @@ function OggiPage() {
       <PageHeader
         title="Bacheca del giorno"
         description="Registra le assenze, copri le ore, stampa il foglio per la sala docenti."
-        actionsCentered
+        actionsFullWidth
         actions={
           <>
             <Button onClick={() => setAbsenceOpen(true)}>
@@ -184,44 +184,47 @@ function OggiPage() {
       />
 
       <div className="mb-5 flex flex-col items-center gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <div className="flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="icon"
-              className="shrink-0"
-              aria-label="Giorno precedente"
-              onClick={() => store.setSelectedDate(shiftSchoolDay(date, -1, data.settings.days))}
-            >
-              <ChevronLeft />
-            </Button>
-            <p className="px-1 text-center font-display text-[17px] capitalize leading-tight whitespace-nowrap sm:text-xl">
-              {formatDayMonth(date)}
-            </p>
-            <Button
-              variant="outline"
-              size="icon"
-              className="shrink-0"
-              aria-label="Giorno successivo"
-              onClick={() => store.setSelectedDate(shiftSchoolDay(date, 1, data.settings.days))}
-            >
-              <ChevronRight />
-            </Button>
-          </div>
-          <div className="flex items-center gap-2">
+        {/*
+          Frecce ferme: ‹ allineata al lunedì della settimana e la data sempre nello spazio della più lunga
+          («Mercoledì 20 Novembre»). Da 400 px tutto su una riga; più stretto, «Oggi» e il calendario vanno
+          nella riga sotto. Sul computer la data ha uno spazio fisso.
+        */}
+        <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-2 min-[400px]:grid-cols-[auto_minmax(11.5rem,1fr)_auto_auto_auto] sm:grid-cols-[auto_minmax(15rem,1fr)_auto_auto_auto] sm:gap-x-2 lg:flex lg:w-auto lg:gap-1.5">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-10 w-9 shrink-0 sm:w-10"
+            aria-label="Giorno precedente"
+            onClick={() => store.setSelectedDate(shiftSchoolDay(date, -1, data.settings.days))}
+          >
+            <ChevronLeft />
+          </Button>
+          <p className="text-center font-display text-base capitalize leading-tight whitespace-nowrap sm:px-1 sm:text-xl lg:w-60">
+            {formatDayMonth(date)}
+          </p>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-10 w-9 shrink-0 sm:w-10"
+            aria-label="Giorno successivo"
+            onClick={() => store.setSelectedDate(shiftSchoolDay(date, 1, data.settings.days))}
+          >
+            <ChevronRight />
+          </Button>
+          <div className="col-span-3 flex items-center justify-center gap-2 min-[400px]:contents">
             {date === todayIso() ? (
-              <span className="inline-flex h-10 items-center rounded-md bg-accent px-4 text-sm font-medium text-accent-foreground">
+              <span className="inline-flex h-10 items-center rounded-md bg-accent px-3 text-sm font-medium text-accent-foreground sm:px-4">
                 Oggi
               </span>
             ) : (
-              <Button variant="outline" className="h-10 shrink-0 px-4" onClick={() => store.setSelectedDate(todayIso())}>
+              <Button variant="outline" className="h-10 shrink-0 px-3 sm:px-4" onClick={() => store.setSelectedDate(todayIso())}>
                 Oggi
               </Button>
             )}
             <label
               className={cn(
                 buttonVariants({ variant: "outline", size: "icon" }),
-                "relative shrink-0 focus-within:ring-2 focus-within:ring-ring/40",
+                "relative h-10 w-9 shrink-0 focus-within:ring-2 focus-within:ring-ring/40 sm:w-10",
               )}
               title="Scegli data"
             >
