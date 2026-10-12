@@ -284,7 +284,12 @@ function OggiPage() {
         <Stat label="Assenti" value={absences.length} />
         <Stat label="Ore da coprire" value={needs.length - varied} />
         <Stat label="Coperte" value={covered} tone="ok" />
-        <Stat label="Scoperte" value={uncovered} tone={uncovered ? "warn" : "ok"} />
+        <Stat
+          label="Scoperte"
+          value={uncovered}
+          tone={uncovered ? "warn" : "ok"}
+          outOf={uncovered > 0 ? needs.length - varied : undefined}
+        />
       </div>
 
       {shifts.length > 0 && (
@@ -314,13 +319,12 @@ function OggiPage() {
           <p className="font-display text-lg text-destructive">
             {uncovered === 1 ? "Manca ancora chi copre 1 ora" : `Mancano ancora ${uncovered} coperture`}
           </p>
-          <p className="mt-1 text-sm text-destructive/90">
+          <p className="mt-1 hidden text-sm text-destructive/90 md:block">
             La bacheca non è chiusa. Tocca una riga per assegnare, oppure Auto-assegna.
           </p>
-          <ul className="mt-2 flex flex-col gap-1">
+          <ul className="mt-2 flex flex-wrap gap-1.5">
             {needs
               .filter((n) => !isCovered(n))
-              .slice(0, 8)
               .map((n) => {
                 const cls = data.classes.find((c) => c.id === n.slot.classId);
                 const per = data.settings.periods.find((p) => p.id === n.slot.periodId);
@@ -330,18 +334,17 @@ function OggiPage() {
                     <button
                       type="button"
                       onClick={() => setAssignNeed(n)}
-                      className="min-h-11 w-full rounded-md px-1 text-left text-sm font-medium text-destructive underline-offset-2 hover:underline"
+                      aria-label={`${per?.label ?? "Ora"} · ${cls?.name ?? "classe"} · assente ${
+                        absent ? teacherShort(absent, data.teachers) : "—"
+                      }`}
+                      className="h-8 whitespace-nowrap rounded-full border border-destructive/30 bg-card px-3 text-[13px] font-medium text-destructive transition-colors duration-150 hover:bg-destructive/10"
                     >
-                      {per?.label ?? "Ora"} · {cls?.name ?? "classe"} · assente{" "}
-                      {absent ? teacherShort(absent, data.teachers) : "—"}
+                      {per?.label ?? "Ora"} · {cls?.name ?? "classe"}
                     </button>
                   </li>
                 );
               })}
           </ul>
-          {uncovered > 8 && (
-            <p className="mt-1 text-sm text-destructive/80">e altre {uncovered - 8} più in basso.</p>
-          )}
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               onClick={() => {
@@ -509,18 +512,38 @@ function OggiPage() {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone?: "ok" | "warn" }) {
+function Stat({
+  label,
+  value,
+  tone,
+  outOf,
+}: {
+  label: string;
+  value: number;
+  tone?: "ok" | "warn";
+  /** Se c'è, la card si evidenzia come l'avviso e mostra «su N». */
+  outOf?: number;
+}) {
+  const alert = outOf !== undefined;
   return (
-    <div className="paper-panel rounded-xl px-4 py-3">
-      <p className="text-[12px] text-muted-foreground">{label}</p>
-      <p
-        className={cn(
-          "font-display text-2xl tabular-nums",
-          tone === "ok" && "text-success",
-          tone === "warn" && "text-destructive",
-        )}
-      >
-        {value}
+    <div
+      className={
+        alert ? "rounded-xl border border-destructive/25 bg-danger-soft px-4 py-3" : "paper-panel rounded-xl px-4 py-3"
+      }
+    >
+      <p className={cn("text-[12px]", alert ? "text-destructive/90" : "text-muted-foreground")}>{label}</p>
+      <p className="flex items-baseline gap-1.5">
+        <span
+          className={cn(
+            "font-display tabular-nums",
+            alert ? "text-3xl leading-tight" : "text-2xl",
+            tone === "ok" && "text-success",
+            tone === "warn" && "text-destructive",
+          )}
+        >
+          {value}
+        </span>
+        {alert && <span className="text-[13px] text-destructive/90 tabular-nums">su {outOf}</span>}
       </p>
     </div>
   );
