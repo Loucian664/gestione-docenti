@@ -4,6 +4,7 @@ import { applyOrganicoFixes, buildSeed, EMPTY_DATA } from "./seed.ts";
 import {
   buildReport,
   dayPatternOptions,
+  diffFacts,
   dispAfterLessons,
   evaluateCurrent,
   patternExcess,
@@ -13,6 +14,7 @@ import {
   teacherDayInfo,
   teacherHoursHere,
   TimetableEditor,
+  type Fact,
   type FindTarget,
   type Prep,
   type FixOption,
@@ -607,6 +609,7 @@ describe("timetable-solver", () => {
     assert.ok(y0 > 0, "una mossa che crea buche");
     const data = withMorning(ed0.apply(c0, 0, y0)!.slots);
     const before = evaluateCurrent(data);
+    const beforeFacts = new TimetableEditor(data).report(0).facts;
     const val = (r: TimetableReport, key: RowKey): number =>
       ({
         span6: r.docenti.span6.length,
@@ -649,6 +652,7 @@ describe("timetable-solver", () => {
       assert.ok(after.score.hard <= before.score.hard, "nessun vincolo rigido in più");
       const rows = new Map(opt.effect.rows.map((r) => [r.key, r]));
       for (const k of KEYS) assert.equal(val(after, k), rows.get(k)?.to ?? val(before, k), `${k} come annunciato`);
+      assert.deepEqual(opt.effect.who, diffFacts(beforeFacts, ed.report(0).facts), "chi cambia come annunciato");
       return { ed, after };
     };
     let found = 0;
@@ -686,6 +690,53 @@ describe("timetable-solver", () => {
     let r = it.next(true);
     while (!r.done) r = it.next(true);
     assert.equal(r.value.partial, true);
+  });
+
+  it("chi cambia: per docente e per classe, come le voci in tutto, senza toccare l'orario", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 800, seed: 44 }));
+    const ed = new TimetableEditor(applied);
+    const before = ed.report(0).facts;
+    const sig = JSON.stringify(before);
+    // per prime ore, motoria, ore al giorno e classi preferite le voci in tutto contano quelle che vanno bene
+    const HIGH = new Set<RowKey>(["firstHours", "pe", "patterns", "classPref"]);
+    const count = (facts: Fact[], row: RowKey) =>
+      facts.filter((f) => f.row === row).reduce((a, f) => a + (row === "classPref" ? f.n : 1), 0);
+    let checked = 0;
+    let gapTold = 0;
+    for (const cl of applied.classes.slice(0, 3)) {
+      for (let from = 0; from < 6; from++) {
+        if (!ed.lessonAt(cl.id, from)) continue;
+        ed.effects(cl.id, from).forEach((eff, to) => {
+          if (!eff) return;
+          const who = ed.whoChanges([{ classId: cl.id, from, to }]);
+          assert.ok(who, `${cl.name} ${from} → ${to}: si può fare`);
+          assert.equal(JSON.stringify(ed.report(0).facts), sig, "l'orario resta com'era");
+          const done = new TimetableEditor(applied);
+          done.apply(cl.id, from, to);
+          const after = done.report(0).facts;
+          assert.deepEqual(who, diffFacts(before, after), "come facendo davvero lo spostamento");
+          for (const r of eff.rows) {
+            if (r.key === "full" || r.key === "lastMax") continue;
+            const d = count(after, r.key) - count(before, r.key);
+            assert.equal(d, HIGH.has(r.key) ? r.from - r.to : r.to - r.from, `${r.key}: per docente e classe come in tutto`);
+          }
+          // a chi va un'ora buca in più è scritto
+          const gaps = eff.rows.find((r) => r.key === "gaps");
+          if (gaps && gaps.to > gaps.from) {
+            const told = who!.some(
+              (w) =>
+                w.who.kind === "teacher" &&
+                w.parts.some((p) => p.day && p.items.some((i) => !i.better && /^or[ae] buc[ah]e? nuov[ae] \(/.test(i.text))),
+            );
+            assert.ok(told, `${cl.name} ${from} → ${to}: l'ora buca nuova ha un nome`);
+            gapTold += 1;
+          }
+          checked += 1;
+        });
+      }
+    }
+    assert.ok(checked > 100 && gapTold > 0);
   });
 
   it("ore buche: un'ora vuota tra due lezioni; «no» in mezzo conta, disposizione e × no", () => {
