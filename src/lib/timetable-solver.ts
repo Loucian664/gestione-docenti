@@ -2289,6 +2289,26 @@ export class TimetableSolver {
 
 export type Issue = { text: string };
 
+/** Un docente o una classe. */
+export type Who = { kind: "teacher" | "class"; id: string; name: string };
+
+/**
+ * Una voce del confronto che riguarda un docente o una classe, in un giorno (`d`, `day`) o nella settimana
+ * (`d` -1): confrontando quelle di prima e di dopo una mossa si vede a chi cambia cosa.
+ */
+export type Fact = {
+  row: RowKey;
+  who: Who;
+  d: number;
+  day: string;
+  /** cosa la distingue per lo stesso docente o classe e giorno: la materia, l'ora della buca… */
+  key: string;
+  /** quante (per le classi preferite non rispettate) o quanto (ore di fila, lezioni nel giorno…) */
+  n: number;
+  /** le ore al giorno, le ore delle classi preferite non rispettate, le prime ore */
+  extra?: string;
+};
+
 export type TimetableReport = {
   lessons: number;
   lessonsExpected: number;
@@ -2373,6 +2393,8 @@ export type TimetableReport = {
     lastHours: { name: string; count: number }[];
   };
   warnings: string[];
+  /** le voci per docente e per classe, per dire a chi cambia cosa con una mossa */
+  facts: Fact[];
 };
 
 const DAY_NAMES: Record<number, string> = { 1: "Lun", 2: "Mar", 3: "Mer", 4: "Gio", 5: "Ven", 6: "Sab" };
@@ -2409,12 +2431,22 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
     pe: { ok: 0, total: 0, missing: [] },
     docenti: { six: [], five: [], span6: [], multiGap: [], full: [], empty: [], mixed: [], single: [], lastHours: [] },
     warnings: [...p.warnings],
+    facts: [],
+  };
+  // la stessa voce due volte per lo stesso docente o classe e giorno (raro): la seconda ha «#1» nella chiave
+  const factKeys = new Map<string, number>();
+  const fact = (row: RowKey, who: Who, d: number, key: string, n: number, extra?: string) => {
+    const id = `${row}|${who.kind}|${who.id}|${d}|${key}`;
+    const k = factKeys.get(id) ?? 0;
+    factKeys.set(id, k + 1);
+    rep.facts.push({ row, who, d, day: d < 0 ? "" : dayName(d), key: k ? `${key}#${k}` : key, n, extra });
   };
   for (let u = 0; u < p.U; u++) if (s.unitCell[u]! >= 0) rep.lessons += 1;
 
   // Classi
   for (let c = 0; c < C; c++) {
     const cname = p.classes[c]!.name;
+    const cwho: Who = { kind: "class", id: p.classes[c]!.id, name: cname };
     for (let d = 0; d < D; d++) {
       const row: number[] = [];
       for (let m = 0; m < M; m++) row.push(s.grid[c * DM + d * M + m]!);
@@ -2424,9 +2456,13 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
         if (m < M && subj[m]! >= 0 && subj[m] === subj[m - 1]) run += 1;
         else {
           const x = subj[m - 1]!;
-          if (x >= 0 && run > p.subjMaxRun[x]!) rep.didattica.sameRun.push({ text: `${cname} · ${dayName(d)}: ${p.subjects[x]} ${run} ore di fila` });
-          else if (x >= 0 && run === 2 && p.subjCat[x] === 1)
+          if (x >= 0 && run > p.subjMaxRun[x]!) {
+            rep.didattica.sameRun.push({ text: `${cname} · ${dayName(d)}: ${p.subjects[x]} ${run} ore di fila` });
+            fact("sameRun", cwho, d, p.subjects[x]!, run);
+          } else if (x >= 0 && run === 2 && p.subjCat[x] === 1) {
             rep.didattica.langBlock.push({ text: `${cname} · ${dayName(d)}: ${p.subjects[x]} 2 ore di fila` });
+            fact("langBlock", cwho, d, p.subjects[x]!, 1);
+          }
           run = 1;
         }
       }
@@ -2439,8 +2475,10 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       });
       for (const [x, n] of cnt) {
         if (n > p.subjMaxRun[x]!) rep.didattica.sameDay.push({ text: `${cname} · ${dayName(d)}: ${p.subjects[x]} ${n} ore nello stesso giorno` });
-        if ((seg.get(x) ?? 0) > 1 && p.subjMaxRun[x] === 2)
+        if ((seg.get(x) ?? 0) > 1 && p.subjMaxRun[x] === 2) {
           rep.didattica.split.push({ text: `${cname} · ${dayName(d)}: ${p.subjects[x]} spezzata (non attaccata)` });
+          fact("split", cwho, d, p.subjects[x]!, 1);
+        }
       }
       let core = 0;
       let maxCore = 0;
@@ -2458,11 +2496,16 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
         } else core = 0;
         if (p.subjCat[x]! >= 1) theory += 1;
       }
-      if (maxCore >= 4)
+      if (maxCore >= 4) {
         rep.didattica.heavy.push({
           text: `${cname} · ${dayName(d)}: ${maxCore} ore pesanti di fila (${subj.map((x) => (x >= 0 ? p.subjects[x]!.slice(0, 3) : "—")).join(" ")})`,
         });
-      if (filled === M && theory === M) rep.didattica.noLight.push({ text: `${cname} · ${dayName(d)}: nessuna materia leggera` });
+        fact("heavy", cwho, d, "", maxCore);
+      }
+      if (filled === M && theory === M) {
+        rep.didattica.noLight.push({ text: `${cname} · ${dayName(d)}: nessuna materia leggera` });
+        fact("noLight", cwho, d, "", 1);
+      }
       const tc = new Map<number, number>();
       row.forEach((u) => {
         if (u >= 0) tc.set(p.unitTeacher[u]!, (tc.get(p.unitTeacher[u]!) ?? 0) + 1);
@@ -2493,10 +2536,12 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
           best = Math.max(best, ha && hb ? 2 : ha || hb ? 1 : 0);
         }
         if (best === 2) rep.firstHours.ok += 1;
-        else
+        else {
           rep.firstHours.missing.push({
             text: `${cname}: ${p.subjects[x]} ${best === 1 ? "solo un’ora" : "mai"} alla ${block} ora`,
           });
+          fact("firstHours", cwho, -1, p.subjects[x]!, 2 - best, block);
+        }
       }
     }
     const pe = p.peSubj[c]!;
@@ -2508,14 +2553,19 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       }
       rep.pe.total += 1;
       if (latest >= M - 3) rep.pe.ok += 1;
-      else rep.pe.missing.push({ text: `${cname}: ${p.subjects[pe]} mai nelle ultime 3 ore` });
+      else {
+        rep.pe.missing.push({ text: `${cname}: ${p.subjects[pe]} mai nelle ultime 3 ore` });
+        fact("pe", cwho, -1, p.subjects[pe]!, 1);
+      }
     }
     for (let x = 0; x < S; x++) {
       const h = p.csHours[c * S + x]!;
       if (h === 2) {
         for (let d = 0; d < D; d++)
-          if (s.ccount[(c * S + x) * D + d]! >= 2)
+          if (s.ccount[(c * S + x) * D + d]! >= 2) {
             rep.didattica.twoBlock.push({ text: `${cname} · ${dayName(d)}: ${p.subjects[x]}, tutte e 2 le ore` });
+            fact("twoBlock", cwho, d, p.subjects[x]!, 1);
+          }
       }
       if (h < 4) continue;
       let used = 0;
@@ -2529,6 +2579,7 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
   const lastRows: { name: string; count: number }[] = [];
   for (let t = 0; t < T; t++) {
     const info = p.teachers[t]!;
+    const twho: Who = { kind: "teacher", id: info.id, name: info.name };
     let gaps = 0;
     const gapWhere: string[] = [];
     const gapCells: { day: DayOfWeek; periodId: string }[] = [];
@@ -2590,6 +2641,7 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
         }
         dayGaps += 1;
         gapWhere.push(`${dayName(d)} ${hourLabel(pos)}`);
+        fact("gaps", twho, d, hourLabel(pos), 1);
         gapCells.push({ day: p.days[d]!, periodId: p.periods[pos]!.id });
       }
       // tra due lezioni, ma non buche: ore a disposizione e ore altrove (o di spostamento)
@@ -2602,21 +2654,35 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
         else if (un === 2) rep.notGaps.away.push({ text: `${where}: spostamento tra plessi` });
       }
       gaps += dayGaps;
-      if (dayGaps >= 2) rep.docenti.multiGap.push({ text: `${info.name} · ${dayName(d)}: ${dayGaps} ore buche` });
+      if (dayGaps >= 2) {
+        rep.docenti.multiGap.push({ text: `${info.name} · ${dayName(d)}: ${dayGaps} ore buche` });
+        fact("multiGap", twho, d, "", dayGaps);
+      }
       if (info.full && dayGaps > 0)
         rep.docenti.full.push({ text: `${info.name} · ${dayName(d)}: ${dayGaps === 1 ? "1 ora buca" : `${dayGaps} ore buche`}` });
-      if (lessonsM >= 6) rep.docenti.six.push({ text: `${info.name} · ${dayName(d)}: ${lessonsM} lezioni` });
-      else if (lessonsM === 5) rep.docenti.five.push({ text: `${info.name} · ${dayName(d)}: 5 lezioni` });
+      if (lessonsM >= 6) {
+        rep.docenti.six.push({ text: `${info.name} · ${dayName(d)}: ${lessonsM} lezioni` });
+        fact("six", twho, d, "", lessonsM);
+      } else if (lessonsM === 5) {
+        rep.docenti.five.push({ text: `${info.name} · ${dayName(d)}: 5 lezioni` });
+        fact("five", twho, d, "", 1);
+      }
       if (!afternoon && mFirst >= 0 && p.pIndex[mLast]! - p.pIndex[mFirst]! + 1 >= 6) {
         rep.docenti.span6.push({ text: `${info.name} · ${dayName(d)}: a scuola dalla 1ª alla 6ª` });
+        fact("span6", twho, d, "", 1);
         if (info.full) rep.docenti.full.push({ text: `${info.name} · ${dayName(d)}: dalla 1ª alla 6ª` });
         // anche se le riempie una disposizione: 6 ore a scuola con 2 ore ferme in mezzo, mai
         if (rawGaps >= 2)
           rep.hard.longGaps.push({ text: `${info.name} · ${dayName(d)}: dalla 1ª alla 6ª con ${rawGaps} ore senza lezione in mezzo` });
       }
-      if (duties === 1) rep.docenti.single.push({ text: `${info.name} · ${dayName(d)}: una sola ora` });
-      if (info.otherPlesso && p.dayHasAway[t * D + d] && mFirst >= 0)
+      if (duties === 1) {
+        rep.docenti.single.push({ text: `${info.name} · ${dayName(d)}: una sola ora` });
+        fact("single", twho, d, "", 1);
+      }
+      if (info.otherPlesso && p.dayHasAway[t * D + d] && mFirst >= 0) {
         rep.docenti.mixed.push({ text: `${info.name} · ${dayName(d)}: qui e nell'altro plesso` });
+        fact("mixed", twho, d, "", 1);
+      }
     }
     rep.gapsTotal += gaps;
     if (info.patterns.length && info.lessons > 0) {
@@ -2628,10 +2694,11 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       const missing = fits.length ? Math.max(0, Math.min(...fits.map((x) => x.reduce((a, b) => a + b, 0))) - have) : 0;
       rep.patterns.total += 1;
       if (excess === 0) rep.patterns.ok += 1;
-      else
-        rep.hard.pattern.push({
-          text: `${info.name}: ${perDay.map((n, d) => `${dayName(d)} ${n}`).join(", ")}; scelte ${patterns.map((x) => patternText(x)).join(" o ")}`,
-        });
+      else {
+        const now = perDay.map((n, d) => `${dayName(d)} ${n}`).join(", ");
+        rep.hard.pattern.push({ text: `${info.name}: ${now}; scelte ${patterns.map((x) => patternText(x)).join(" o ")}` });
+        fact("patterns", twho, -1, "", excess, now);
+      }
       rep.patterns.rows.push({ id: info.id, name: info.name, perDay, patterns, fits, excess, missing });
     }
     if (info.lessons > 0)
@@ -2660,7 +2727,10 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       const hit = p.cpref[t]!.length - missing.length;
       rep.classPref.want += want;
       rep.classPref.hit += Math.min(want, hit);
-      if (hit < want) rep.classPref.missing.push({ text: `${info.name}: ${want - hit} non rispettate (libere: ${missing.join(", ")})` });
+      if (hit < want) {
+        rep.classPref.missing.push({ text: `${info.name}: ${want - hit} non rispettate (libere: ${missing.join(", ")})` });
+        fact("classPref", twho, -1, "", want - hit, missing.join(", "));
+      }
     }
   }
   rep.gapsByTeacher.sort((a, b) => b.gaps - a.gaps || a.name.localeCompare(b.name, "it"));
@@ -2904,7 +2974,147 @@ export type MoveEffect = {
   also: string[];
   /** docenti che perdono un'ora a disposizione (ci va una lezione): «Nome · Lun 3ª» */
   dispLost: string[];
+  /** a chi cambia cosa (nelle proposte di «Trova»; per uno spostamento si chiede a parte) */
+  who?: WhoChange[];
 };
+
+/** Per un docente o una classe: cosa migliora e cosa peggiora con le mosse, giorno per giorno. */
+export type WhoChange = {
+  who: Who;
+  /** day "": voci della settimana (ore al giorno, classi preferite, prime ore, motoria) */
+  parts: { day: string; items: { text: string; better: boolean }[] }[];
+  better: number;
+  worse: number;
+};
+
+/** L'ordine delle voci per lo stesso docente o classe e giorno. */
+const FACT_ORDER: RowKey[] = [
+  "span6",
+  "six",
+  "five",
+  "gaps",
+  "multiGap",
+  "single",
+  "mixed",
+  "patterns",
+  "classPref",
+  "firstHours",
+  "pe",
+  "twoBlock",
+  "heavy",
+  "noLight",
+  "langBlock",
+  "sameRun",
+  "split",
+];
+
+/** La voce com'è adesso (`now`: è nuova) o che non c'è più. */
+function factText(f: Fact, now: boolean): string {
+  const k = f.key.replace(/#\d+$/, "");
+  switch (f.row) {
+    case "span6":
+      return now ? "a scuola dalla 1ª alla 6ª" : "non più dalla 1ª alla 6ª";
+    case "six":
+      return now ? `${f.n} lezioni` : `non più ${f.n} lezioni`;
+    case "five":
+      return now ? "5 lezioni" : "non più 5 lezioni";
+    case "multiGap":
+      return now ? `${f.n} ore buche nel giorno` : `non più ${f.n} ore buche nel giorno`;
+    case "single":
+      return now ? "una sola ora" : "non più una sola ora";
+    case "mixed":
+      return now ? "qui e nell’altro plesso" : "non più su due plessi";
+    case "patterns":
+      return now ? `ore al giorno non come scelte (${f.extra})` : "ore al giorno di nuovo come scelte";
+    case "classPref":
+      return now
+        ? `${f.n === 1 ? "1 classe preferita non rispettata" : `${f.n} classi preferite non rispettate`} (${f.extra})`
+        : "classi preferite di nuovo rispettate";
+    case "firstHours":
+      return now ? `${k} ${f.n === 1 ? "solo un’ora" : "mai"} alla ${f.extra} ora` : `${k} di nuovo alla ${f.extra} ora`;
+    case "pe":
+      return now ? `${k} mai nelle ultime 3 ore` : `${k} di nuovo nelle ultime 3 ore`;
+    case "twoBlock":
+      return now ? `${k}, tutte e 2 le ore` : `${k} non più tutte e 2 le ore`;
+    case "heavy":
+      return now ? `${f.n} ore pesanti di fila` : "non più ore pesanti di fila";
+    case "noLight":
+      return now ? "nessuna materia leggera" : "di nuovo una materia leggera";
+    case "langBlock":
+      return now ? `${k} 2 ore di fila` : `${k} non più 2 ore di fila`;
+    case "sameRun":
+      return now ? `${k} ${f.n} ore di fila` : `${k} non più ${f.n} ore di fila`;
+    case "split":
+      return now ? `${k} spezzata` : `${k} non più spezzata`;
+    default:
+      return "";
+  }
+}
+
+/**
+ * A chi cambia cosa tra due orari: le voci per docente e per classe che ci sono solo dopo (peggio) o solo
+ * prima (meglio); per le classi preferite conta anche quante non sono rispettate. Le ore buche nuove o tolte
+ * nello stesso giorno stanno in una voce sola. Prima i docenti, poi le classi, in ordine di nome.
+ */
+export function diffFacts(before: Fact[], after: Fact[]): WhoChange[] {
+  const id = (f: Fact) => `${f.row}|${f.who.kind}|${f.who.id}|${f.d}|${f.key}`;
+  const A = new Map(before.map((f) => [id(f), f]));
+  const B = new Map(after.map((f) => [id(f), f]));
+  type Item = { f: Fact; text: string; better: boolean };
+  const items: Item[] = [];
+  const gapHours = new Map<string, { f: Fact; now: boolean; hours: string[] }>();
+  const gap = (f: Fact, now: boolean) => {
+    const k = `${f.who.kind}|${f.who.id}|${f.d}|${now}`;
+    const g = gapHours.get(k) ?? { f, now, hours: [] };
+    g.hours.push(f.key);
+    gapHours.set(k, g);
+  };
+  for (const [k, b] of B) {
+    const a = A.get(k);
+    if (!a) {
+      if (b.row === "gaps") gap(b, true);
+      else items.push({ f: b, text: factText(b, true), better: false });
+    } else if (a.n !== b.n && b.row === "classPref")
+      items.push({ f: b, text: `classi preferite non rispettate ${a.n} → ${b.n} (${b.extra})`, better: b.n < a.n });
+  }
+  for (const [k, a] of A) {
+    if (B.has(k)) continue;
+    if (a.row === "gaps") gap(a, false);
+    else items.push({ f: a, text: factText(a, false), better: true });
+  }
+  for (const g of gapHours.values()) {
+    const one = g.hours.length === 1;
+    const text = g.now
+      ? `${one ? "ora buca nuova" : "ore buche nuove"} (${g.hours.join(", ")})`
+      : `${one ? "ora buca tolta" : "ore buche tolte"} (${g.hours.join(", ")})`;
+    items.push({ f: g.f, text, better: !g.now });
+  }
+  const byWho = new Map<string, Item[]>();
+  for (const it of items) {
+    const k = `${it.f.who.kind}|${it.f.who.id}`;
+    byWho.set(k, [...(byWho.get(k) ?? []), it]);
+  }
+  const out: WhoChange[] = [];
+  for (const list of byWho.values()) {
+    // giorno per giorno (le voci della settimana in fondo), poi nell'ordine delle voci
+    list.sort(
+      (x, y) =>
+        (x.f.d < 0 ? 99 : x.f.d) - (y.f.d < 0 ? 99 : y.f.d) || FACT_ORDER.indexOf(x.f.row) - FACT_ORDER.indexOf(y.f.row),
+    );
+    const parts: WhoChange["parts"] = [];
+    for (const it of list) {
+      const last = parts[parts.length - 1];
+      const item = { text: it.text, better: it.better };
+      if (last && last.day === it.f.day) last.items.push(item);
+      else parts.push({ day: it.f.day, items: [item] });
+    }
+    const better = list.filter((x) => x.better).length;
+    out.push({ who: list[0]!.f.who, parts, better, worse: list.length - better });
+  }
+  return out.sort(
+    (x, y) => (x.who.kind === y.who.kind ? 0 : x.who.kind === "teacher" ? -1 : 1) || x.who.name.localeCompare(y.who.name, "it"),
+  );
+}
 
 export type TeacherCell =
   | { kind: "lesson"; classId: string; className: string; subject: string; locked: boolean }
@@ -2948,6 +3158,8 @@ export class TimetableEditor {
   private last0: number;
   private pat0: number;
   private totals: Record<HighRow, number>;
+  /** le voci per docente e classe dell'orario di adesso (si rifanno dopo uno spostamento) */
+  private facts0: Fact[] | null = null;
 
   constructor(data: PersistedData) {
     this.prep = prepare(data, "slots", { keepDisp: true, dispYield: true });
@@ -2969,6 +3181,37 @@ export class TimetableEditor {
     this.G0 = Int32Array.from(this.s.metrics());
     this.last0 = this.s.lastMax();
     this.pat0 = this.s.patternOkCount();
+    this.facts0 = null;
+  }
+
+  /**
+   * A chi cambia cosa con le mosse, fatte una dopo l'altra come in una proposta di «Trova», senza farle
+   * davvero; null se una mossa non si può fare.
+   */
+  whoChanges(steps: { classId: string; from: number; to: number }[]): WhoChange[] | null {
+    const s = this.s;
+    this.facts0 ??= buildReport(s, 0).facts;
+    const hard0 = s.hard;
+    const done: { cls: number[]; x: number; y: number }[] = [];
+    let ok = true;
+    for (const st of steps) {
+      const c = this.classOf(st.classId);
+      const mv = this.plan(c, st.from, st.to);
+      let cls: number[] | null = null;
+      if (mv?.kind === "same") {
+        s.swapClasses([c], st.from, st.to);
+        cls = [c];
+      } else if (mv) cls = s.applyMove(c, st.from, st.to, mv.kind === "kempe");
+      if (!cls) {
+        ok = false;
+        break;
+      }
+      done.push({ cls, x: st.from, y: st.to });
+    }
+    const after = ok ? buildReport(s, 0).facts : null;
+    for (let i = done.length - 1; i >= 0; i--) s.swapClasses(done[i]!.cls, done[i]!.x, done[i]!.y);
+    if (s.hard !== hard0) s.recomputeAll();
+    return after && diffFacts(this.facts0, after);
   }
 
   /** Casella del mattino (giorno, ora) → indice; -1 se non è un'ora del mattino. */
@@ -3353,6 +3596,7 @@ export class TimetableEditor {
           rows: j.rows,
           also: [...new Set(f.steps.flatMap((x) => x.also))],
           dispLost: f.steps.flatMap((x) => x.dispLost),
+          who: this.whoChanges(f.steps) ?? undefined,
         },
       });
       if (out.length >= 3) break;

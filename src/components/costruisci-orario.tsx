@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Eraser, Lock, LockOpen, Search, TriangleAlert, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +35,8 @@ import {
   type SolveMode,
   type SolveResult,
   type TimetableReport,
+  type Who,
+  type WhoChange,
 } from "@/lib/timetable-solver";
 import { runTimetable, type RunHandle, type RunProgress } from "@/lib/timetable-runner";
 import { teacherName, teacherShort } from "@/lib/coverage";
@@ -649,6 +651,22 @@ function VerdictMark({ verdict, className }: { verdict: MoveEffect["verdict"]; c
 
 /** «Trova»: cosa si cerca, su quale orario (se cambia, le proposte non valgono più) e a che punto è. */
 type FindJob = { target: FindTarget; forEditor: TimetableEditor; data: PersistedData };
+/** Il messaggio dopo un cambio; `changed`: i docenti a cui cambia l'orario (si toccano per vederne la settimana). */
+type Notice = { text: string; changed?: string[] };
+
+/** I docenti a cui cambiano le lezioni (giorno, ora, classe o materia), in ordine di nome. */
+function changedTeachers(before: TimetableSlot[], after: TimetableSlot[], nameOf: (id: string) => string): string[] {
+  const byTeacher = (list: TimetableSlot[]) => {
+    const m = new Map<string, string[]>();
+    for (const x of list) m.set(x.teacherId, [...(m.get(x.teacherId) ?? []), `${x.day}|${x.periodId}|${x.classId}|${x.subject}`]);
+    return new Map([...m].map(([id, v]) => [id, v.sort().join(",")]));
+  };
+  const a = byTeacher(before);
+  const b = byTeacher(after);
+  return [...new Set([...a.keys(), ...b.keys()])]
+    .filter((id) => a.get(id) !== b.get(id))
+    .sort((x, y) => nameOf(x).localeCompare(nameOf(y), "it"));
+}
 type FindState = { job: FindJob; progress: number; result: FindResult | null };
 
 function sameTarget(a: FindTarget, b: FindTarget): boolean {
@@ -674,8 +692,19 @@ const VERDICT_SHORT: Record<MoveEffect["verdict"], string> = {
   same: "non cambia niente",
 };
 
-/** Cosa cambia con uno spostamento o con le mosse di una proposta. */
-function EffectLines({ effect }: { effect: MoveEffect }) {
+/**
+ * Cosa cambia con uno spostamento o con le mosse di una proposta: per ogni docente o classe cosa migliora e
+ * cosa peggiora, con giorno e ora, e le voci in tutto; se non si sa per chi, le voci migliori e peggiori.
+ */
+function EffectLines({
+  effect,
+  who = effect.who,
+  nameOf = (w) => w.name,
+}: {
+  effect: MoveEffect;
+  who?: WhoChange[] | null;
+  nameOf?: (who: Who) => string;
+}) {
   const better = effect.rows.filter((r) => r.better);
   const worse = effect.rows.filter((r) => !r.better);
   return (
@@ -685,10 +714,42 @@ function EffectLines({ effect }: { effect: MoveEffect }) {
           Sistema {effect.hard === -1 ? "un vincolo non rispettato" : `${-effect.hard} vincoli non rispettati`}.
         </p>
       )}
-      {better.length > 0 && <p className="text-success">Meglio: {sortRows(better).map(describeRow).join(" · ")}</p>}
-      {worse.length > 0 && <p className="text-destructive">Peggio: {sortRows(worse).map(describeRow).join(" · ")}</p>}
-      {effect.rows.length === 0 && effect.hard === 0 && (
-        <p className="text-muted-foreground">Nessuna voce del confronto cambia.</p>
+      {who && who.length > 0 ? (
+        <>
+          <p className="text-muted-foreground">Per chi cambia:</p>
+          <ul className="flex flex-col gap-0.5">
+            {who.map((w) => (
+              <li key={`${w.who.kind}:${w.who.id}`} className="grid grid-cols-[0.875rem_1fr] items-baseline gap-x-1">
+                <VerdictMark verdict={w.worse === 0 ? "better" : w.better === 0 ? "worse" : "mixed"} />
+                <span>
+                  <span className="font-semibold">{nameOf(w.who)}</span>
+                  {w.parts.map((part, i) => (
+                    <Fragment key={part.day || "settimana"}>
+                      {part.day ? ` · ${part.day}: ` : i === 0 ? ": " : " · "}
+                      {part.items.map((it, k) => (
+                        <Fragment key={k}>
+                          {k > 0 && "; "}
+                          <span className={it.better ? "text-success" : "text-destructive"}>{it.text}</span>
+                        </Fragment>
+                      ))}
+                    </Fragment>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {effect.rows.length > 0 && (
+            <p className="text-muted-foreground">In tutto: {sortRows(effect.rows).map(describeRow).join(" · ")}</p>
+          )}
+        </>
+      ) : (
+        <>
+          {better.length > 0 && <p className="text-success">Meglio: {sortRows(better).map(describeRow).join(" · ")}</p>}
+          {worse.length > 0 && <p className="text-destructive">Peggio: {sortRows(worse).map(describeRow).join(" · ")}</p>}
+          {effect.rows.length === 0 && effect.hard === 0 && (
+            <p className="text-muted-foreground">Nessuna voce del confronto cambia.</p>
+          )}
+        </>
       )}
       {effect.also.length > 0 && (
         <p className="text-muted-foreground">
@@ -779,7 +840,7 @@ function Ritocchi({
   const [teacherId, setTeacherId] = useState(teachers.find((t) => withLessons.has(t.id))?.id ?? "");
   const [sel, setSel] = useState<{ classId: string; z: number } | null>(null);
   const [target, setTarget] = useState<number | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   /** ora buca scelta nella vista per docente */
   const [gapZ, setGapZ] = useState<number | null>(null);
@@ -826,12 +887,19 @@ function Ritocchi({
     () => (sel && target !== null && effect?.verdict === "breaks" ? editor.newHardIssues(sel.classId, sel.z, target) : []),
     [editor, sel, target, effect],
   );
+  const whoNow = useMemo(
+    () =>
+      details && sel && target !== null && effect ? editor.whoChanges([{ classId: sel.classId, from: sel.z, to: target }]) : null,
+    [editor, sel, target, effect, details],
+  );
   const selLesson = sel ? editor.lessonAt(sel.classId, sel.z) : null;
   const selTeacher = selLesson ? tById.get(selLesson.teacherId) : undefined;
   const tgtLesson = sel && target !== null ? editor.lessonAt(sel.classId, target) : null;
   const tgtTeacher = tgtLesson ? tById.get(tgtLesson.teacherId) : undefined;
   const className = (id: string) => classes.find((c) => c.id === id)?.name ?? "";
   const short = (t: Teacher | undefined) => (t ? teacherShort(t, teachersAll) : "");
+  const teacherLabel = (id: string) => short(tById.get(id)) || id;
+  const nameOf = (w: Who) => (w.kind === "teacher" ? short(tById.get(w.id)) || w.name : w.name);
   const canApply = edit.from === "proposta" || edit.history.length > 0;
   const gapCell = view === "teacher" && gapZ !== null ? editor.teacherAt(teacherId, gapZ) : null;
   const gapNow = gapCell && gapCell.kind !== "lesson" && gapCell.gap ? gapZ : null;
@@ -880,9 +948,12 @@ function Ritocchi({
     const out = editor.apply(sel.classId, sel.z, target);
     if (!out) return;
     const ids = new Set(out.slots.map((x) => x.id));
-    const carry = edit.draft.filter((x) => !ids.has(x.id));
-    onChange({ ...edit, draft: [...out.slots, ...carry], history: [...edit.history, edit.draft] });
-    setNotice(out.also.length ? `Fatto. Si sono spostate anche: ${out.also.join(", ")}.` : "Fatto.");
+    const draft = [...out.slots, ...edit.draft.filter((x) => !ids.has(x.id))];
+    onChange({ ...edit, draft, history: [...edit.history, edit.draft] });
+    setNotice({
+      text: out.also.length ? `Fatto. Si sono spostate anche: ${out.also.join(", ")}.` : "Fatto.",
+      changed: changedTeachers(edit.draft, draft, teacherLabel),
+    });
     reset();
   }
 
@@ -905,24 +976,32 @@ function Ritocchi({
     }
     if (!out) {
       setFind(null);
-      setNotice("Queste mosse non si possono più fare: riprova «Trova».");
+      setNotice({ text: "Queste mosse non si possono più fare: riprova «Trova»." });
       return;
     }
     const ids = new Set(out.slots.map((x) => x.id));
-    const carry = edit.draft.filter((x) => !ids.has(x.id));
-    onChange({ ...edit, draft: [...out.slots, ...carry], history: [...edit.history, edit.draft] });
+    const draft = [...out.slots, ...edit.draft.filter((x) => !ids.has(x.id))];
+    onChange({ ...edit, draft, history: [...edit.history, edit.draft] });
     reset();
     const n = opt.steps.length;
-    setNotice(
-      `Fatto: ${n === 1 ? "1 mossa" : `${n} mosse`}.${also.size ? ` Si sono spostate anche: ${[...also].join(", ")}.` : ""}`,
-    );
+    setNotice({
+      text: `Fatto: ${n === 1 ? "1 mossa" : `${n} mosse`}.${also.size ? ` Si sono spostate anche: ${[...also].join(", ")}.` : ""}`,
+      changed: changedTeachers(edit.draft, draft, teacherLabel),
+    });
   }
 
   function undo() {
     const prev = edit.history[edit.history.length - 1];
     if (!prev) return;
     onChange({ ...edit, draft: prev, history: edit.history.slice(0, -1) });
-    setNotice("Annullato l’ultimo cambio.");
+    setNotice({ text: "Annullato l’ultimo cambio.", changed: changedTeachers(edit.draft, prev, teacherLabel) });
+    reset();
+  }
+
+  /** Dal messaggio dopo un cambio: la settimana del docente, nella vista per docente. */
+  function showTeacher(id: string) {
+    setView("teacher");
+    setTeacherId(id);
     reset();
   }
 
@@ -1059,7 +1138,7 @@ function Ritocchi({
               ))}
             </ol>
             <div className="mt-1 flex flex-col gap-0.5">
-              <EffectLines effect={opt.effect} />
+              <EffectLines effect={opt.effect} nameOf={nameOf} />
             </div>
             <Button size="sm" className="mt-2" onClick={() => applyFix(opt)}>
               {opt.steps.length === 1 ? "Fai la mossa" : `Fai le ${opt.steps.length} mosse`}
@@ -1377,10 +1456,34 @@ function Ritocchi({
         ) : !sel || !selLesson ? (
           // l'altezza delle due righe (32 + 6 + 32 px): il messaggio può andare a capo
           <p className="flex min-h-[70px] items-center justify-center text-balance text-center text-sm text-muted-foreground">
-            {notice ??
-              (view === "teacher"
-                ? "Tocca una lezione per spostarla, o una buca per cercare come toglierla."
-                : "Tocca una lezione per spostarla.")}
+            {notice ? (
+              <span>
+                {notice.text}
+                {notice.changed && notice.changed.length > 0 && (
+                  <>
+                    {" "}
+                    Cambia l’orario di{" "}
+                    {notice.changed.map((id, i, all) => (
+                      <Fragment key={id}>
+                        {i > 0 && (i === all.length - 1 ? " e " : ", ")}
+                        <button
+                          type="button"
+                          className="rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                          onClick={() => showTeacher(id)}
+                        >
+                          {teacherLabel(id)}
+                        </button>
+                      </Fragment>
+                    ))}
+                    : tocca {notice.changed.length === 1 ? "il nome" : "un nome"} per vedere la sua settimana.
+                  </>
+                )}
+              </span>
+            ) : view === "teacher" ? (
+              "Tocca una lezione per spostarla, o una buca per cercare come toglierla."
+            ) : (
+              "Tocca una lezione per spostarla."
+            )}
           </p>
         ) : (
           <div className="flex flex-col gap-1.5">
@@ -1447,7 +1550,7 @@ function Ritocchi({
                 {details && (
                   <div className="flex flex-col gap-1 text-[13px] leading-snug">
                     {issues.length > 0 && <p className="text-destructive">Non rispetta: {issues.join("; ")}.</p>}
-                    <EffectLines effect={effect} />
+                    <EffectLines effect={effect} who={whoNow} nameOf={nameOf} />
                   </div>
                 )}
               </>
