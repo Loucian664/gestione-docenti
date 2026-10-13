@@ -567,6 +567,7 @@ export function CostruisciOrario() {
         data={data}
         onClose={() => setPatternFor(null)}
         onChange={(t, list) => store.updateTeacher(t.id, { dayPatterns: list, dayPattern: undefined })}
+        onTwoFree={(t, on) => store.updateTeacher(t.id, { allowTwoFree: on })}
       />
 
       <Dialog open={confirmFor !== null} onOpenChange={(open) => !open && setConfirmFor(null)}>
@@ -2089,11 +2090,11 @@ function TeacherCard({
             <button
               type="button"
               onClick={onPattern}
-              aria-label={
+              aria-label={`${
                 pats.length
-                  ? `Ore al giorno: ${pats.map(patternLabel).join(" o ")}${stale ? ", da rivedere" : ""}. Cambia`
-                  : "Ore al giorno: decide l’app. Scegli"
-              }
+                  ? `Ore al giorno: ${pats.map(patternLabel).join(" o ")}${stale ? ", da rivedere" : ""}`
+                  : "Ore al giorno: decide l’app"
+              }${t.allowTwoFree ? "; accetta 2 ore libere in mezzo" : ""}. ${pats.length ? "Cambia" : "Scegli"}`}
               className={cn(
                 "h-7 rounded-full border px-2.5 text-[11px] font-medium tabular-nums transition-colors",
                 !pats.length && "border-border text-muted-foreground hover:bg-muted",
@@ -2104,26 +2105,7 @@ function TeacherCard({
               {pats.length ? patText : "Libere"}
             </button>
             {stale && <span className="text-[11px] text-warning">da rivedere: ora le ore sono {hours}</span>}
-          </div>
-        )}
-
-        {hours > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={Boolean(t.allowTwoFree)}
-              title="Di norma, tra la prima e l’ultima lezione di un giorno, al massimo un’ora libera (buca o a disposizione). Su richiesta del docente, fino a 2."
-              onClick={() => onUpdate(t.id, { allowTwoFree: !t.allowTwoFree })}
-              className={cn(
-                "h-7 rounded-full border px-2.5 text-[11px] font-medium transition-colors",
-                t.allowTwoFree
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:bg-muted",
-              )}
-            >
-              Accetta 2 ore libere in mezzo
-            </button>
+            {t.allowTwoFree && <span className="text-[11px] text-muted-foreground">· accetta 2 ore libere in mezzo</span>}
           </div>
         )}
 
@@ -2244,11 +2226,14 @@ function DayPatternDialog({
   data,
   onClose,
   onChange,
+  onTwoFree,
 }: {
   teacher: Teacher | null;
   data: PersistedData;
   onClose: () => void;
   onChange: (t: Teacher, list: number[][]) => void;
+  /** «Accetta 2 ore libere in mezzo»: l'eccezione chiesta dal docente */
+  onTwoFree: (t: Teacher, on: boolean) => void;
 }) {
   const info = useMemo(() => (teacher ? teacherDayInfo(data, teacher.id) : null), [teacher, data]);
   const options = useMemo(() => (info ? dayPatternOptions(info.hours, info.cap) : []), [info]);
@@ -2361,6 +2346,22 @@ function DayPatternDialog({
             Puoi sceglierne più di una: ne basta una. I giorni li sceglie l’app.
             {info && info.disp > 0 ? " Le ore a disposizione contano: con «Da zero» le aggiungi tu dopo." : ""}
           </p>
+          <div className="border-t border-border pt-4">
+            <p className="text-[13px] font-semibold text-foreground">Ore libere tra le lezioni</p>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={Boolean(teacher?.allowTwoFree)}
+              className={cn(chip(Boolean(teacher?.allowTwoFree)), "mt-1.5 w-full text-left")}
+              onClick={() => teacher && onTwoFree(teacher, !teacher.allowTwoFree)}
+            >
+              Accetta 2 ore libere in mezzo
+            </button>
+            <p className="mt-1.5 text-[13px] text-muted-foreground">
+              Di norma, tra la prima e l’ultima lezione di un giorno, è ammessa al massimo un’ora libera (buca o a
+              disposizione). Attivalo solo se il docente chiede di averne 2.
+            </p>
+          </div>
           <div className="flex justify-end">
             <Button type="button" onClick={onClose}>
               Fatto
