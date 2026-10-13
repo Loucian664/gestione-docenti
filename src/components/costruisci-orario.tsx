@@ -788,6 +788,23 @@ function EffectLines({
   );
 }
 
+/** Ritocchi: i dettagli dello spostamento restano aperti (memoria del browser, solo su questo dispositivo). */
+const DETAILS_KEY = "gestione-docenti-ritocchi-dettagli";
+
+/** Schermo largo (computer): i dettagli dei ritocchi stanno a destra della tabella, sempre aperti. */
+function useWide(): boolean {
+  const query = "(min-width: 1280px)";
+  const [wide, setWide] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return wide;
+}
+
 function Ritocchi({
   sectionRef,
   edit,
@@ -888,8 +905,26 @@ function Ritocchi({
   const [find, setFind] = useState<FindState | null>(null);
   /** «Ferma»: la ricerca finisce e tiene le migliori trovate fin lì */
   const findStop = useRef(false);
-  /** esito di uno spostamento: tutte le righe o solo il riassunto */
-  const [details, setDetails] = useState(false);
+  /**
+   * Esito di uno spostamento: tutte le righe o solo il riassunto. Aperti una volta, i dettagli restano
+   * aperti per le mosse seguenti (e la volta dopo) finché non si preme «meno»; sul computer largo sempre.
+   */
+  const [details, setDetails] = useState(() => {
+    try {
+      return localStorage.getItem(DETAILS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(DETAILS_KEY, details ? "1" : "0");
+    } catch {
+      // senza memoria del browser vale solo finché la pagina resta aperta
+    }
+  }, [details]);
+  const wide = useWide();
+  const showDetails = details || wide;
 
   const findJob = find?.job ?? null;
   const findDone = Boolean(find?.result);
@@ -930,8 +965,10 @@ function Ritocchi({
   );
   const whoNow = useMemo(
     () =>
-      details && sel && target !== null && effect ? editor.whoChanges([{ classId: sel.classId, from: sel.z, to: target }]) : null,
-    [editor, sel, target, effect, details],
+      showDetails && sel && target !== null && effect
+        ? editor.whoChanges([{ classId: sel.classId, from: sel.z, to: target }])
+        : null,
+    [editor, sel, target, effect, showDetails],
   );
   const selLesson = sel ? editor.lessonAt(sel.classId, sel.z) : null;
   const selTeacher = selLesson ? tById.get(selLesson.teacherId) : undefined;
@@ -949,7 +986,6 @@ function Ritocchi({
   function reset() {
     setSel(null);
     setTarget(null);
-    setDetails(false);
     setConfirmClose(false);
     setGapZ(null);
     setFind(null);
@@ -972,10 +1008,7 @@ function Ritocchi({
     }
     if (effects?.[z]) {
       if (target === z) move();
-      else {
-        setTarget(z);
-        setDetails(false);
-      }
+      else setTarget(z);
       return;
     }
     if (lessonClassId) {
@@ -1195,8 +1228,12 @@ function Ritocchi({
   };
 
   return (
-    <section ref={sectionRef} className="mt-1 max-md:pb-16">
-      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm">
+    // sul computer largo: tabella a sinistra e riquadro a destra, con i dettagli sempre aperti
+    <section
+      ref={sectionRef}
+      className="mt-1 max-md:pb-16 xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start xl:gap-x-4"
+    >
+      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm xl:col-span-2">
         <h2 className="mr-auto font-display text-lg">Ritocchi</h2>
         <span className="hidden text-[13px] text-muted-foreground sm:inline">
           {edit.history.length === 0
@@ -1240,7 +1277,9 @@ function Ritocchi({
         </div>
       </div>
 
-      <ReportPanel current={current} proposal={report} mode="edit" />
+      <div className="xl:col-span-2">
+        <ReportPanel current={current} proposal={report} mode="edit" />
+      </div>
 
       <div className="paper-panel mt-3 rounded-xl p-4 sm:p-5">
         <p className="text-sm text-muted-foreground">
@@ -1482,10 +1521,10 @@ function Ritocchi({
         Riquadro in basso ad altezza fissa (due righe) in ogni stato: toccando le caselle non cresce e non
         copre la tabella più di prima, e la pagina non si muove. Si allunga solo a richiesta («dettagli» e
         proposte di «Trova»). Sul telefono sta sopra la barra dei tasti e il menu in basso (113 px), con 8 px
-        di stacco.
+        di stacco. Sul computer largo sta a destra della tabella, con i dettagli sempre aperti.
       */}
       <div
-        className="sticky bottom-[121px] z-10 mt-3 max-h-[46dvh] overflow-y-auto rounded-xl border border-border bg-card/95 px-3 py-2 shadow-sm backdrop-blur md:bottom-3"
+        className="sticky bottom-[121px] z-10 mt-3 max-h-[46dvh] overflow-y-auto rounded-xl border border-border bg-card/95 px-3 py-2 shadow-sm backdrop-blur md:bottom-3 xl:top-16 xl:bottom-auto xl:max-h-[calc(100dvh-5rem)] xl:px-4 xl:py-3"
         aria-live="polite"
       >
         {(!sel || !selLesson) && gapNow !== null ? (
@@ -1575,14 +1614,17 @@ function Ritocchi({
                   <button
                     type="button"
                     onClick={() => setDetails((d) => !d)}
-                    aria-expanded={details}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[13px] md:mr-2 md:flex-none"
+                    aria-expanded={showDetails}
+                    disabled={wide}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[13px] disabled:cursor-default md:mr-2 md:flex-none xl:mr-auto"
                   >
                     <VerdictMark verdict={effect.verdict} />
                     <span className="truncate">{VERDICT_SHORT[effect.verdict]}</span>
-                    <span className="shrink-0 text-muted-foreground underline underline-offset-4">
-                      {details ? "meno" : "dettagli"}
-                    </span>
+                    {!wide && (
+                      <span className="shrink-0 text-muted-foreground underline underline-offset-4">
+                        {details ? "meno" : "dettagli"}
+                      </span>
+                    )}
                   </button>
                   <Button
                     size="sm"
@@ -1596,7 +1638,7 @@ function Ritocchi({
                     Annulla
                   </Button>
                 </div>
-                {details && (
+                {showDetails && (
                   <div className="flex flex-col gap-1 text-[13px] leading-snug">
                     {issues.length > 0 && <p className="text-destructive">Non rispetta: {issues.join("; ")}.</p>}
                     <EffectLines effect={effect} who={whoNow} nameOf={nameOf} />
