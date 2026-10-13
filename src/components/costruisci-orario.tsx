@@ -335,7 +335,7 @@ export function CostruisciOrario() {
         </div>
         <p className="mt-2 text-[13px] text-muted-foreground">
           {mode === "scratch"
-            ? "Genera un nuovo orario. Le ore buche colmabili con ore a disposizione non vengono conteggiate."
+            ? "Genera un nuovo orario. Le ore buche colmabili con ore a disposizione non vengono conteggiate, ma al massimo una al giorno."
             : "Migliora l’orario in uso senza peggiorare nessuna voce. Le ore a disposizione restano dove sono."}
           {speed === "accurata" ? " Richiede più tempo, ma in genere trova soluzioni migliori." : ""}
         </p>
@@ -1594,6 +1594,7 @@ function HowItWorks() {
         "Rispetta le ore al giorno scelte per un docente",
         "Non sposta le ore bloccate",
         "Lascia un’ora per spostarsi tra due plessi",
+        "Al massimo un’ora libera tra le lezioni di un giorno, buca o a disposizione (fino a 2 per chi le accetta)",
         "Mai dalla 1ª alla 6ª con 2 ore buche",
       ],
     },
@@ -1601,7 +1602,6 @@ function HowItWorks() {
       title: "Se possibile",
       items: [
         "Docenti a 18 ore senza buche e mai dalla 1ª alla 6ª",
-        "Per gli altri docenti, al massimo un’ora buca al giorno",
         "Italiano e matematica alla 1ª–2ª ora almeno una volta",
         "Materie da 2 ore in due giorni diversi",
         "Scienze motorie nelle ultime ore",
@@ -2012,6 +2012,26 @@ function TeacherCard({
               {pats.length ? patText : "Libere"}
             </button>
             {stale && <span className="text-[11px] text-warning">da rivedere: ora le ore sono {hours}</span>}
+          </div>
+        )}
+
+        {hours > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={Boolean(t.allowTwoFree)}
+              title="Di norma, tra la prima e l’ultima lezione di un giorno, al massimo un’ora libera (buca o a disposizione). Su richiesta del docente, fino a 2."
+              onClick={() => onUpdate(t.id, { allowTwoFree: !t.allowTwoFree })}
+              className={cn(
+                "h-7 rounded-full border px-2.5 text-[11px] font-medium transition-colors",
+                t.allowTwoFree
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-muted-foreground hover:bg-muted",
+              )}
+            >
+              Accetta 2 ore libere in mezzo
+            </button>
           </div>
         )}
 

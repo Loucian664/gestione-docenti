@@ -62,6 +62,11 @@ export type Teacher = {
   lockedSlots?: { day: DayOfWeek; periodId: string; classId: string }[];
   /** Tutta la settimana del docente bloccata. */
   lockWeek?: boolean;
+  /**
+   * Su richiesta del docente: in un giorno accetta 2 ore libere tra le lezioni (buche o a disposizione).
+   * Di norma ne è ammessa al massimo una.
+   */
+  allowTwoFree?: boolean;
   /** Righe della scheda (classe, materia, ore). Restano sul docente anche se le cattedre globali si perdono. */
   cardRows?: { classId: string; subject: string; hours: number }[];
 };
