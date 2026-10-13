@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { classTimetableSheet } from "./class-grid.ts";
+import { classCellSlots, classLessonSlots } from "./coverage.ts";
+import { TP_PERIODS } from "./periods.ts";
+import { weekCellLines } from "./sheet-image.ts";
 import type { PersistedData, Teacher, TimetableSlot } from "./types.ts";
 
 function teacher(id: string, lastName: string, extras: Partial<Teacher> = {}): Teacher {
@@ -153,5 +156,116 @@ describe("classTimetableSheet", () => {
     const lun2 = sheet.rows[5] ?? [];
     assert.equal(lun2[5]?.v, "");
     assert.equal(lun2[5]?.s, 7);
+  });
+
+  it("never writes the sostegno in the class columns, whatever the order of the saved hours", () => {
+    // il sostegno salvato prima della lezione, come dopo «Usa questa proposta» in Costruisci
+    const d = data({
+      teachers: [
+        teacher("t-alfa", "Alfa"),
+        teacher("t-sos", "Beta", { role: "sostegno", assignedClassIds: ["c-1A", "c-2A"] }),
+      ],
+      slots: [
+        slot("c-2A", 1, "p1", "t-sos", "Sostegno"),
+        slot("c-2A", 1, "p1", "t-alfa"),
+        slot("c-1A", 1, "p2", "t-sos", "Sostegno"),
+      ],
+    });
+    for (const mode of ["cognomi", "materie"] as const) {
+      const values = classTimetableSheet(d, mode).rows.map((row) => row.map((c) => String(c.v ?? "")));
+      assert.equal(values[4]?.[3], mode === "cognomi" ? "ALFA" : "ITALIANO");
+      // solo il sostegno in quell'ora: la casella della classe resta vuota
+      assert.equal(values[5]?.[2], "");
+      for (const row of values.slice(4)) {
+        assert.ok(!row.slice(2, 4).some((v) => /BETA|SOSTEGNO/.test(v)), `${mode}: ${row.join(" | ")}`);
+      }
+      // il sostegno resta nella sua colonna
+      assert.equal(values[4]?.[5], "2A");
+      assert.equal(values[5]?.[5], "1A");
+    }
+  });
+
+  it("puts the class teacher before potenziamento; potenziamento alone stays", () => {
+    const sheet = classTimetableSheet(
+      data({
+        teachers: [teacher("t-alfa", "Alfa"), teacher("t-pot", "Gamma", { role: "potenziamento" })],
+        slots: [
+          slot("c-2A", 1, "p1", "t-pot", "Potenziamento"),
+          slot("c-2A", 1, "p1", "t-alfa"),
+          slot("c-1A", 1, "p2", "t-pot", "Potenziamento"),
+        ],
+      }),
+    );
+    assert.equal(sheet.rows[4]?.[3]?.v, "ALFA");
+    assert.equal(sheet.rows[5]?.[2]?.v, "GAMMA");
+  });
+
+  it("mensa: the sostegno does not change the class cell", () => {
+    const base = data();
+    const tp = (id: string, grade: 1 | 2, section: string) => ({
+      id,
+      name: `${grade}ª ${section}`,
+      grade,
+      section,
+      students: 20,
+      tempo: "TP" as const,
+    });
+    const sheet = classTimetableSheet(
+      data({
+        settings: { ...base.settings, tpAfternoon: true, periods: [...base.settings.periods, ...TP_PERIODS] },
+        classes: [tp("c-1A", 1, "A"), tp("c-2A", 2, "A")],
+        teachers: [teacher("t-alfa", "Alfa"), teacher("t-sos", "Beta", { role: "sostegno" })],
+        slots: [
+          slot("c-2A", 1, "p-mensa", "t-sos", "Sostegno"),
+          slot("c-2A", 1, "p-mensa", "t-alfa", "Mensa"),
+          slot("c-1A", 1, "p-mensa", "t-sos", "Mensa"),
+        ],
+      }),
+    );
+    const mensa = sheet.rows[10]?.map((c) => c.v ?? "") ?? [];
+    assert.equal(mensa[1], "M");
+    assert.equal(mensa[2], "MENSA");
+    assert.equal(mensa[3], "MENSA");
+  });
+});
+
+describe("caselle delle classi", () => {
+  const d = data({
+    teachers: [
+      teacher("t-alfa", "Alfa"),
+      teacher("t-pot", "Gamma", { role: "potenziamento" }),
+      teacher("t-sos", "Beta", { role: "sostegno" }),
+      teacher("t-delta", "Delta"),
+    ],
+    slots: [
+      slot("c-2A", 1, "p1", "t-sos", "Sostegno"),
+      slot("c-2A", 1, "p1", "t-pot", "Potenziamento"),
+      slot("c-2A", 1, "p1", "t-alfa"),
+      slot("c-2A", 1, "p2", "t-sos", "Sostegno"),
+      // ora di sostegno di un docente di materia: vale come sostegno
+      slot("c-2A", 1, "p3", "t-delta", "Sostegno"),
+    ],
+  });
+
+  it("orders the hours: who holds the class, then potenziamento, then sostegno", () => {
+    assert.deepEqual(
+      classCellSlots(d, "c-2A", 1, "p1").map((s) => s.teacherId),
+      ["t-alfa", "t-pot", "t-sos"],
+    );
+    assert.deepEqual(
+      classLessonSlots(d, "c-2A", 1, "p1").map((s) => s.teacherId),
+      ["t-alfa", "t-pot"],
+    );
+    assert.deepEqual(classLessonSlots(d, "c-2A", 1, "p2"), []);
+    assert.deepEqual(classLessonSlots(d, "c-2A", 1, "p3"), []);
+  });
+
+  it("weekly view: the lesson, never the sostegno", () => {
+    const lines = weekCellLines(d, "c-2A", 1);
+    assert.equal(lines[0]?.teacher, "Alfa X.");
+    assert.equal(lines[0]?.extra, " +");
+    assert.equal(lines[1]?.teacher, "");
+    assert.equal(lines[1]?.subject, "");
+    assert.equal(lines[2]?.teacher, "");
   });
 });

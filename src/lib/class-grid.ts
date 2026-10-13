@@ -1,4 +1,4 @@
-import { cellSlots, isDispHour } from "./coverage";
+import { cellSlots, classLessonSlots, isDispHour } from "./coverage";
 import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "./periods";
 import { teacherSheetName } from "./teacher-print";
 import { mergedUpper } from "./subject-groups";
@@ -9,6 +9,7 @@ import {
   type Period,
   type SchoolClass,
   type Teacher,
+  type TimetableSlot,
 } from "./types";
 
 export const XLSX_S = {
@@ -98,6 +99,24 @@ function asYearLine(data: PersistedData): string {
   return kind || year;
 }
 
+/**
+ * La lezione da scrivere nella casella di una classe, o «MENSA». Il sostegno non c'è mai: ha le sue
+ * colonne, e la casella si legge come se non ci fosse.
+ */
+export function classCellLesson(
+  data: PersistedData,
+  classId: string,
+  day: DayOfWeek,
+  period: Period,
+): TimetableSlot | "MENSA" | null {
+  const lessons = classLessonSlots(data, classId, day, period.id);
+  if (isMensaPeriod(period)) {
+    const here = lessons.length ? lessons : cellSlots(data, classId, day, period.id);
+    if (here.length > 0 && here.every((s) => isMensaLesson(s))) return "MENSA";
+  }
+  return lessons[0] ?? null;
+}
+
 function classCell(
   data: PersistedData,
   cls: SchoolClass,
@@ -106,14 +125,11 @@ function classCell(
   mode: ClassSheetMode,
 ): string {
   if (isRestrictedTpPeriod(period) && cls.tempo !== "TP") return "";
-  const occupants = cellSlots(data, cls.id, day, period.id);
-  if (isMensaPeriod(period) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
-    return "MENSA";
-  }
-  if (!occupants.length) return "";
-  const primary = occupants[0]!;
-  if (mode === "materie") return schoolSubjectLabel(primary.subject);
-  const t = data.teachers.find((x) => x.id === primary.teacherId);
+  const lesson = classCellLesson(data, cls.id, day, period);
+  if (lesson === "MENSA") return "MENSA";
+  if (!lesson) return "";
+  if (mode === "materie") return schoolSubjectLabel(lesson.subject);
+  const t = data.teachers.find((x) => x.id === lesson.teacherId);
   return t ? teacherSheetName(t, data.teachers) : "";
 }
 
