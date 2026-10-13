@@ -144,7 +144,7 @@ function OrarioPage() {
     <div>
       <PageHeader
         title="Orario"
-        description="Quadro, foglio settimanale, orario per classe o docente. Costruisci propone un orario iniziale."
+        description="Consulta, modifica e stampa l’orario di classi e docenti. In «Costruisci» puoi generare una proposta di orario."
         actions={
           <>
             <Button
@@ -203,11 +203,11 @@ function OrarioPage() {
           value={view}
           onValueChange={(v) => setView(v as "quadro" | "settimana" | "class" | "teacher" | "costruisci")}
           items={[
-            { value: "quadro", label: "Quadro" },
-            { value: "settimana", label: "Settimana" },
-            { value: "class", label: "Classe" },
-            { value: "teacher", label: "Docente" },
-            { value: "costruisci", label: "Costruisci" },
+            { value: "quadro", label: "Quadro", title: "Tutte le classi, un giorno alla volta" },
+            { value: "settimana", label: "Settimana", title: "Tutte le classi, tutta la settimana" },
+            { value: "class", label: "Classe", title: "Orario settimanale di una classe" },
+            { value: "teacher", label: "Docente", title: "Orario settimanale di un docente" },
+            { value: "costruisci", label: "Costruisci", title: "Generazione guidata dell’orario" },
           ]}
         />
         <label className="flex min-h-10 items-center gap-2 text-sm">
@@ -228,7 +228,7 @@ function OrarioPage() {
         {view !== "costruisci" && (
           <div>
             <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Fogli
+              Fogli da stampare
             </p>
             <div className="grid grid-cols-6 gap-1.5 md:flex md:flex-wrap md:items-center">
               <Button
@@ -342,8 +342,7 @@ function OrarioPage() {
                   ? " · 1 buca"
                   : ` · ${teacherGaps} buche`
                 : ""}
-              {currentTeacher ? ` · ${ROLE_LABELS_HINT[currentTeacher.role]}` : ""}. Clicca una cella per
-              inserirla, anche in compresenza.
+              . Seleziona una casella per inserire o modificare un’ora, anche in compresenza.
             </p>
           </div>
         )}
@@ -430,7 +429,7 @@ function OrarioPage() {
       {view === "settimana" && (
         <div>
           <p className="mb-3 text-sm text-muted-foreground">
-            Questo quadro è il foglio di lavoro. Foto e PDF in alto lo salvano così, con i docenti.
+            Quadro settimanale di lavoro: con Foto e PDF, in alto, lo esporti così com’è, con i docenti.
           </p>
           <ScrollGrid unit={["Giorno", "Giorni"]}>
             <table className="w-full min-w-[720px] border-collapse text-[12px]">
@@ -611,7 +610,7 @@ function OrarioPage() {
                             </>
                           ) : (
                             <span className="text-[12px] text-ink-faint">
-                              {disp ? "A disposizione" : inWindow ? "Buco · in sede" : "Clicca per inserire"}
+                              {disp ? "A disposizione" : inWindow ? "Buca · in sede" : "Aggiungi"}
                             </span>
                           )}
                         </button>
@@ -643,13 +642,6 @@ function OrarioPage() {
   );
 }
 
-const ROLE_LABELS_HINT: Record<string, string> = {
-  cattedra: "cattedra",
-  potenziamento: "potenziamento",
-  sostegno: "sostegno",
-  religione: "religione",
-};
-
 function CellEditor({
   editing,
   onClose,
@@ -676,13 +668,13 @@ function CellEditor({
   function add() {
     if (!teacherId) return;
     if (isRestrictedTpPeriod(period) && cls?.tempo !== "TP") {
-      toast.error("7ª e 8ª ora sono solo per le classi a tempo prolungato.");
+      toast.error("La 7ª e l’8ª ora sono riservate alle classi a tempo prolungato.");
       return;
     }
     const busy = teacherSlotAt(data, teacherId, editing.day, editing.periodId);
     if (busy && busy.classId !== editing.classId) {
       const other = data.classes.find((c) => c.id === busy.classId);
-      toast.error(`Quel docente è già in ${other?.name ?? "un’altra classe"} in quest’ora.`);
+      toast.error(`Il docente è già in ${other?.name ?? "un’altra classe"} in quest’ora.`);
       return;
     }
     store.upsertSlot({
@@ -811,7 +803,7 @@ function TeacherHourEditor({
     }
     const cls = data.classes.find((c) => c.id === classId);
     if (isRestrictedTpPeriod(period) && cls?.tempo !== "TP") {
-      toast.error("7ª e 8ª ora sono solo per le classi a tempo prolungato.");
+      toast.error("La 7ª e l’8ª ora sono riservate alle classi a tempo prolungato.");
       return;
     }
     const busy = teacherSlotAt(data, editing.teacherId, editing.day, editing.periodId);

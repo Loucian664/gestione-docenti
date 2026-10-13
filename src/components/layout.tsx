@@ -185,9 +185,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <div className="mt-auto px-3 pb-4">
           <ThemePicker compact />
           <p className="mt-3 px-2 text-[11px] leading-snug text-sidebar-muted">
-            Strumento personale
-            <br />
-            Salvato su questo dispositivo
+            Dati salvati solo su questo dispositivo
           </p>
         </div>
       </aside>
@@ -237,7 +235,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           ) : (
             <div>
               <h1 className="font-display text-3xl font-medium tracking-tight">Gestione Docenti</h1>
-              <p className="mt-2 max-w-md text-sm text-muted-foreground">Apro il registro salvato…</p>
+              <p className="mt-2 max-w-md text-sm text-muted-foreground">Caricamento dei dati…</p>
             </div>
           )}
         </main>

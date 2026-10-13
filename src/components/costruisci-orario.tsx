@@ -335,9 +335,9 @@ export function CostruisciOrario() {
         </div>
         <p className="mt-2 text-[13px] text-muted-foreground">
           {mode === "scratch"
-            ? "Cerca l’orario migliore partendo da capo. Le buche dove possono andare le disposizioni del docente non contano."
-            : "Corregge l’orario in uso senza peggiorare nessuna voce del confronto. Le tue disposizioni restano dove sono."}
-          {speed === "accurata" ? " Con più tempo trova di solito qualcosa di meglio." : ""}
+            ? "Genera un nuovo orario. Le ore buche colmabili con ore a disposizione non vengono conteggiate."
+            : "Migliora l’orario in uso senza peggiorare nessuna voce. Le ore a disposizione restano dove sono."}
+          {speed === "accurata" ? " Richiede più tempo, ma in genere trova soluzioni migliori." : ""}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button onClick={propose} disabled={Boolean(running)}>
@@ -578,8 +578,8 @@ export function CostruisciOrario() {
             {patternTodo[1]!.length > 0 && (
               <li>Ore al giorno scelte: poi aggiungi le disposizioni di {joinNames(patternTodo[1]!)}.</li>
             )}
-            <li>Sostegno, potenziamento, strumento e pomeriggio non cambiano: il sostegno va risistemato a mano.</li>
-            <li>Se non va, puoi tornare indietro con «Annulla l’ultimo orario usato».</li>
+            <li>Le ore di sostegno vanno sistemate manualmente.</li>
+            <li>Puoi sempre tornare indietro con «Annulla l’ultimo orario usato».</li>
           </ul>
           <div className="mt-2 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setConfirmFor(null)}>
@@ -1195,8 +1195,8 @@ function Ritocchi({
 
       <div className="paper-panel mt-3 rounded-xl p-4 sm:p-5">
         <p className="text-sm text-muted-foreground">
-          Tocca una lezione, poi l’ora dove spostarla: il colore dice cosa cambia. Con il lucchetto la blocchi e
-          «Proponi orario» non la sposta più.
+          Seleziona una lezione e poi l’ora in cui spostarla: il colore indica se l’orario migliora o peggiora. Con
+          il lucchetto la lezione resta fissa anche nelle proposte automatiche.
         </p>
         <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-foreground">
           {LEGEND.map((l) => (
@@ -1289,7 +1289,7 @@ function Ritocchi({
               return g && g.gaps > 0 ? (
                 <>
                   <span className="font-medium text-warning">{g.gaps === 1 ? "1 ora buca" : `${g.gaps} ore buche`}</span>: {g.where}.{" "}
-                  {g.gaps === 1 ? "Toccala" : "Toccane una"} per cercare come toglierla.
+                  {g.gaps === 1 ? "Selezionala" : "Selezionane una"} per cercare come eliminarla.
                 </>
               ) : (
                 "Nessuna ora buca."
@@ -1475,14 +1475,14 @@ function Ritocchi({
                         </button>
                       </Fragment>
                     ))}
-                    : tocca {notice.changed.length === 1 ? "il nome" : "un nome"} per vedere la sua settimana.
+                    : seleziona {notice.changed.length === 1 ? "il nome" : "un nome"} per vederne l’orario settimanale.
                   </>
                 )}
               </span>
             ) : view === "teacher" ? (
-              "Tocca una lezione per spostarla, o una buca per cercare come toglierla."
+              "Seleziona una lezione da spostare o un’ora buca da eliminare."
             ) : (
-              "Tocca una lezione per spostarla."
+              "Seleziona una lezione da spostare."
             )}
           </p>
         ) : (
@@ -1591,22 +1591,22 @@ function HowItWorks() {
       title: "Sempre",
       items: [
         "Rispetta le ore Altrove e No, gli obblighi di classe e i rientri",
-        "Le ore al giorno scelte per un docente (es. 4-4-4-3-3)",
-        "Le ore bloccate restano dove sono",
-        "Un’ora libera per spostarsi tra due plessi",
+        "Rispetta le ore al giorno scelte per un docente",
+        "Non sposta le ore bloccate",
+        "Lascia un’ora per spostarsi tra due plessi",
         "Mai dalla 1ª alla 6ª con 2 ore buche",
       ],
     },
     {
       title: "Se possibile",
       items: [
-        "Docenti a 18 ore: niente buche, mai dalla 1ª alla 6ª",
-        "Gli altri: al massimo una buca al giorno; 6 ore a scuola o 5 lezioni solo se inevitabili",
-        "Italiano e matematica alle prime ore almeno una volta",
+        "Docenti a 18 ore senza buche e mai dalla 1ª alla 6ª",
+        "Per gli altri docenti, al massimo un’ora buca al giorno",
+        "Italiano e matematica alla 1ª–2ª ora almeno una volta",
         "Materie da 2 ore in due giorni diversi",
         "Scienze motorie nelle ultime ore",
-        "Classi senza giornate pesanti",
-        "Giorni interi in un solo plesso",
+        "Evita giornate troppo pesanti per le classi",
+        "Giornate intere in un solo plesso",
       ],
     },
   ];
@@ -1632,7 +1632,7 @@ function HowItWorks() {
         ))}
       </div>
       <p className="mt-3 text-sm text-muted-foreground">
-        <span className="font-semibold text-foreground">Non tocca</span> ore a disposizione, sostegno, potenziamento,
+        <span className="font-semibold text-foreground">Non cambia</span> ore a disposizione, sostegno, potenziamento,
         strumento e pomeriggio.
       </p>
     </details>
@@ -1775,7 +1775,7 @@ function AvailabilityPanel({
   return (
     <section className="paper-panel rounded-xl p-5">
       <StepTitle n={1} title="Quando ci sono i docenti">
-        Scegli un segno e tocca le caselle. Toccando un giorno o un’ora segni tutta la colonna o la riga.
+        Seleziona un segno, poi le caselle. Selezionando un giorno o un’ora segni l’intera colonna o riga.
       </StepTitle>
 
       <div className="sticky top-0 z-20 -mx-5 mt-4 border-y border-border bg-card/95 px-5 py-2 backdrop-blur-sm">
@@ -2676,7 +2676,7 @@ function CattedrePanel({
       </summary>
       <div className="mt-4">
         <p className="text-sm text-muted-foreground">
-          Una classe alla volta: materia, ore, docente. Poi puoi copiare le ore alle altre classi.
+          Per ogni classe: materia, ore e docente. Poi puoi copiare le ore sulle altre classi.
         </p>
         <NativeSelect className="mt-3 sm:max-w-xs" value={classId} onChange={(e) => onClassId(e.target.value)}>
           {classes.map((c) => (
@@ -3108,7 +3108,7 @@ function ReportPanel({
         : `Rispetto all’orario in uso: ${counts}.`
       : mode === "improve"
       ? better === 0 && worse === 0
-        ? "Non ho trovato niente di meglio: nessuna voce migliora senza peggiorarne un’altra. Il tuo orario resta il migliore."
+        ? "Nessun miglioramento trovato: ogni modifica provata peggiorava almeno una voce. L’orario in uso resta invariato."
         : worse === 0
           ? `${better === 1 ? "Migliora 1 voce" : `Migliorano ${better} voci`}, nessuna peggiora.`
           : `${better === 1 ? "Migliora 1 voce" : `Migliorano ${better} voci`}; per rispettare le tue scelte ${worse === 1 ? "ne peggiora 1" : `ne peggiorano ${worse}`}.`

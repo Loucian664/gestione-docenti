@@ -110,11 +110,15 @@ function OggiPage() {
   function autoFill() {
     const plan = autoAssignPlan(data, date);
     if (plan.length === 0) {
-      toast.message("Niente da assegnare: giornata già coperta o nessun docente libero.");
+      toast.message("Nessuna sostituzione da assegnare: le ore sono già coperte o non ci sono docenti disponibili.");
       return;
     }
     store.applyAutoAssign(plan);
-    toast.success(`${plan.length} ore assegnate in automatico. Controlla e conferma.`);
+    toast.success(
+      plan.length === 1
+        ? "1 sostituzione assegnata automaticamente: puoi modificarla dalla bacheca."
+        : `${plan.length} sostituzioni assegnate automaticamente: puoi modificarle dalla bacheca.`,
+    );
   }
 
   async function copySheet() {
@@ -167,7 +171,7 @@ function OggiPage() {
     <div>
       <PageHeader
         title="Bacheca del giorno"
-        description="Registra le assenze, copri le ore, stampa il foglio per la sala docenti."
+        description="Registra le assenze e le sostituzioni orarie. Scarica il riepilogo giornaliero."
         actionsFullWidth
         actions={
           <>
@@ -240,25 +244,25 @@ function OggiPage() {
           </div>
         </div>
         <div className="flex flex-wrap justify-center gap-2 lg:justify-end" data-print-hide>
-          <Button variant="outline" size="sm" className="shrink-0" onClick={copySheet}>
+          <Button variant="outline" size="sm" className="shrink-0" onClick={copySheet} title="Copia il testo per WhatsApp o mail">
             <Copy />
             Copia foglio
           </Button>
-          <Button variant="outline" size="sm" className="shrink-0" onClick={() => void exportCsv()}>
+          <Button variant="outline" size="sm" className="shrink-0" onClick={() => void exportCsv()} title="Salva o condividi la tabella Excel">
             <Download />
             Excel
           </Button>
-          <Button variant="outline" size="sm" className="shrink-0" onClick={() => void exportPhoto()}>
+          <Button variant="outline" size="sm" className="shrink-0" onClick={() => void exportPhoto()} title="Salva o condividi un’immagine del foglio">
             <ImageIcon />
             Foto
           </Button>
-          <Button variant="outline" size="sm" className="shrink-0" onClick={exportPdf}>
+          <Button variant="outline" size="sm" className="shrink-0" onClick={exportPdf} title="Apri il PDF da stampare o condividere">
             <FileText />
             PDF
           </Button>
         </div>
         <p className="text-center text-[12px] text-muted-foreground md:hidden" data-print-hide>
-          Su iPhone, Foto si salva in Foto; PDF apre Condividi, File o Stampa.
+          Foto e PDF si aprono per salvarli, stamparli o condividerli.
         </p>
       </div>
 
@@ -334,6 +338,10 @@ function OggiPage() {
       {shifts.length > 0 && (
         <div className="mb-5 rounded-xl border border-border bg-card px-4 py-3" data-print-hide>
           <p className="font-display text-lg">Orario variato</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            Classi scoperte nelle prime o nelle ultime ore: puoi posticiparne l’ingresso o anticiparne l’uscita. Con
+            «Conferma» le ore non risultano più da coprire e la variazione compare nel riepilogo.
+          </p>
           <ul className="mt-2 flex flex-col gap-2">
             {shifts.map((s) => {
               const cls = data.classes.find((c) => c.id === s.classId);
@@ -356,10 +364,10 @@ function OggiPage() {
       {uncovered > 0 && (
         <div className="mb-5 rounded-xl border border-destructive/25 bg-danger-soft px-4 py-3">
           <p className="font-display text-lg text-destructive">
-            {uncovered === 1 ? "Manca ancora chi copre 1 ora" : `Mancano ancora ${uncovered} coperture`}
+            {uncovered === 1 ? "Ancora 1 ora da coprire" : `Ancora ${uncovered} ore da coprire`}
           </p>
           <p className="mt-1 hidden text-sm text-destructive/90 md:block">
-            La bacheca non è chiusa. Tocca una riga per assegnare, oppure Auto-assegna.
+            Scegli un’ora qui sotto per assegnarla, oppure usa Auto-assegna.
           </p>
           <ul className="mt-2 flex flex-wrap gap-1.5">
             {needs
@@ -403,7 +411,7 @@ function OggiPage() {
 
       {weekend && (
         <p className="mb-4 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">
-          Giorno non previsto in orario. Scegli un giorno di lezione oppure aggiungi il sabato nelle impostazioni.
+          Giorno senza lezioni. Seleziona un altro giorno con le frecce; se la scuola fa lezione il sabato, attivalo in Impostazioni.
         </p>
       )}
 
@@ -436,8 +444,8 @@ function OggiPage() {
         <div className="paper-panel rounded-xl px-6 py-14 text-center">
           <p className="font-display text-2xl">Nessuna ora da coprire</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-            Se arriva una chiamata, registra l’assenza: le ore in orario si aprono qui, con i colleghi liberi già
-            ordinati.
+            Registra l’assenza di un docente: le sue ore compariranno qui, con i colleghi disponibili in ordine di
+            priorità.
           </p>
           <Button className="mt-5" onClick={() => setAbsenceOpen(true)}>
             Registra assenza
@@ -495,12 +503,14 @@ function OggiPage() {
                         <p className="text-sm">{shift.phrase}</p>
                       ) : (
                         <p className="text-sm">
-                          <span className="text-muted-foreground">Copre </span>
-                          {n.substitution?.type === "divisione"
-                            ? "classe divisa"
-                            : sub
-                              ? teacherShort(sub, data.teachers)
-                              : "Tocca per assegnare"}
+                          {n.substitution?.type === "divisione" || sub ? (
+                            <>
+                              <span className="text-muted-foreground">Copre </span>
+                              {n.substitution?.type === "divisione" || !sub ? "classe divisa" : teacherShort(sub, data.teachers)}
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">Sostituto da assegnare</span>
+                          )}
                           {tipo ? <span className="text-muted-foreground"> · {tipo}</span> : null}
                         </p>
                       )}
@@ -520,7 +530,7 @@ function OggiPage() {
           <DialogHeader className="pr-8">
             <DialogTitle>Foglio sostituzioni in PDF</DialogTitle>
             <DialogDescription>
-              Da qui puoi condividerlo, salvarlo in File o aprirlo per stamparlo.
+              Puoi condividerlo, salvarlo in File o aprirlo per la stampa.
             </DialogDescription>
           </DialogHeader>
           {pdf && (

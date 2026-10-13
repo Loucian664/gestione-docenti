@@ -33,7 +33,7 @@ function ClassiPage() {
     <div>
       <PageHeader
         title="Classi"
-        description="Il tempo (normale o prolungato) si salva appena lo cambi dalla tendina."
+        description="Classi del plesso e tempo scuola (normale o prolungato). Il tempo scelto dalla tendina viene salvato subito."
         actions={
           <Button onClick={() => setEditing("new")}>
             <Plus />
@@ -71,7 +71,7 @@ function ClassiPage() {
                     </NativeSelect>
                   </li>
                 ))}
-                {items.length === 0 && <p className="px-3 text-sm text-muted-foreground">Nessuna sezione.</p>}
+                {items.length === 0 && <p className="px-3 text-sm text-muted-foreground">Nessuna sezione presente.</p>}
               </ul>
             </section>
           );

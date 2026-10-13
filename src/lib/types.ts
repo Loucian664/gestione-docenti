@@ -184,13 +184,13 @@ export const ABSENCE_REASONS: { value: AbsenceReason; label: string }[] = [
 ];
 
 export const SUBSTITUTION_TYPES: { value: SubstitutionType; label: string; short: string; hint: string }[] = [
-  { value: "disposizione", label: "Ora a disposizione", short: "DISP", hint: "Docente libero in orario di servizio" },
-  { value: "potenziamento", label: "Potenziamento", short: "POT", hint: "Organico di potenziamento" },
-  { value: "recupero", label: "Recupero", short: "REC", hint: "Recupero ore non prestate" },
-  { value: "eccedente", label: "Ora eccedente", short: "ECC", hint: "Retribuita oltre orario" },
+  { value: "disposizione", label: "Ora a disposizione", short: "DISP", hint: "Ora di servizio senza classe" },
+  { value: "potenziamento", label: "Potenziamento", short: "POT", hint: "Docente dell’organico di potenziamento" },
+  { value: "recupero", label: "Recupero", short: "REC", hint: "Recupero di ore non prestate" },
+  { value: "eccedente", label: "Ora eccedente", short: "ECC", hint: "Ora eccedente, retribuita a parte" },
   { value: "sostegno", label: "Sostegno", short: "SOS", hint: "Docente di sostegno disponibile" },
   { value: "compresenza", label: "Compresenza", short: "COMP", hint: "Docente già in classe" },
-  { value: "divisione", label: "Divisione classe", short: "DIV", hint: "Alunni suddivisi in altre classi" },
+  { value: "divisione", label: "Divisione classe", short: "DIV", hint: "Alunni distribuiti in altre classi" },
   { value: "altro", label: "Altro", short: "ALT", hint: "" },
 ];
 
