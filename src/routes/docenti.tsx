@@ -9,7 +9,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAppStore, snapshot } from "@/lib/store";
-import { monthSubCounts, teacherName } from "@/lib/coverage";
+import { teacherName } from "@/lib/coverage";
 import { cattedreOfTeacher } from "@/lib/build-timetable";
 import { DAY_SHORT, ROLE_LABELS, ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole } from "@/lib/types";
 import { Plus, Search, LayoutGrid } from "lucide-react";
@@ -33,7 +33,6 @@ function DocentiPage() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<Teacher | null | "new">(null);
-  const counts = monthSubCounts(data, data.selectedDate);
 
   const list = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -62,35 +61,36 @@ function DocentiPage() {
         <Input className="pl-9" placeholder="Cerca per cognome o materia" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <ul className="paper-panel divide-y divide-border rounded-xl md:hidden">
-        {list.map((t) => {
-          const covers = counts[t.id] ?? 0;
-          return (
-            <li key={t.id} className="flex items-start gap-2 py-3 pr-2 pl-4">
-              <button type="button" onClick={() => setEditing(t)} className="min-w-0 flex-1 text-left">
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="size-2.5 shrink-0 rounded-full" style={{ background: teacherDotColor(t.color) }} />
-                  <span className="font-medium">{teacherName(t)}</span>
-                  <Badge variant="outline">{ROLE_LABELS[t.role]}</Badge>
-                </span>
-                <span className="mt-0.5 block text-[13px] text-muted-foreground">{t.subjects.join(", ")}</span>
-                <span className="block text-[13px] text-muted-foreground">{classLabels(data, t.id) || "—"}</span>
-              </button>
-              <div className="flex shrink-0 flex-col items-end gap-1">
-                <span className="pt-0.5 text-[13px] whitespace-nowrap text-muted-foreground tabular-nums">
-                  {t.weeklyHours} h · {covers} {covers === 1 ? "copertura" : "coperture"}
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => void navigate({ to: "/orario", search: { docente: t.id } })}
-                >
-                  <LayoutGrid />
-                  Orario
-                </Button>
-              </div>
-            </li>
-          );
-        })}
+        {list.map((t) => (
+          <li key={t.id} className="flex items-start gap-2 py-3 pr-2 pl-4">
+            <button type="button" onClick={() => setEditing(t)} className="min-w-0 flex-1 text-left">
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="size-2.5 shrink-0 rounded-full" style={{ background: teacherDotColor(t.color) }} />
+                <span className="font-medium">{teacherName(t)}</span>
+                <Badge variant="outline">{ROLE_LABELS[t.role]}</Badge>
+              </span>
+              <span className="mt-0.5 block text-[13px] text-muted-foreground">{t.subjects.join(", ")}</span>
+              <span className="block text-[13px] text-muted-foreground">{classLabels(data, t.id) || "—"}</span>
+            </button>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <span className="pt-0.5 text-right text-[13px] whitespace-nowrap text-muted-foreground tabular-nums">
+                {hoursLines(t).map((line) => (
+                  <span key={line} className="block">
+                    {line}
+                  </span>
+                ))}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void navigate({ to: "/orario", search: { docente: t.id } })}
+              >
+                <LayoutGrid />
+                Orario
+              </Button>
+            </div>
+          </li>
+        ))}
       </ul>
       <div className="paper-panel hidden overflow-x-auto rounded-xl md:block">
         <table className="w-full min-w-[52rem] text-sm">
@@ -102,7 +102,6 @@ function DocentiPage() {
               <th className="whitespace-nowrap px-4 py-2 font-medium">Classi</th>
               <th className="whitespace-nowrap px-4 py-2 text-right font-medium">Cattedra</th>
               <th className="whitespace-nowrap px-4 py-2 text-right font-medium">A disposizione</th>
-              <th className="whitespace-nowrap px-4 py-2 text-right font-medium">Coperture mese</th>
               <th className="whitespace-nowrap px-4 py-2 font-medium">Orario</th>
             </tr>
           </thead>
@@ -138,7 +137,6 @@ function DocentiPage() {
                     <DispHoursCell quota={t.dispHours ?? 0} assigned={t.dispSlots?.length ?? 0} />
                   )}
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{counts[t.id] ?? 0}</td>
                 <td className="whitespace-nowrap px-4 py-3">
                   <Button
                     size="sm"
@@ -166,6 +164,13 @@ function DocentiPage() {
       )}
     </div>
   );
+}
+
+/** Le ore di lezione e quelle a disposizione (il potenziamento ha solo ore a disposizione). */
+function hoursLines(t: Teacher): string[] {
+  if (t.role === "potenziamento") return [`${t.weeklyHours} h a disposizione`];
+  const disp = t.dispHours ?? 0;
+  return [`${t.weeklyHours} h di lezione`, ...(disp > 0 ? [`${disp} h a disposizione`] : [])];
 }
 
 function DispHoursCell({
