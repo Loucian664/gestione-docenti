@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { useAppStore, snapshot } from "@/lib/store";
 import {
   cellSlots,
+  classCellSlots,
   defaultSubjectFor,
   isDispHour,
   teacherDayWindow,
@@ -134,11 +135,6 @@ function OrarioPage() {
       }
     })();
   }
-
-  const classSlots = useMemo(
-    () => data.slots.filter((s) => s.classId === classId),
-    [data.slots, classId],
-  );
 
   return (
     <div>
@@ -376,7 +372,7 @@ function OrarioPage() {
                   {classOrder.map((c) => {
                     const tpCell = isRestrictedTpPeriod(p);
                     const allowed = !tpCell || c.tempo === "TP";
-                    const occupants = allowed ? cellSlots(data, c.id, quadroDay, p.id) : [];
+                    const occupants = allowed ? classCellSlots(data, c.id, quadroDay, p.id) : [];
                     const primary = occupants[0];
                     const t = primary ? data.teachers.find((x) => x.id === primary.teacherId) : null;
                     if (!allowed) {
@@ -504,7 +500,7 @@ function OrarioPage() {
                     </div>
                   </td>
                   {days.map((d) => {
-                    const occupants = classSlots.filter((s) => s.day === d && s.periodId === p.id);
+                    const occupants = classCellSlots(data, classId, d, p.id);
                     const primary = occupants[0];
                     const t = primary ? data.teachers.find((x) => x.id === primary.teacherId) : null;
                     const tc = teacherCell(t?.color);
@@ -651,7 +647,7 @@ function CellEditor({
 }) {
   const store = useAppStore();
   const data = snapshot(store);
-  const occupants = cellSlots(data, editing.classId, editing.day, editing.periodId);
+  const occupants = classCellSlots(data, editing.classId, editing.day, editing.periodId);
   const period = data.settings.periods.find((p) => p.id === editing.periodId);
   const cls = data.classes.find((c) => c.id === editing.classId);
   const mensa = isMensaPeriod(period);

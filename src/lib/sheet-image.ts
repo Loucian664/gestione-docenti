@@ -1,8 +1,9 @@
 import {
-  cellSlots,
+  classCellSlots,
   coverageNeeds,
   isCovered,
   isDispHour,
+  isSostegnoSlot,
   classShifts,
   loadByTeacher,
   absencesByReason,
@@ -17,7 +18,7 @@ import { formatItDate, formatLong } from "./dates";
 import { ABSENCE_REASONS, dayNameUpper, DAY_SHORT, SUBSTITUTION_TYPES, type DayOfWeek, type PersistedData } from "./types";
 import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "./periods";
 import { teacherSheetName } from "./teacher-print";
-import { sideMark } from "./class-grid";
+import { classCellLesson, sideMark } from "./class-grid";
 import { mergedAbbr, mergedUpper } from "./subject-groups";
 
 
@@ -301,12 +302,10 @@ export function orarioQuadroJpeg(data: PersistedData, day: DayOfWeek): Promise<B
       cells: [
         ...classes.map((c) => {
           if (isRestrictedTpPeriod(p) && c.tempo !== "TP") return {};
-          const occupants = cellSlots(data, c.id, day, p.id);
-          if (isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
-            return { lines: ["MENSA"] };
-          }
-          if (!occupants.length) return {};
-          const t = data.teachers.find((x) => x.id === occupants[0]!.teacherId);
+          const lesson = classCellLesson(data, c.id, day, p);
+          if (lesson === "MENSA") return { lines: ["MENSA"] };
+          if (!lesson) return {};
+          const t = data.teachers.find((x) => x.id === lesson.teacherId);
           return t ? { lines: [teacherSheetName(t, data.teachers)] } : {};
         }),
         (() => {
@@ -321,7 +320,6 @@ export function orarioQuadroJpeg(data: PersistedData, day: DayOfWeek): Promise<B
 export function orarioClassJpeg(data: PersistedData, classId: string): Promise<Blob> {
   const cls = data.classes.find((c) => c.id === classId);
   const days = data.settings.days;
-  const slots = data.slots.filter((s) => s.classId === classId);
   return paintExcelGrid({
     data,
     who: `CLASSE ${cls ? classHeader(cls) : ""}`,
@@ -329,16 +327,12 @@ export function orarioClassJpeg(data: PersistedData, classId: string): Promise<B
     rows: visiblePeriods(data.settings, cls?.tempo).map((p) => ({
       mark: hourMark(p),
       cells: days.map((d) => {
-        const occupants = slots.filter((s) => s.day === d && s.periodId === p.id);
-        if (isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
-          return { lines: ["MENSA"] };
-        }
-        if (!occupants.length) return {};
-        const t = data.teachers.find((x) => x.id === occupants[0]!.teacherId);
+        const lesson = classCellLesson(data, classId, d, p);
+        if (lesson === "MENSA") return { lines: ["MENSA"] };
+        if (!lesson) return {};
+        const t = data.teachers.find((x) => x.id === lesson.teacherId);
         return {
-          lines: [t ? teacherSheetName(t, data.teachers) : "", schoolSubjectLabel(occupants[0]!.subject)].filter(
-            Boolean,
-          ),
+          lines: [t ? teacherSheetName(t, data.teachers) : "", schoolSubjectLabel(lesson.subject)].filter(Boolean),
         };
       }),
     })),
@@ -585,11 +579,13 @@ export function weekCellLines(data: PersistedData, classId: string, day: DayOfWe
 }[] {
   const cls = data.classes.find((c) => c.id === classId);
   return visiblePeriods(data.settings, cls?.tempo).map((p) => {
-    const occupants = cellSlots(data, classId, day, p.id);
-    if (occupants.length === 0) {
-      return { mark: hourMark(p), period: p.index, subject: "", teacher: "", extra: "" };
+    // il sostegno non è mai la lezione della casella (resta solo il «+» della compresenza)
+    const occupants = classCellSlots(data, classId, day, p.id);
+    const primary = occupants.find((s) => !isSostegnoSlot(data, s));
+    if (!primary) {
+      const mensa = isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s));
+      return { mark: hourMark(p), period: p.index, subject: mensa ? "Mensa" : "", teacher: "", extra: "" };
     }
-    const primary = occupants[0]!;
     const t = data.teachers.find((x) => x.id === primary.teacherId);
     const mensaLesson = isMensaPeriod(p) && isMensaLesson(primary);
     return {
@@ -686,13 +682,13 @@ export async function orarioWeekJpeg(data: PersistedData): Promise<Blob> {
         const x = x0 + dayW + hourW + i * colW;
         stroke(x, yy, colW, rowH);
         if (isRestrictedTpPeriod(p) && c.tempo !== "TP") return;
-        const occupants = cellSlots(data, c.id, day, p.id);
-        if (isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
+        const lesson = classCellLesson(data, c.id, day, p);
+        if (lesson === "MENSA") {
           fillCentered(ctx, "MENSA", x + colW / 2, mid);
           return;
         }
-        if (!occupants.length) return;
-        const t = data.teachers.find((x) => x.id === occupants[0]!.teacherId);
+        if (!lesson) return;
+        const t = data.teachers.find((x) => x.id === lesson.teacherId);
         if (!t) return;
         fillCentered(ctx, teacherSheetName(t, data.teachers), x + colW / 2, mid);
       });
@@ -960,8 +956,8 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
         const x = x0 + hourW + i * colW;
         strokeRect(x, y, colW, rowH);
         if (isRestrictedTpPeriod(p) && c.tempo !== "TP") return;
-        const occupants = cellSlots(data, c.id, day, p.id);
-        if (isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
+        const primary = classCellLesson(data, c.id, day, p);
+        if (primary === "MENSA") {
           ctx.textAlign = "center";
           ctx.fillStyle = "#111";
           ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
@@ -969,8 +965,7 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
           ctx.textAlign = "left";
           return;
         }
-        if (!occupants.length) return;
-        const primary = occupants[0]!;
+        if (!primary) return;
         const t = data.teachers.find((x) => x.id === primary.teacherId);
         ctx.textAlign = "center";
         ctx.fillStyle = "#111";
@@ -1319,15 +1314,14 @@ export async function orarioClassiGridJpeg(
         const x = x0 + dayW + hourW + i * colW;
         box(x, yy, colW, rowH);
         if (isRestrictedTpPeriod(p) && c.tempo !== "TP") return;
-        const occupants = cellSlots(data, c.id, day, p.id);
-        if (isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s))) {
+        const primary = classCellLesson(data, c.id, day, p);
+        if (primary === "MENSA") {
           ctx.fillStyle = "#111";
           ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";
           ctx.fillText("MENSA", x + colW / 2, yy + (withSubjects ? 22 : 16));
           return;
         }
-        if (!occupants.length) return;
-        const primary = occupants[0]!;
+        if (!primary) return;
         const t = data.teachers.find((x) => x.id === primary.teacherId);
         ctx.fillStyle = "#111";
         ctx.font = "600 9px 'Source Sans 3', system-ui, sans-serif";

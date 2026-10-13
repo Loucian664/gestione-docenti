@@ -361,6 +361,46 @@ export function cellSlots(
   return data.slots.filter((s) => s.classId === classId && s.day === day && s.periodId === periodId);
 }
 
+/** Ora di sostegno: per il ruolo del docente o per la materia. */
+export function isSostegnoSlot(data: PersistedData, slot: TimetableSlot): boolean {
+  const teacher = data.teachers.find((t) => t.id === slot.teacherId);
+  return teacher?.role === "sostegno" || /sostegno/i.test(slot.subject);
+}
+
+/**
+ * Le ore nella casella di una classe: prima chi tiene la classe, poi il potenziamento, per ultimo il
+ * sostegno. Non dipende dall'ordine in cui le ore sono salvate.
+ */
+export function classCellSlots(
+  data: PersistedData,
+  classId: string,
+  day: DayOfWeek,
+  periodId: string,
+): TimetableSlot[] {
+  const rank = (s: TimetableSlot) => {
+    if (isSostegnoSlot(data, s)) return 2;
+    const teacher = data.teachers.find((t) => t.id === s.teacherId);
+    return teacher && isPotenziamentoSlot(teacher, s) ? 1 : 0;
+  };
+  return cellSlots(data, classId, day, periodId)
+    .map((slot, i) => ({ slot, i, r: rank(slot) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map((x) => x.slot);
+}
+
+/**
+ * Le lezioni da scrivere nella casella di una classe (fogli, foto, PDF, Excel): mai il sostegno, che
+ * ha le sue colonne; il potenziamento solo se in quell'ora non c'è chi tiene la classe.
+ */
+export function classLessonSlots(
+  data: PersistedData,
+  classId: string,
+  day: DayOfWeek,
+  periodId: string,
+): TimetableSlot[] {
+  return classCellSlots(data, classId, day, periodId).filter((s) => !isSostegnoSlot(data, s));
+}
+
 export function teacherSlotAt(
   data: PersistedData,
   teacherId: string,
