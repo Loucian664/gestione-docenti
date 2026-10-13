@@ -122,7 +122,8 @@ function runInline(
   data: PersistedData,
   opts: { timeMs: number; mode: SolveMode; seed: number; onProgress: (p: RunProgress) => void },
 ): RunHandle {
-  const prep = prepare(data, "demand", { keepDisp: opts.mode === "improve" });
+  const improve = opts.mode === "improve";
+  const prep = prepare(data, "demand", { keepDisp: improve, floatDisp: improve });
   const solver = new TimetableSolver(prep, opts.seed);
   solver.startRun(opts.timeMs, opts.mode);
   const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());

@@ -167,8 +167,17 @@ export type Prep = {
   orig: Int32Array;
   warnings: string[];
   unplaced: { classId: string; teacherId: string; subject: string; hours: number }[];
-  /** ritocchi a mano: una lezione su una disposizione non è un errore (la disposizione si toglie) */
+  /** ritocchi a mano: una lezione su una disposizione non è un errore (la disposizione si sposta o si toglie) */
   dispYield: boolean;
+  /**
+   * «Migliora l'attuale» e ritocchi: le ore a disposizione del mattino si spostano nello stesso giorno
+   * dove servono (per chiudere un'ora buca); altrimenti restano dove sono.
+   */
+  floatDisp: boolean;
+  /** T*D: le ore a disposizione segnate (bit = posizione) */
+  dispMask0: Uint32Array;
+  /** T*D: dove può stare una disposizione (mattino, senza ×, «no» e prima della 4ª nei giorni di rientro) */
+  dispCand: Uint32Array;
 };
 
 /** Ore a disposizione del docente su questo plesso (dichiarate o segnate). */
@@ -244,15 +253,17 @@ function maxMatch(slots: SlotWish[], cap: Map<number, number>): number {
  * - "slots": le lezioni del mattino già in orario (per valutare l'orario attuale).
  * `keepDisp`: le ore a disposizione già segnate contano come presenza a scuola (non sono buche)
  * e nessuna lezione ci va sopra. Vale per l'orario in uso e per «Migliora l'attuale».
- * `dispYield` (ritocchi a mano): una lezione può prendere il posto di una disposizione, che poi si toglie.
+ * `dispYield` (ritocchi a mano): una lezione può prendere il posto di una disposizione, che si sposta.
+ * `floatDisp` (con `keepDisp`): le disposizioni si spostano nello stesso giorno se così si chiude un'ora buca.
  */
 export function prepare(
   data: PersistedData,
   source: "demand" | "slots" = "demand",
-  opts: { keepDisp?: boolean; dispYield?: boolean } = {},
+  opts: { keepDisp?: boolean; dispYield?: boolean; floatDisp?: boolean } = {},
 ): Prep {
   const keepDisp = opts.keepDisp ?? source === "slots";
   const dispYield = Boolean(opts.dispYield);
+  const floatDisp = keepDisp && Boolean(opts.floatDisp);
   const warnings: string[] = [];
   const days = [...data.settings.days].sort((a, b) => a - b);
   const D = days.length;
@@ -454,6 +465,8 @@ export function prepare(
   const T = tList.length;
   const busyNow = new Set(data.slots.map((x) => `${x.teacherId}|${x.day}|${x.periodId}`));
   const unavail = new Uint8Array(T * D * P);
+  /** ore a disposizione segnate sotto una lezione (indice T*D*P), da spostare nello stesso giorno */
+  const dispUnder: number[] = [];
   const dayHasAway = new Uint8Array(T * D);
   const rientro = new Uint8Array(T * D);
   const must: SlotWish[][] = tList.map(() => []);
@@ -497,8 +510,13 @@ export function prepare(
     if (keepDisp) {
       for (const a of t.dispSlots ?? []) {
         const z = morningCell(a.day, a.periodId);
-        if (z < 0 || busyNow.has(`${t.id}|${a.day}|${a.periodId}`)) continue;
+        if (z < 0) continue;
         const k = (ti * D + ((z / M) | 0)) * P + morningPos[z % M]!;
+        if (busyNow.has(`${t.id}|${a.day}|${a.periodId}`)) {
+          // sotto una lezione: con floatDisp si sposta in un'altra ora dello stesso giorno
+          if (floatDisp && !unavail[k]) dispUnder.push(k);
+          continue;
+        }
         if (!unavail[k]) unavail[k] = 4;
       }
     }
@@ -532,6 +550,25 @@ export function prepare(
       prefer[ti]!.push({ d: (z / M) | 0, m: z % M });
     }
   });
+
+  // ore a disposizione segnate (bit = posizione) e ore del mattino dove una disposizione può stare
+  const dispMask0 = new Uint32Array(T * D);
+  const dispCand = new Uint32Array(T * D);
+  for (let ti = 0; ti < T; ti++)
+    for (let d = 0; d < D; d++) {
+      const base = (ti * D + d) * P;
+      for (const pos of morningPos) {
+        const un = unavail[base + pos]!;
+        if (un === 4) {
+          dispMask0[ti * D + d]! |= 1 << pos;
+          dispCand[ti * D + d]! |= 1 << pos;
+        } else if (un === 0 && !(rientro[ti * D + d] && pIndex[pos]! < 4)) dispCand[ti * D + d]! |= 1 << pos;
+      }
+    }
+  for (const k of dispUnder) {
+    const kd = (k / P) | 0;
+    dispMask0[kd]! |= 1 << (k % P);
+  }
 
   const lessonsOf = new Int16Array(T);
   for (let u = 0; u < U; u++) lessonsOf[unitTeacher[u]!]! += 1;
@@ -687,6 +724,9 @@ export function prepare(
     warnings,
     unplaced,
     dispYield,
+    floatDisp,
+    dispMask0,
+    dispCand,
   };
 }
 
@@ -711,6 +751,8 @@ export type PeekResult = {
   lastMax: number;
   patOk: number;
   classes: number[];
+  /** giornate di docente in cui le ore a disposizione cambiano posto (bit = posizione) */
+  disp: { t: number; d: number; before: number; after: number }[];
 };
 
 export type SolveProgress = {
@@ -760,6 +802,8 @@ export class TimetableSolver {
   tdHard: Int32Array;
   /** ore a scuola per giornata di docente (lezioni, pomeriggio, disposizioni segnate) */
   tdDuties: Int16Array;
+  /** dove sono adesso le ore a disposizione del mattino, per giornata di docente (bit = posizione) */
+  tdDisp: Uint32Array;
   twCost: Float64Array;
   twHard: Int32Array;
   twGaps: Int16Array;
@@ -835,6 +879,7 @@ export class TimetableSolver {
   private uTDg: Int16Array;
   private uTDh: Int32Array;
   private uTDd: Int16Array;
+  private uTDdisp: Uint32Array;
   private uT: Float64Array;
   private uTh: Int32Array;
   private uTg: Int16Array;
@@ -847,6 +892,8 @@ export class TimetableSolver {
   private kempeList: Int16Array;
   private patBuf: Int16Array;
   private fillBuf: Int16Array;
+  private candBuf: Int16Array;
+  private combBuf: Int16Array;
   /** docenti con ore al giorno scelte e loro lezioni */
   private patTeachers: number[];
   private teacherUnits: number[][];
@@ -869,6 +916,7 @@ export class TimetableSolver {
     this.tdGaps = new Int16Array(T * D);
     this.tdHard = new Int32Array(T * D);
     this.tdDuties = new Int16Array(T * D);
+    this.tdDisp = new Uint32Array(T * D);
     this.twCost = new Float64Array(T);
     this.twHard = new Int32Array(T);
     this.twGaps = new Int16Array(T);
@@ -901,6 +949,7 @@ export class TimetableSolver {
     this.uTDg = new Int16Array(cap);
     this.uTDh = new Int32Array(cap);
     this.uTDd = new Int16Array(cap);
+    this.uTDdisp = new Uint32Array(cap);
     this.uT = new Float64Array(cap);
     this.uTh = new Int32Array(cap);
     this.uTg = new Int16Array(cap);
@@ -918,6 +967,8 @@ export class TimetableSolver {
     this.kempeList = new Int16Array(Math.max(1, C));
     this.patBuf = new Int16Array(Math.max(1, D));
     this.fillBuf = new Int16Array(Math.max(1, D));
+    this.candBuf = new Int16Array(Math.max(1, P));
+    this.combBuf = new Int16Array(Math.max(1, P));
     this.dayOrder = new Int16Array(Math.max(1, D));
     this.teacherUnits = prep.teachers.map(() => []);
     for (let u = 0; u < U; u++) this.teacherUnits[prep.unitTeacher[u]!]!.push(u);
@@ -1290,14 +1341,40 @@ export class TimetableSolver {
   /**
    * Ora buca: un'ora vuota tra due impegni a scuola nella stessa giornata (da chiamare per le ore
    * tra il primo e l'ultimo). Non sono buche le ore a disposizione, quelle altrove (×) e di
-   * spostamento, la mensa; un'ora «no» in mezzo invece sì (il docente resta senza lezione).
+   * spostamento, la mensa; un'ora «no» in mezzo invece sì (il docente resta senza lezione), e così
+   * l'ora lasciata da una disposizione che si è spostata.
    */
   isGap(t: number, d: number, pos: number): boolean {
     const p = this.p;
     const k = (t * p.D + d) * p.P + pos;
-    if (this.tOcc[k]! > 0 || pos === p.mensaPos) return false;
+    if (this.tOcc[k]! > 0 || pos === p.mensaPos || (this.tdDisp[t * p.D + d]! >>> pos) & 1) return false;
     const un = p.unavail[k]!;
-    return un === 0 || un === 3;
+    return un === 0 || un === 3 || un === 4;
+  }
+
+  /** Le ore a disposizione del mattino dove sono adesso (bit = posizione). */
+  dispMask(t: number, d: number): number {
+    return this.tdDisp[t * this.p.D + d]!;
+  }
+
+  /** Le ore a disposizione del mattino seguite dal motore: dove erano segnate e dove stanno adesso. */
+  dispChange(): DispChange {
+    const p = this.p;
+    const before: DispCell[] = [];
+    const after: DispCell[] = [];
+    for (let t = 0; t < p.T; t++)
+      for (let d = 0; d < p.D; d++) {
+        const kd = t * p.D + d;
+        const m0 = p.dispMask0[kd]!;
+        if (!m0) continue;
+        const m1 = this.tdDisp[kd]!;
+        for (let pos = 0; pos < p.P; pos++) {
+          const cell = { teacherId: p.teachers[t]!.id, day: p.days[d]!, periodId: p.periods[pos]!.id };
+          if ((m0 >>> pos) & 1) before.push(cell);
+          if ((m1 >>> pos) & 1) after.push({ ...cell });
+        }
+      }
+    return { before, after };
   }
 
   /**
@@ -1310,6 +1387,7 @@ export class TimetableSolver {
     const W = WEIGHTS;
     const info = p.teachers[t]!;
     const base = (t * p.D + d) * P;
+    const disp = this.tdDisp[t * p.D + d]!;
     let first = -1;
     let last = -1;
     let lFirst = -1;
@@ -1322,7 +1400,7 @@ export class TimetableSolver {
     let cost = 0;
     for (let pos = 0; pos < P; pos++) {
       const n = this.tOcc[base + pos]!;
-      if (n === 0 && p.unavail[base + pos] !== 4) continue;
+      if (n === 0 && !((disp >>> pos) & 1)) continue;
       if (first < 0) first = pos;
       last = pos;
       duties += 1;
@@ -1352,7 +1430,7 @@ export class TimetableSolver {
     // ore libere tra la prima e l'ultima lezione: buche (anche quelle da riempire) e disposizioni
     let middle = 0;
     for (let pos = lFirst + 1; pos < lLast; pos++)
-      if (this.tOcc[base + pos] === 0 && (p.unavail[base + pos] === 4 || this.isGap(t, d, pos))) middle += 1;
+      if (this.tOcc[base + pos] === 0 && ((disp >>> pos) & 1 || this.isGap(t, d, pos))) middle += 1;
     this.lastMiddle = middle;
     // chi ha disposizioni da mettere: le buche si contano sulla settimana (le prime si riempiono)
     if (info.fill === 0) {
@@ -1388,6 +1466,78 @@ export class TimetableSolver {
     return Math.max(span, middle);
   }
 
+  /**
+   * Dove stanno le ore a disposizione del mattino nella giornata: dove le ha messe il responsabile,
+   * tranne quelle sotto una lezione. Con `floatDisp` si spostano nello stesso giorno se così la
+   * giornata va meglio (es. chiudono un'ora buca); a parità restano dove sono, o il più vicino possibile.
+   */
+  private placeDisp(t: number, d: number) {
+    const p = this.p;
+    const kd = t * p.D + d;
+    const orig = p.dispMask0[kd]!;
+    if (!orig) {
+      this.tdDisp[kd] = 0;
+      return;
+    }
+    const base = kd * p.P;
+    let lessons = 0;
+    for (let pos = 0; pos < p.P; pos++) if (this.tOcc[base + pos]! > 0) lessons |= 1 << pos;
+    if (!p.floatDisp) {
+      this.tdDisp[kd] = orig & ~lessons;
+      return;
+    }
+    const cand = p.dispCand[kd]! & ~lessons;
+    const list = this.candBuf;
+    let n = 0;
+    for (let pos = 0; pos < p.P; pos++) if ((cand >>> pos) & 1) list[n++] = pos;
+    let k = 0;
+    for (let x = orig; x; x &= x - 1) k += 1;
+    k = Math.min(k, n);
+    if (k === 0) {
+      this.tdDisp[kd] = 0;
+      return;
+    }
+    const idx = this.combBuf;
+    for (let i = 0; i < k; i++) idx[i] = i;
+    let best = Infinity;
+    let bestMask = 0;
+    let bestKeep = -1;
+    let bestDist = Infinity;
+    for (;;) {
+      let mask = 0;
+      for (let i = 0; i < k; i++) mask |= 1 << list[idx[i]!]!;
+      this.tdDisp[kd] = mask;
+      const cost = this.dayCost(t, d) + WEIGHTS.hard * this.dayHardFree(t);
+      if (cost <= best) {
+        let keep = 0;
+        for (let x = mask & orig; x; x &= x - 1) keep += 1;
+        // distanza dalle ore segnate, nell'ordine
+        let dist = 0;
+        let a = orig;
+        let b = mask;
+        while (a && b) {
+          const pa = 31 - Math.clz32(a & -a);
+          const pb = 31 - Math.clz32(b & -b);
+          dist += Math.abs(p.pIndex[pa]! - p.pIndex[pb]!);
+          a &= a - 1;
+          b &= b - 1;
+        }
+        if (cost < best || keep > bestKeep || (keep === bestKeep && dist < bestDist)) {
+          best = cost;
+          bestMask = mask;
+          bestKeep = keep;
+          bestDist = dist;
+        }
+      }
+      let i = k - 1;
+      while (i >= 0 && idx[i] === n - k + i) i -= 1;
+      if (i < 0) break;
+      idx[i]! += 1;
+      for (let j = i + 1; j < k; j++) idx[j] = idx[j - 1]! + 1;
+    }
+    this.tdDisp[kd] = bestMask;
+  }
+
   private computeTeacherDay(t: number, d: number) {
     const p = this.p;
     const { P, M, D } = p;
@@ -1406,6 +1556,7 @@ export class TimetableSolver {
       if (un && !(un === 4 && p.dispYield)) hard += n;
       if (early && p.pIndex[pos]! < 4) hard += n;
     }
+    this.placeDisp(t, d);
     this.tdCost[t * D + d] = this.dayCost(t, d);
     this.tdGaps[t * D + d] = this.lastGaps;
     this.tdDuties[t * D + d] = this.lastDuties;
@@ -1708,6 +1859,7 @@ export class TimetableSolver {
       this.uTDg[i] = this.tdGaps[k]!;
       this.uTDh[i] = this.tdHard[k]!;
       this.uTDd[i] = this.tdDuties[k]!;
+      this.uTDdisp[i] = this.tdDisp[k]!;
       for (let j = 0; j < MET_TD; j++) {
         const v = this.tdMet[k * MET_TD + j]!;
         this.uTDm[i * MET_TD + j] = v;
@@ -1766,6 +1918,7 @@ export class TimetableSolver {
       this.tdGaps[k] = this.uTDg[i]!;
       this.tdHard[k] = this.uTDh[i]!;
       this.tdDuties[k] = this.uTDd[i]!;
+      this.tdDisp[k] = this.uTDdisp[i]!;
       for (let j = 0; j < MET_TD; j++) this.tdMet[k * MET_TD + j] = this.uTDm[i * MET_TD + j]!;
     }
     for (let i = 0; i < this.nT; i++) {
@@ -1814,7 +1967,13 @@ export class TimetableSolver {
     const [ds, dh, dp] = this.evaluateApplied();
     if (this.peeking) {
       this.peeked = [ds, dh, dp];
-      if (this.peekDetail)
+      if (this.peekDetail) {
+        const disp: PeekResult["disp"] = [];
+        for (let i = 0; i < this.nTD; i++) {
+          const k = this.affTD[i]!;
+          if (this.uTDdisp[i] !== this.tdDisp[k])
+            disp.push({ t: (k / this.p.D) | 0, d: k % this.p.D, before: this.uTDdisp[i]!, after: this.tdDisp[k]! });
+        }
         this.peekOut = {
           ds,
           dh,
@@ -1822,7 +1981,9 @@ export class TimetableSolver {
           lastMax: this.lastMax(),
           patOk: this.patternOkCount(),
           classes: this.peekClasses.slice(),
+          disp,
         };
+      }
       undo();
       this.restoreCaches();
       return false;
@@ -2616,6 +2777,7 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
     const perDay: number[] = [];
     for (let d = 0; d < D; d++) {
       const base = (t * D + d) * P;
+      const disp = s.dispMask(t, d);
       let first = -1;
       let last = -1;
       let lFirst = -1;
@@ -2627,7 +2789,7 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       let mLast = -1;
       for (let pos = 0; pos < P; pos++) {
         const n = s.tOcc[base + pos]!;
-        if (n === 0 && p.unavail[base + pos] !== 4) continue;
+        if (n === 0 && !((disp >>> pos) & 1)) continue;
         const isM = p.mOfPos[pos]! >= 0;
         if (n > 0) {
           if (lFirst < 0) lFirst = pos;
@@ -2677,7 +2839,7 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
         if (s.tOcc[base + pos]! > 0) continue;
         const un = p.unavail[base + pos]!;
         const where = `${info.name} · ${dayName(d)} ${hourLabel(pos)}`;
-        if (un === 4) {
+        if ((disp >>> pos) & 1) {
           rep.notGaps.disp.push({ text: `${where}: a disposizione` });
           middle += 1;
           middleDisp += 1;
@@ -2873,14 +3035,23 @@ export type SolveResult = {
   slots: TimetableSlot[];
   report: TimetableReport;
   iterations: number;
+  /** «Migliora l'attuale»: le ore a disposizione del mattino, dove erano e dove stanno (null con «Da zero») */
+  disp: DispChange | null;
 };
+
+/** Un'ora a disposizione di un docente. */
+export type DispCell = { teacherId: string; day: DayOfWeek; periodId: string };
+
+/** Le ore a disposizione del mattino seguite dal motore: dove le aveva segnate il responsabile e dove stanno ora. */
+export type DispChange = { before: DispCell[]; after: DispCell[] };
 
 /** Esecuzione completa (per test e per il worker). */
 export function solveTimetable(
   data: PersistedData,
   opts: { timeMs: number; seed?: number; mode?: SolveMode; now?: () => number; onProgress?: (p: SolveProgress) => void },
 ): SolveResult {
-  const prep = prepare(data, "demand", { keepDisp: opts.mode === "improve" });
+  const improve = opts.mode === "improve";
+  const prep = prepare(data, "demand", { keepDisp: improve, floatDisp: improve });
   const solver = new TimetableSolver(prep, opts.seed ?? Date.now());
   const now = opts.now ?? (() => Date.now());
   solver.startRun(opts.timeMs, opts.mode ?? "scratch");
@@ -2927,7 +3098,64 @@ export function finishResult(solver: TimetableSolver, prep: Prep): SolveResult {
     slots: solver.toSlots(newSlotId),
     report: buildReport(solver, prep.U),
     iterations: solver.iterations,
+    disp: prep.floatDisp ? solver.dispChange() : null,
   };
+}
+
+/**
+ * Ore a disposizione dopo le lezioni nuove. Quelle del mattino seguite dal motore (`change`) stanno
+ * dove le ha messe lui: nello stesso giorno, spostate solo se così si chiude un'ora buca o se ci va
+ * una lezione. Le altre restano dove sono, tranne quelle che cadono su una lezione dello stesso docente.
+ * `dispSlots`: solo i docenti che cambiano; `moved`: «da» e «a» (id delle ore) nello stesso giorno.
+ */
+export function dispOutcome(
+  data: PersistedData,
+  slots: TimetableSlot[],
+  change: DispChange | null,
+): {
+  dispSlots: Record<string, { day: DayOfWeek; periodId: string }[]>;
+  removed: DispCell[];
+  moved: { teacherId: string; day: DayOfWeek; from: string; to: string }[];
+} {
+  const base = dispAfterLessons(data, slots);
+  const removed: DispCell[] = [...base.removed];
+  const moved: { teacherId: string; day: DayOfWeek; from: string; to: string }[] = [];
+  if (!change || change.before.length === 0) return { dispSlots: base.dispSlots, removed, moved };
+  const dispSlots = { ...base.dispSlots };
+  const order = new Map(data.settings.periods.map((x) => [x.id, x.index]));
+  const key = (a: { day: DayOfWeek; periodId: string }) => `${a.day}|${a.periodId}`;
+  const busy = new Set(slots.map((x) => `${x.teacherId}|${x.day}|${x.periodId}`));
+  for (const t of data.teachers) {
+    const before = change.before.filter((c) => c.teacherId === t.id);
+    if (!before.length) continue;
+    const after = change.after.filter((c) => c.teacherId === t.id);
+    const managed = new Set(before.map(key));
+    // le altre (pomeriggio…) come prima; quelle del mattino dove stanno ora
+    const rest = (t.dispSlots ?? []).filter((a) => !managed.has(key(a)) && !busy.has(`${t.id}|${a.day}|${a.periodId}`));
+    const next = [...rest, ...after.map((c) => ({ day: c.day, periodId: c.periodId }))];
+    const restRemoved = (t.dispSlots ?? []).filter((a) => !managed.has(key(a)) && busy.has(`${t.id}|${a.day}|${a.periodId}`));
+    // tolte prima (cadevano su una lezione): le rifà sotto, giorno per giorno
+    for (let i = removed.length - 1; i >= 0; i--) if (removed[i]!.teacherId === t.id) removed.splice(i, 1);
+    for (const a of restRemoved) removed.push({ teacherId: t.id, day: a.day, periodId: a.periodId });
+    const same =
+      next.length === (t.dispSlots ?? []).length && next.every((a) => (t.dispSlots ?? []).some((b) => key(b) === key(a)));
+    if (same) delete dispSlots[t.id];
+    else dispSlots[t.id] = next;
+    const afterKeys = new Set(after.map(key));
+    const beforeKeys = new Set(before.map(key));
+    const days = [...new Set(before.map((c) => c.day))];
+    for (const day of days) {
+      const idx = (c: DispCell) => order.get(c.periodId) ?? 0;
+      const gone = before.filter((c) => c.day === day && !afterKeys.has(key(c))).sort((a, b) => idx(a) - idx(b));
+      const come = after.filter((c) => c.day === day && !beforeKeys.has(key(c))).sort((a, b) => idx(a) - idx(b));
+      gone.forEach((c, i) => {
+        const to = come[i];
+        if (to) moved.push({ teacherId: t.id, day, from: c.periodId, to: to.periodId });
+        else removed.push(c);
+      });
+    }
+  }
+  return { dispSlots, removed, moved };
 }
 
 // ---------- ritocchi a mano ----------
@@ -3012,8 +3240,10 @@ export type MoveEffect = {
   rows: { key: RowKey; from: number; to: number; total?: number; better: boolean }[];
   /** altre classi che si spostano insieme (catena di scambi) */
   also: string[];
-  /** docenti che perdono un'ora a disposizione (ci va una lezione): «Nome · Lun 3ª» */
+  /** ore a disposizione che non trovano più posto nel giorno (ci va una lezione): «Nome · Lun 3ª» */
   dispLost: string[];
+  /** ore a disposizione che si spostano nello stesso giorno: «Nome · Lun 3ª → 4ª» */
+  dispMoved: string[];
   /** a chi cambia cosa (nelle proposte di «Trova»; per uno spostamento si chiede a parte) */
   who?: WhoChange[];
 };
@@ -3174,7 +3404,6 @@ export type FixStep = {
   a: { subject: string; teacherId: string } | null;
   b: { subject: string; teacherId: string } | null;
   also: string[];
-  dispLost: string[];
 };
 
 /** Una proposta di «Trova»: una o due mosse e l'effetto di tutte insieme. */
@@ -3202,7 +3431,7 @@ export class TimetableEditor {
   private facts0: Fact[] | null = null;
 
   constructor(data: PersistedData) {
-    this.prep = prepare(data, "slots", { keepDisp: true, dispYield: true });
+    this.prep = prepare(data, "slots", { keepDisp: true, dispYield: true, floatDisp: true });
     this.s = new TimetableSolver(this.prep, 1);
     this.s.setState(this.prep.unitStart);
     const r = buildReport(this.s, 0);
@@ -3297,16 +3526,18 @@ export class TimetableEditor {
     const pos = p.morningPos[z % p.M]!;
     const base = (t * p.D + d) * p.P;
     const un = p.unavail[base + pos];
+    const disp = this.s.dispMask(t, d);
     let first = -1;
     let last = -1;
     for (let q = 0; q < p.P; q++) {
-      if (this.s.tOcc[base + q]! > 0 || p.unavail[base + q] === 4) {
+      if (this.s.tOcc[base + q]! > 0 || (disp >>> q) & 1) {
         if (first < 0) first = q;
         last = q;
       }
     }
     const gap = first < pos && pos < last && this.s.isGap(t, d, pos);
-    return { kind: un === 4 ? "disp" : un === 1 ? "away" : un === 2 ? "travel" : un === 3 ? "no" : "free", gap };
+    if ((disp >>> pos) & 1) return { kind: "disp", gap: false };
+    return { kind: un === 1 ? "away" : un === 2 ? "travel" : un === 3 ? "no" : "free", gap };
   }
 
   /** Come spostare la lezione della classe c dalla casella x alla y: scambio semplice o catena. */
@@ -3327,24 +3558,66 @@ export class TimetableEditor {
     return a ? { kind: "swap", classes: [c], peek: a } : null;
   }
 
-  /** Chi perde un'ora a disposizione con lo spostamento (le lezioni che arrivano su una disposizione). */
-  private dispLost(mv: EditMove, x: number, y: number): string[] {
+  /**
+   * Le ore a disposizione che cambiano posto (nello stesso giorno: «Nome · Lun 3ª → 4ª») e quelle che
+   * non trovano più posto (ci va una lezione e il giorno è pieno: «Nome · Lun 3ª»).
+   */
+  private dispTexts(list: { t: number; d: number; before: number; after: number }[]): { moved: string[]; lost: string[] } {
     const p = this.prep;
-    const out: string[] = [];
-    for (const c of mv.classes) {
-      for (const [from, to] of [
-        [x, y],
-        [y, x],
-      ] as const) {
-        const u = this.s.grid[c * p.DM + from]!;
-        if (u < 0) continue;
-        const t = p.unitTeacher[u]!;
-        const d = (to / p.M) | 0;
-        const pos = p.morningPos[to % p.M]!;
-        if (p.unavail[(t * p.D + d) * p.P + pos] === 4)
-          out.push(`${p.teachers[t]!.name} · ${DAY_NAMES[p.days[d]!]} ${p.periods[pos]!.label.replace(" ora", "")}`);
-      }
+    const moved: string[] = [];
+    const lost: string[] = [];
+    const bits = (m: number) => {
+      const out: number[] = [];
+      for (let pos = 0; pos < p.P; pos++) if ((m >>> pos) & 1) out.push(pos);
+      return out;
+    };
+    const hour = (pos: number) => p.periods[pos]!.label.replace(" ora", "");
+    for (const x of list) {
+      const who = `${p.teachers[x.t]!.name} · ${DAY_NAMES[p.days[x.d]!]}`;
+      const come = bits(x.after & ~x.before);
+      bits(x.before & ~x.after).forEach((pos, i) => {
+        const to = come[i];
+        if (to !== undefined) moved.push(`${who} ${hour(pos)} → ${hour(to)}`);
+        else lost.push(`${who} ${hour(pos)}`);
+      });
     }
+    return { moved, lost };
+  }
+
+  /** Dove stanno le ore a disposizione adesso (per confrontare prima e dopo delle mosse). */
+  private dispSnapshot(): Uint32Array {
+    return Uint32Array.from(this.s.tdDisp);
+  }
+
+  private dispDiff(before: Uint32Array): { t: number; d: number; before: number; after: number }[] {
+    const p = this.prep;
+    const out: { t: number; d: number; before: number; after: number }[] = [];
+    for (let kd = 0; kd < p.T * p.D; kd++)
+      if (before[kd] !== this.s.tdDisp[kd])
+        out.push({ t: (kd / p.D) | 0, d: kd % p.D, before: before[kd]!, after: this.s.tdDisp[kd]! });
+    return out;
+  }
+
+  /** Dove si spostano le ore a disposizione con le mosse, fatte una dopo l'altra, senza farle davvero. */
+  private dispForSteps(steps: { classId: string; from: number; to: number }[]): { moved: string[]; lost: string[] } {
+    const s = this.s;
+    const hard0 = s.hard;
+    const snap = this.dispSnapshot();
+    const done: { cls: number[]; x: number; y: number }[] = [];
+    for (const st of steps) {
+      const c = this.classOf(st.classId);
+      const mv = this.plan(c, st.from, st.to);
+      let cls: number[] | null = null;
+      if (mv?.kind === "same") {
+        s.swapClasses([c], st.from, st.to);
+        cls = [c];
+      } else if (mv) cls = s.applyMove(c, st.from, st.to, mv.kind === "kempe");
+      if (!cls) break;
+      done.push({ cls, x: st.from, y: st.to });
+    }
+    const out = this.dispTexts(this.dispDiff(snap));
+    for (let i = done.length - 1; i >= 0; i--) s.swapClasses(done[i]!.cls, done[i]!.x, done[i]!.y);
+    if (s.hard !== hard0) s.recomputeAll();
     return out;
   }
 
@@ -3400,13 +3673,13 @@ export class TimetableEditor {
     return { verdict, rows, worse, better, worseW, betterW };
   }
 
-  private describe(mv: EditMove, x: number, y: number): MoveEffect {
+  private describe(mv: EditMove): MoveEffect {
     const p = this.prep;
     const also = mv.classes.slice(1).map((c) => p.classes[c]!.name);
-    const dispLost = this.dispLost(mv, x, y);
-    if (!mv.peek) return { verdict: "same", hard: 0, rows: [], also, dispLost };
+    if (!mv.peek) return { verdict: "same", hard: 0, rows: [], also, dispLost: [], dispMoved: [] };
     const j = this.judge(mv.peek);
-    return { verdict: j.verdict, hard: mv.peek.dh, rows: j.rows, also, dispLost };
+    const dt = this.dispTexts(mv.peek.disp);
+    return { verdict: j.verdict, hard: mv.peek.dh, rows: j.rows, also, dispLost: dt.lost, dispMoved: dt.moved };
   }
 
   // ---------- «Trova»: le migliori combinazioni di una o due mosse ----------
@@ -3415,10 +3688,11 @@ export class TimetableEditor {
   private gapStill(t: number, d: number, pos: number): boolean {
     const p = this.prep;
     const base = (t * p.D + d) * p.P;
+    const disp = this.s.dispMask(t, d);
     let first = -1;
     let last = -1;
     for (let q = 0; q < p.P; q++) {
-      if (this.s.tOcc[base + q]! > 0 || p.unavail[base + q] === 4) {
+      if (this.s.tOcc[base + q]! > 0 || (disp >>> q) & 1) {
         if (first < 0) first = q;
         last = q;
       }
@@ -3439,7 +3713,6 @@ export class TimetableEditor {
       a: at(x),
       b: at(y),
       also: mv.classes.slice(1).map((k) => p.classes[k]!.name),
-      dispLost: this.dispLost(mv, x, y),
     };
   }
 
@@ -3635,7 +3908,10 @@ export class TimetableEditor {
           hard: f.peek.dh,
           rows: j.rows,
           also: [...new Set(f.steps.flatMap((x) => x.also))],
-          dispLost: f.steps.flatMap((x) => x.dispLost),
+          ...(() => {
+            const dt = this.dispForSteps(f.steps);
+            return { dispLost: dt.lost, dispMoved: dt.moved };
+          })(),
           who: this.whoChanges(f.steps) ?? undefined,
         },
       });
@@ -3647,7 +3923,7 @@ export class TimetableEditor {
   /** Effetto dello spostamento della lezione della classe dalla casella `from` a `to`; null se non si può. */
   effect(classId: string, from: number, to: number): MoveEffect | null {
     const mv = this.plan(this.classOf(classId), from, to);
-    return mv ? this.describe(mv, from, to) : null;
+    return mv ? this.describe(mv) : null;
   }
 
   /** Effetto per ogni casella della classe (null: la casella stessa, ore bloccate, nessun cambiamento). */
@@ -3656,7 +3932,7 @@ export class TimetableEditor {
     const out: (MoveEffect | null)[] = [];
     for (let z = 0; z < this.prep.DM; z++) {
       const mv = z === from ? null : this.plan(c, from, z);
-      out.push(mv ? this.describe(mv, from, z) : null);
+      out.push(mv ? this.describe(mv) : null);
     }
     return out;
   }
@@ -3673,15 +3949,34 @@ export class TimetableEditor {
     return after.filter((x) => !before.has(x));
   }
 
-  /** Fa lo spostamento: restituisce le lezioni del mattino dopo e le altre classi spostate. */
-  apply(classId: string, from: number, to: number): { slots: TimetableSlot[]; also: string[] } | null {
+  /**
+   * Fa lo spostamento: restituisce le lezioni del mattino dopo, le altre classi spostate e le ore a
+   * disposizione che cambiano posto o si tolgono.
+   */
+  apply(
+    classId: string,
+    from: number,
+    to: number,
+  ): { slots: TimetableSlot[]; also: string[]; dispMoved: string[]; dispLost: string[] } | null {
     const c = this.classOf(classId);
     const mv = this.plan(c, from, to);
     if (!mv) return null;
+    const snap = this.dispSnapshot();
     if (mv.kind === "same") this.s.swapClasses([c], from, to);
     else if (!this.s.applyMove(c, from, to, mv.kind === "kempe")) return null;
     this.refresh();
-    return { slots: this.slots(), also: mv.classes.slice(1).map((x) => this.prep.classes[x]!.name) };
+    const dt = this.dispTexts(this.dispDiff(snap));
+    return {
+      slots: this.slots(),
+      also: mv.classes.slice(1).map((x) => this.prep.classes[x]!.name),
+      dispMoved: dt.moved,
+      dispLost: dt.lost,
+    };
+  }
+
+  /** Le ore a disposizione del mattino: dove le aveva segnate il responsabile e dove stanno ora. */
+  dispChange(): DispChange {
+    return this.s.dispChange();
   }
 
   /** Lezioni del mattino (ogni ora con la sua materia e il suo id). */
