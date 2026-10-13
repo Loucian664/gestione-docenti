@@ -100,6 +100,8 @@ type TeacherInfo = {
    * quindi fino a questo numero le buche non pesano. 0 quando le disposizioni sono già al loro posto.
    */
   fill: number;
+  /** accetta 2 ore libere tra le lezioni nello stesso giorno (di norma al massimo una) */
+  allow2: boolean;
 };
 
 type ClassInfo = { id: string; name: string };
@@ -568,6 +570,7 @@ export function prepare(
       expectedLast: U > 0 ? (lessons * lastCells) / U : 0,
       patterns,
       fill: keepDisp ? 0 : dispCount(t),
+      allow2: Boolean(t.allowTwoFree),
     };
   });
 
@@ -778,6 +781,8 @@ export class TimetableSolver {
   lastGaps = 0;
   /** l'ultima giornata calcolata va dalla 1ª alla 6ª (senza pomeriggio) */
   lastSpan6 = false;
+  /** l'ultima giornata calcolata: ore libere tra la prima e l'ultima lezione (buche e disposizioni) */
+  lastMiddle = 0;
   private lastLessonsM = 0;
   private lastDuties = 0;
   private lastMixed = false;
@@ -1307,6 +1312,8 @@ export class TimetableSolver {
     const base = (t * p.D + d) * P;
     let first = -1;
     let last = -1;
+    let lFirst = -1;
+    let lLast = -1;
     let duties = 0;
     let lessonsM = 0;
     let afternoon = false;
@@ -1321,6 +1328,8 @@ export class TimetableSolver {
       duties += 1;
       const morning = p.mOfPos[pos]! >= 0;
       if (n > 0) {
+        if (lFirst < 0) lFirst = pos;
+        lLast = pos;
         if (morning) lessonsM += 1;
         else afternoon = true;
       }
@@ -1335,10 +1344,16 @@ export class TimetableSolver {
       this.lastGaps = 0;
       this.lastSpan6 = false;
       this.lastMixed = false;
+      this.lastMiddle = 0;
       return info.emptyW;
     }
     let gaps = 0;
     for (let pos = first + 1; pos < last; pos++) if (this.isGap(t, d, pos)) gaps += 1;
+    // ore libere tra la prima e l'ultima lezione: buche (anche quelle da riempire) e disposizioni
+    let middle = 0;
+    for (let pos = lFirst + 1; pos < lLast; pos++)
+      if (this.tOcc[base + pos] === 0 && (p.unavail[base + pos] === 4 || this.isGap(t, d, pos))) middle += 1;
+    this.lastMiddle = middle;
     // chi ha disposizioni da mettere: le buche si contano sulla settimana (le prime si riempiono)
     if (info.fill === 0) {
       cost += W.gap * gaps;
@@ -1359,6 +1374,18 @@ export class TimetableSolver {
     this.lastSpan6 = span6;
     this.lastMixed = mixed;
     return cost;
+  }
+
+  /**
+   * Vincoli della giornata che dipendono da dove stanno le ore libere (dopo dayCost):
+   * al massimo un'ora libera tra le lezioni, buca o disposizione (salvo chi ne accetta 2), e mai
+   * dalla 1ª alla 6ª con 2 ore buche.
+   */
+  private dayHardFree(t: number): number {
+    const g = this.lastGaps;
+    const span = this.lastSpan6 && g >= 2 ? g - 1 : 0;
+    const middle = this.p.teachers[t]!.allow2 ? 0 : Math.max(0, this.lastMiddle - 1);
+    return Math.max(span, middle);
   }
 
   private computeTeacherDay(t: number, d: number) {
@@ -1382,8 +1409,7 @@ export class TimetableSolver {
     this.tdCost[t * D + d] = this.dayCost(t, d);
     this.tdGaps[t * D + d] = this.lastGaps;
     this.tdDuties[t * D + d] = this.lastDuties;
-    // a scuola dalla 1ª alla 6ª con 2 ore buche: mai
-    if (this.lastSpan6 && this.lastGaps >= 2) hard += this.lastGaps - 1;
+    hard += this.dayHardFree(t);
     this.tdHard[t * D + d] = hard;
     const o = (t * D + d) * MET_TD;
     const g = this.lastGaps;
@@ -2645,11 +2671,17 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
         gapCells.push({ day: p.days[d]!, periodId: p.periods[pos]!.id });
       }
       // tra due lezioni, ma non buche: ore a disposizione e ore altrove (o di spostamento)
+      let middle = 0;
+      let middleDisp = 0;
       for (let pos = lFirst + 1; pos < lLast; pos++) {
         if (s.tOcc[base + pos]! > 0) continue;
         const un = p.unavail[base + pos]!;
         const where = `${info.name} · ${dayName(d)} ${hourLabel(pos)}`;
-        if (un === 4) rep.notGaps.disp.push({ text: `${where}: a disposizione` });
+        if (un === 4) {
+          rep.notGaps.disp.push({ text: `${where}: a disposizione` });
+          middle += 1;
+          middleDisp += 1;
+        } else if (s.isGap(t, d, pos)) middle += 1;
         else if (un === 1) rep.notGaps.away.push({ text: `${where}: altrove (×)` });
         else if (un === 2) rep.notGaps.away.push({ text: `${where}: spostamento tra plessi` });
       }
@@ -2667,14 +2699,22 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
         rep.docenti.five.push({ text: `${info.name} · ${dayName(d)}: 5 lezioni` });
         fact("five", twho, d, "", 1);
       }
-      if (!afternoon && mFirst >= 0 && p.pIndex[mLast]! - p.pIndex[mFirst]! + 1 >= 6) {
+      const span6 = !afternoon && mFirst >= 0 && p.pIndex[mLast]! - p.pIndex[mFirst]! + 1 >= 6;
+      if (span6) {
         rep.docenti.span6.push({ text: `${info.name} · ${dayName(d)}: a scuola dalla 1ª alla 6ª` });
         fact("span6", twho, d, "", 1);
         if (info.full) rep.docenti.full.push({ text: `${info.name} · ${dayName(d)}: dalla 1ª alla 6ª` });
-        // anche se le riempie una disposizione: 6 ore a scuola con 2 ore ferme in mezzo, mai
-        if (rawGaps >= 2)
-          rep.hard.longGaps.push({ text: `${info.name} · ${dayName(d)}: dalla 1ª alla 6ª con ${rawGaps} ore senza lezione in mezzo` });
       }
+      // al massimo un'ora libera tra le lezioni, buca o disposizione (salvo chi ne accetta 2);
+      // dalla 1ª alla 6ª mai 2 ore senza lezione, anche se le riempie una disposizione
+      if (!info.allow2 && middle >= 2 && !(span6 && rawGaps > middle))
+        rep.hard.longGaps.push({
+          text: `${info.name} · ${dayName(d)}: ${middle} ore libere tra le lezioni${
+            middleDisp === 0 ? "" : middleDisp === middle ? " (a disposizione)" : ` (${middleDisp} a disposizione)`
+          }`,
+        });
+      else if (span6 && rawGaps >= 2)
+        rep.hard.longGaps.push({ text: `${info.name} · ${dayName(d)}: dalla 1ª alla 6ª con ${rawGaps} ore senza lezione in mezzo` });
       if (duties === 1) {
         rep.docenti.single.push({ text: `${info.name} · ${dayName(d)}: una sola ora` });
         fact("single", twho, d, "", 1);

@@ -841,4 +841,69 @@ describe("timetable-solver", () => {
     assert.equal(row(loose).fill.length, 1);
     assert.equal(loose.hard.pattern.length, 0);
   });
+
+  /** Un docente «semplice» (niente ×, «no», rientri, disposizioni) con `n` lezioni del mattino in un giorno. */
+  function pickTeacherDay(applied: PersistedData, n: number): { id: string; day: DayOfWeek } {
+    const morning = new Set(["p1", "p2", "p3", "p4", "p5", "p6"]);
+    for (const s of applied.slots) {
+      const t = applied.teachers.find((x) => x.id === s.teacherId)!;
+      if (t.otherPlesso || t.awaySlots?.length || t.avoidSlots?.length || t.rientroDays?.length || t.dispSlots?.length) continue;
+      if ((t.lockedSlots?.length ?? 0) > 0 || t.lockWeek) continue;
+      const mine = applied.slots.filter((x) => x.teacherId === s.teacherId && x.day === s.day);
+      if (mine.length === n && mine.every((x) => morning.has(x.periodId))) return { id: s.teacherId, day: s.day };
+    }
+    throw new Error(`serve un docente con ${n} lezioni in un giorno`);
+  }
+
+  /**
+   * Lo stesso orario, con le lezioni di quel docente e giorno alle ore date (scambiate con quelle della
+   * classe, così nessuna classe ha due lezioni insieme) e le modifiche al docente.
+   */
+  function reshape(applied: PersistedData, pick: { id: string; day: DayOfWeek }, periods: string[], patch: Partial<Teacher>) {
+    const slots = applied.slots.map((x) => ({ ...x }));
+    const idx = new Map(applied.settings.periods.map((x) => [x.id, x.index]));
+    const mine = slots
+      .filter((x) => x.teacherId === pick.id && x.day === pick.day)
+      .sort((a, b) => idx.get(a.periodId)! - idx.get(b.periodId)!);
+    mine.forEach((x, i) => {
+      const target = periods[i]!;
+      if (x.periodId === target) return;
+      const other = slots.find((y) => y !== x && y.classId === x.classId && y.day === x.day && y.periodId === target);
+      if (other) other.periodId = x.periodId;
+      x.periodId = target;
+    });
+    return { ...applied, slots, teachers: applied.teachers.map((x) => (x.id === pick.id ? { ...x, ...patch } : x)) };
+  }
+
+  it("al massimo un'ora libera tra le lezioni: contano buche e disposizioni, salvo chi ne accetta 2", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    const pick = pickTeacherDay(applied, 3);
+    const name = prepare(applied, "slots").teachers.find((t) => t.id === pick.id)!.name;
+    // lezioni alla 1ª, 2ª e 5ª: in mezzo la 3ª e la 4ª
+    const at = (patch: Partial<Teacher>) => reshape(applied, pick, ["p1", "p2", "p5"], patch);
+    const mine = (r: TimetableReport) => r.hard.longGaps.filter((i) => i.text.startsWith(`${name} · `));
+    const hardOf = (d: PersistedData) => {
+      const prep = prepare(d, "slots");
+      const s = new TimetableSolver(prep, 1);
+      s.setState(prep.unitStart);
+      return s.hard;
+    };
+    const two = evaluateCurrent(at({}));
+    assert.equal(mine(two).length, 1);
+    assert.match(mine(two)[0]!.text, /2 ore libere tra le lezioni$/);
+    // disposizioni alla 3ª e alla 4ª: niente buche, ma restano 2 ore libere in mezzo
+    const disp2 = evaluateCurrent(
+      at({ dispHours: 2, dispSlots: [{ day: pick.day, periodId: "p3" }, { day: pick.day, periodId: "p4" }] }),
+    );
+    assert.equal(disp2.gapsByTeacher.find((g) => g.id === pick.id)?.gaps ?? 0, 0);
+    assert.match(mine(disp2)[0]!.text, /2 ore libere tra le lezioni \(a disposizione\)$/);
+    const disp1 = evaluateCurrent(at({ dispHours: 1, dispSlots: [{ day: pick.day, periodId: "p3" }] }));
+    assert.match(mine(disp1)[0]!.text, /\(1 a disposizione\)$/);
+    // una sola ora libera in mezzo: va bene
+    assert.equal(mine(evaluateCurrent(reshape(applied, pick, ["p1", "p2", "p4"], {}))).length, 0);
+    // il docente le accetta: niente vincolo, e il motore conta un vincolo in meno
+    assert.equal(mine(evaluateCurrent(at({ allowTwoFree: true }))).length, 0);
+    assert.equal(hardOf(at({})), hardOf(at({ allowTwoFree: true })) + 1);
+  });
 });
