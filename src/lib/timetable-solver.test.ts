@@ -6,6 +6,7 @@ import {
   dayPatternOptions,
   diffFacts,
   dispAfterLessons,
+  dispOutcome,
   evaluateCurrent,
   patternExcess,
   prepare,
@@ -905,5 +906,80 @@ describe("timetable-solver", () => {
     // il docente le accetta: niente vincolo, e il motore conta un vincolo in meno
     assert.equal(mine(evaluateCurrent(at({ allowTwoFree: true }))).length, 0);
     assert.equal(hardOf(at({})), hardOf(at({ allowTwoFree: true })) + 1);
+  });
+
+  it("disposizioni: nei ritocchi si spostano nello stesso giorno per chiudere un'ora buca, nell'orario in uso no", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 62 }));
+    const pick = pickTeacherDay(applied, 2);
+    // disposizione alla 3ª, lezioni alla 5ª e 6ª: la 4ª è una buca
+    const d2 = reshape(applied, pick, ["p5", "p6"], { dispHours: 1, dispSlots: [{ day: pick.day, periodId: "p3" }] });
+    const gapCells = (r: TimetableReport) => r.gapsByTeacher.find((g) => g.id === pick.id)?.cells ?? [];
+    assert.ok(gapCells(evaluateCurrent(d2)).some((c) => c.day === pick.day && c.periodId === "p4"));
+    const ed = new TimetableEditor(d2);
+    assert.ok(!gapCells(ed.report(0)).some((c) => c.day === pick.day), "la disposizione chiude la buca");
+    assert.equal(ed.teacherAt(pick.id, ed.cell(pick.day, "p4")).kind, "disp");
+    assert.equal(ed.teacherAt(pick.id, ed.cell(pick.day, "p3")).kind, "free");
+    const out = dispOutcome(d2, ed.slots(), ed.dispChange());
+    assert.deepEqual(out.moved, [{ teacherId: pick.id, day: pick.day, from: "p3", to: "p4" }]);
+    assert.deepEqual(out.dispSlots[pick.id], [{ day: pick.day, periodId: "p4" }]);
+    assert.equal(out.removed.length, 0);
+    // senza le informazioni del motore («Da zero»): come prima
+    assert.deepEqual(dispOutcome(d2, ed.slots(), null), { ...dispAfterLessons(d2, ed.slots()), moved: [] });
+  });
+
+  it("ritocchi: una lezione sull'ora a disposizione la sposta nello stesso giorno (effetto annunciato = ottenuto)", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 63 }));
+    const pick = pickTeacherDay(applied, 2);
+    // lezioni alla 1ª e 2ª, disposizione alla 3ª; la lezione della 2ª va alla 3ª
+    const d2 = reshape(applied, pick, ["p1", "p2"], { dispHours: 1, dispSlots: [{ day: pick.day, periodId: "p3" }] });
+    const lesson = d2.slots.find((x) => x.teacherId === pick.id && x.day === pick.day && x.periodId === "p2")!;
+    const ed = new TimetableEditor(d2);
+    const from = ed.cell(pick.day, "p2");
+    const to = ed.cell(pick.day, "p3");
+    const eff = ed.effects(lesson.classId, from)[to];
+    assert.ok(eff, "lo spostamento si può fare");
+    assert.equal(eff.dispLost.length, 0);
+    assert.equal(eff.dispMoved.length, 1);
+    assert.match(eff.dispMoved[0]!, / 3ª → 2ª$/);
+    const done = ed.apply(lesson.classId, from, to)!;
+    assert.deepEqual(done.dispMoved, eff.dispMoved);
+    assert.equal(ed.teacherAt(pick.id, ed.cell(pick.day, "p2")).kind, "disp");
+    // dopo il salvataggio: la disposizione alla 2ª
+    const keep = d2.slots.filter((x) => !done.slots.some((y) => y.id === x.id));
+    const after = { ...d2, slots: [...keep, ...done.slots] };
+    const out = dispOutcome(d2, done.slots, new TimetableEditor(after).dispChange());
+    assert.deepEqual(out.dispSlots[pick.id], [{ day: pick.day, periodId: "p2" }]);
+  });
+
+  it("«Migliora l'attuale»: nessuna disposizione che, spostata nello stesso giorno, chiuderebbe un'ora buca", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 64 }));
+    const pick = pickTeacherDay(applied, 2);
+    const d2 = reshape(applied, pick, ["p5", "p6"], { dispHours: 1, dispSlots: [{ day: pick.day, periodId: "p3" }] });
+    const res = solveTimetable(d2, { timeMs: 800, seed: 65, mode: "improve" });
+    assert.ok(res.disp, "la proposta dice dove stanno le disposizioni");
+    const idx = new Map(d2.settings.periods.map((x) => [x.id, x.index]));
+    // ore buche tra il primo e l'ultimo impegno (lezioni e disposizioni) del mattino
+    const gapsOf = (busy: number[]) => {
+      const lo = Math.min(...busy);
+      const hi = Math.max(...busy);
+      let n = 0;
+      for (let h = lo + 1; h < hi; h++) if (!busy.includes(h)) n += 1;
+      return n;
+    };
+    for (const day of d2.settings.days) {
+      const lessons = res.slots.filter((x) => x.teacherId === pick.id && x.day === day).map((x) => idx.get(x.periodId)!);
+      const disp = res.disp.after.filter((x) => x.teacherId === pick.id && x.day === day).map((x) => idx.get(x.periodId)!);
+      if (!lessons.length || !disp.length) continue;
+      const now = gapsOf([...lessons, ...disp]);
+      for (const a of disp)
+        for (let h = 1; h <= 6; h++) {
+          if (lessons.includes(h) || disp.includes(h)) continue;
+          const moved = disp.map((x) => (x === a ? h : x));
+          assert.ok(gapsOf([...lessons, ...moved]) >= now, `giorno ${day}: la disposizione della ${a}ª chiuderebbe una buca alla ${h}ª`);
+        }
+    }
   });
 });

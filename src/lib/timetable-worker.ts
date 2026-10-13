@@ -19,7 +19,8 @@ scope.onmessage = (e) => {
     return;
   }
   try {
-    const prep = prepare(msg.data, "demand", { keepDisp: msg.mode === "improve" });
+    const improve = msg.mode === "improve";
+    const prep = prepare(msg.data, "demand", { keepDisp: improve, floatDisp: improve });
     const s = new TimetableSolver(prep, msg.seed);
     solver = s;
     s.startRun(msg.timeMs, msg.mode);

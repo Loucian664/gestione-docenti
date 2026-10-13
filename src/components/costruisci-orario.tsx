@@ -20,7 +20,7 @@ import {
 } from "@/lib/build-timetable";
 import {
   dayPatternOptions,
-  dispAfterLessons,
+  dispOutcome,
   evaluateCurrent,
   teacherDayInfo,
   teacherDayPatterns,
@@ -169,7 +169,22 @@ export function CostruisciOrario() {
   );
   const applySlots =
     confirmFor === "ritocchi" ? (edit?.draft ?? null) : confirmFor === "proposta" ? (result?.slots ?? null) : null;
-  const applyInfo = useMemo(() => (applySlots ? dispAfterLessons(data, applySlots) : null), [data, applySlots]);
+  // ore a disposizione del mattino: dove le lascia la proposta o dove stanno dopo i ritocchi
+  const applyChange = useMemo(() => {
+    if (confirmFor === "proposta") return result?.disp ?? null;
+    if (confirmFor !== "ritocchi" || !edit) return null;
+    const keep = data.slots.filter((s) => !(pool.has(s.teacherId) && !isTpPeriodId(data.settings.periods, s.periodId)));
+    return new TimetableEditor({ ...data, slots: [...keep, ...edit.draft] }).dispChange();
+  }, [confirmFor, result, edit, data, pool]);
+  const applyInfo = useMemo(
+    () => (applySlots ? dispOutcome(data, applySlots, applyChange) : null),
+    [data, applySlots, applyChange],
+  );
+  const dispMovedText = (m: { teacherId: string; day: DayOfWeek; from: string; to: string }) => {
+    const t = data.teachers.find((x) => x.id === m.teacherId);
+    const hour = (id: string) => `${data.settings.periods.find((x) => x.id === id)?.index ?? "?"}ª`;
+    return `${t ? teacherShort(t, data.teachers) : m.teacherId} · ${DAY_SHORT[m.day]} ${hour(m.from)} → ${hour(m.to)}`;
+  };
   // ore al giorno scelte: con le disposizioni che restano dopo «Usa…», chi va sistemato a mano
   // «Da zero»: le disposizioni le rimette il responsabile dove indicato (nelle buche)
   const fillTodo = confirmFor === "proposta" && resultMode === "scratch" && result ? result.report.dispFill : [];
@@ -235,14 +250,15 @@ export function CostruisciOrario() {
     if (!applySlots || !applyInfo) return;
     store.replaceCattedraSlots(applySlots, applyInfo.dispSlots);
     const removed = applyInfo.removed.length;
+    const moved = applyInfo.moved.length;
     setConfirmFor(null);
     setResult(null);
     setEdit(null);
-    toast.success(
-      removed
-        ? `Orario aggiornato. Tolte ${removed} ore a disposizione che cadevano su una lezione.`
-        : "Orario aggiornato.",
-    );
+    const notes = [
+      moved ? (moved === 1 ? "Spostata 1 ora a disposizione nello stesso giorno." : `Spostate ${moved} ore a disposizione nello stesso giorno.`) : "",
+      removed ? `Tolte ${removed} ore a disposizione che cadevano su una lezione.` : "",
+    ].filter(Boolean);
+    toast.success(["Orario aggiornato.", ...notes].join(" "));
   }
 
   function openEdit(from: EditState["from"]) {
@@ -336,7 +352,7 @@ export function CostruisciOrario() {
         <p className="mt-2 text-[13px] text-muted-foreground">
           {mode === "scratch"
             ? "Genera un nuovo orario. Le ore buche colmabili con ore a disposizione non vengono conteggiate, ma al massimo una al giorno."
-            : "Migliora l’orario in uso senza peggiorare nessuna voce. Le ore a disposizione restano dove sono."}
+            : "Migliora l’orario in uso senza peggiorare nessuna voce. Le ore a disposizione si spostano solo nello stesso giorno, per chiudere un’ora buca."}
           {speed === "accurata" ? " Richiede più tempo, ma in genere trova soluzioni migliori." : ""}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -495,7 +511,7 @@ export function CostruisciOrario() {
               data={previewData}
               report={result.report}
               scratch={resultMode === "scratch"}
-              disp={dispAfterLessons(data, result.slots).dispSlots}
+              disp={dispOutcome(data, result.slots, result.disp).dispSlots}
               teachers={included}
               days={data.settings.days}
               periods={morning}
@@ -562,6 +578,9 @@ export function CostruisciOrario() {
           <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
             <li>
               Le ore a disposizione restano dove sono
+              {applyInfo?.moved.length
+                ? `, tranne ${applyInfo.moved.length === 1 ? "una, spostata" : `${applyInfo.moved.length}, spostate`} nello stesso giorno: ${applyInfo.moved.map(dispMovedText).join("; ")}`
+                : ""}
               {applyInfo?.removed.length
                 ? `; ${applyInfo.removed.length} cadono su una lezione nuova e vengono tolte.`
                 : "."}
@@ -756,6 +775,12 @@ function EffectLines({
           Si spostano anche: {effect.also.join(", ")} (un docente non può stare in due classi).
         </p>
       )}
+      {effect.dispMoved.length > 0 && (
+        <p className="text-muted-foreground">
+          {effect.dispMoved.length === 1 ? "Si sposta l’ora a disposizione: " : "Si spostano le ore a disposizione: "}
+          {effect.dispMoved.join(", ")}.
+        </p>
+      )}
       {effect.dispLost.length > 0 && (
         <p className="text-muted-foreground">Toglie l’ora a disposizione: {effect.dispLost.join(", ")}.</p>
       )}
@@ -824,6 +849,16 @@ function Ritocchi({
   const current = useMemo(() => evaluateCurrent(inUse), [inUse]);
   const report = useMemo(() => editor.report(current.lessonsExpected), [editor, current]);
   const tById = useMemo(() => new Map(teachersAll.map((t) => [t.id, t])), [teachersAll]);
+  // ore a disposizione spostate nello stesso giorno (per chiudere un’ora buca) rispetto all’orario in uso
+  const dispMoved = useMemo(
+    () =>
+      dispOutcome(inUse, edit.draft, editor.dispChange()).moved.map((m) => {
+        const t = tById.get(m.teacherId);
+        const hour = (id: string) => `${settings.periods.find((x) => x.id === id)?.index ?? "?"}ª`;
+        return `${t ? teacherShort(t, teachersAll) : m.teacherId} · ${DAY_SHORT[m.day]} ${hour(m.from)} → ${hour(m.to)}`;
+      }),
+    [inUse, edit.draft, editor, tById, settings.periods, teachersAll],
+  );
   const withLessons = useMemo(() => new Set(edit.draft.map((s) => s.teacherId)), [edit.draft]);
   const cells = useMemo(() => {
     const out: { day: DayOfWeek; periodId: string; label: string }[] = [];
@@ -840,7 +875,13 @@ function Ritocchi({
   const [teacherId, setTeacherId] = useState(teachers.find((t) => withLessons.has(t.id))?.id ?? "");
   const [sel, setSel] = useState<{ classId: string; z: number } | null>(null);
   const [target, setTarget] = useState<number | null>(null);
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(() =>
+    dispMoved.length
+      ? {
+          text: `${dispMoved.length === 1 ? "L’ora a disposizione si sposta" : "Le ore a disposizione si spostano"} nello stesso giorno per chiudere un’ora buca: ${dispMoved.join(", ")}.`,
+        }
+      : null,
+  );
   const [confirmClose, setConfirmClose] = useState(false);
   /** ora buca scelta nella vista per docente */
   const [gapZ, setGapZ] = useState<number | null>(null);
@@ -900,7 +941,7 @@ function Ritocchi({
   const short = (t: Teacher | undefined) => (t ? teacherShort(t, teachersAll) : "");
   const teacherLabel = (id: string) => short(tById.get(id)) || id;
   const nameOf = (w: Who) => (w.kind === "teacher" ? short(tById.get(w.id)) || w.name : w.name);
-  const canApply = edit.from === "proposta" || edit.history.length > 0;
+  const canApply = edit.from === "proposta" || edit.history.length > 0 || dispMoved.length > 0;
   const gapCell = view === "teacher" && gapZ !== null ? editor.teacherAt(teacherId, gapZ) : null;
   const gapNow = gapCell && gapCell.kind !== "lesson" && gapCell.gap ? gapZ : null;
   const shownFind = find && find.job.forEditor === editor ? find : null;
@@ -950,10 +991,14 @@ function Ritocchi({
     const ids = new Set(out.slots.map((x) => x.id));
     const draft = [...out.slots, ...edit.draft.filter((x) => !ids.has(x.id))];
     onChange({ ...edit, draft, history: [...edit.history, edit.draft] });
-    setNotice({
-      text: out.also.length ? `Fatto. Si sono spostate anche: ${out.also.join(", ")}.` : "Fatto.",
-      changed: changedTeachers(edit.draft, draft, teacherLabel),
-    });
+    const parts = ["Fatto."];
+    if (out.also.length) parts.push(`Si sono spostate anche: ${out.also.join(", ")}.`);
+    if (out.dispMoved.length)
+      parts.push(
+        `${out.dispMoved.length === 1 ? "Si sposta l’ora a disposizione" : "Si spostano le ore a disposizione"}: ${out.dispMoved.join(", ")}.`,
+      );
+    if (out.dispLost.length) parts.push(`Toglie l’ora a disposizione: ${out.dispLost.join(", ")}.`);
+    setNotice({ text: parts.join(" "), changed: changedTeachers(edit.draft, draft, teacherLabel) });
     reset();
   }
 
@@ -1157,7 +1202,11 @@ function Ritocchi({
           {edit.history.length === 0
             ? edit.from === "proposta"
               ? "Sulla proposta"
-              : "Nessun cambio"
+              : dispMoved.length === 1
+                ? "1 disposizione spostata, non ancora salvata"
+                : dispMoved.length > 1
+                  ? `${dispMoved.length} disposizioni spostate, non ancora salvate`
+                  : "Nessun cambio"
             : edit.history.length === 1
               ? "1 cambio, non ancora salvato"
               : `${edit.history.length} cambi, non ancora salvati`}
@@ -1632,8 +1681,9 @@ function HowItWorks() {
         ))}
       </div>
       <p className="mt-3 text-sm text-muted-foreground">
-        <span className="font-semibold text-foreground">Non cambia</span> ore a disposizione, sostegno, potenziamento,
-        strumento e pomeriggio.
+        <span className="font-semibold text-foreground">Non cambia</span> sostegno, potenziamento, strumento e
+        pomeriggio. Le ore a disposizione restano dove sono; con «Migliora l’attuale» si spostano nello stesso giorno
+        solo per chiudere un’ora buca.
       </p>
     </details>
   );
