@@ -9,7 +9,8 @@ function Tabs({
 }: {
   value: string;
   onValueChange: (v: string) => void;
-  items: { value: string; label: string }[];
+  /** title: la spiegazione che compare passandoci sopra */
+  items: { value: string; label: string; title?: string }[];
   className?: string;
 }) {
   return (
@@ -25,6 +26,7 @@ function Tabs({
             type="button"
             role="tab"
             aria-selected={active}
+            title={item.title}
             onClick={() => onValueChange(item.value)}
             className={cn(
               "h-8 shrink-0 rounded-md px-3 text-[13px] font-medium transition-colors duration-150",

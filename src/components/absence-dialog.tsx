@@ -63,7 +63,7 @@ export function AbsenceDialog({
       toast.success("Assenza aggiornata");
     } else {
       addAbsence(payload);
-      toast.success("Assenza registrata — ora copri le ore in bacheca");
+      toast.success("Assenza registrata. Assegna ora le sostituzioni.");
     }
     onOpenChange(false);
   }
@@ -74,7 +74,7 @@ export function AbsenceDialog({
         <DialogHeader>
           <DialogTitle>{initial ? "Modifica assenza" : "Registra assenza"}</DialogTitle>
           <DialogDescription>
-            Le ore del docente in orario compariranno nella bacheca del giorno da coprire.
+            Indica docente, periodo e motivo: le sue ore di lezione compariranno in bacheca, da coprire.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="flex min-w-0 flex-col gap-3">
@@ -124,6 +124,11 @@ export function AbsenceDialog({
             />
             Giornata intera
           </label>
+          {allDay && (
+            <p className="-mt-2 text-[12px] text-muted-foreground">
+              Deseleziona per indicare solo alcune ore (ad esempio un permesso breve).
+            </p>
+          )}
           {!allDay && (
             <div>
               <Label>Ore interessate</Label>

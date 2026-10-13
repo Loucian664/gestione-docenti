@@ -48,7 +48,7 @@ function DocentiPage() {
     <div>
       <PageHeader
         title="Docenti"
-        description="Anagrafica e classi. Le ore di organico sono il monte del contratto; le classi le assegni qui (o in Orario → Costruisci)."
+        description="Docenti del plesso con materie, classi e ore. Seleziona un docente per modificarne i dati."
         actions={
           <Button onClick={() => setEditing("new")}>
             <Plus />
@@ -272,9 +272,9 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
     store.saveTeacherCard(isNew ? null : current!.id, payload, parsed);
     toast.success(
       payload.role === "potenziamento"
-        ? "Docente salvato. L’orario in sede è senza classe: copre dove serve."
+        ? "Docente salvato. Nelle ore in sede è disponibile per le sostituzioni."
         : payload.role === "sostegno"
-          ? "Docente salvato. Ora inserisci le sue ore in Orario → Per docente."
+          ? "Docente salvato. Ora inserisci le sue ore in Orario → Docente."
           : "Docente salvato",
     );
     onClose();
@@ -316,8 +316,9 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
           </div>
           {role !== "potenziamento" && (
             <p className="-mt-1 text-[12px] text-muted-foreground">
-              Le ore a disposizione non sono lezioni. Se Proponi deve lasciare buchi, prima a chi ha questo numero (fino a
-              quel tetto).
+              Ore cattedra: ore di lezione in questo plesso. Ore a disposizione: ore di servizio senza classe, utilizzabili
+              per le sostituzioni. Se l’orario generato deve lasciare ore buche, le assegna prima a chi ha ore a
+              disposizione.
             </p>
           )}
           <div className="grid grid-cols-2 gap-3">
@@ -353,8 +354,8 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
           {role !== "potenziamento" && (
           <Field label="Classi e materie su questo plesso">
             <p className="text-[12px] text-muted-foreground">
-              Classe, materia (anche Mensa o Laboratorio) e ore. Il totale può essere minore dell’organico se insegna
-              anche altrove.
+              Per ogni classe indica materia e ore (anche Mensa o Laboratorio). Se il docente insegna anche in altri plessi,
+              il totale può essere inferiore.
             </p>
             <div className="mt-2 flex flex-col gap-2">
               {rows.map((row, i) => (
@@ -449,8 +450,8 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
           </Field>
           <p className="text-[12px] text-muted-foreground">
-            Se insegna anche in un altro plesso, segnalalo in Orario → Costruisci, insieme alle ore in cui è
-            altrove.
+            Se il docente presta servizio anche in un altro plesso, indica in Orario → Costruisci le ore in cui è
+            nell’altra sede.
           </p>
           <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-popover pt-3">
             {!isNew && current && (
@@ -513,7 +514,6 @@ function ColorSwatches({ value, onChange }: { value: string; onChange: (color: s
           ))}
         </div>
       ))}
-      <p className="text-[12px] text-muted-foreground">Ultima riga: colori vivaci, per far risaltare un docente.</p>
     </div>
   );
 }
@@ -567,8 +567,8 @@ function PresenceGrid({
   return (
     <Field label="Orario in sede (senza classe)">
       <p className="text-[12px] text-muted-foreground">
-        Segna quando è a scuola. Non serve la classe: copre gli assenti. Tocca Lun, Mar… per tutto il
-        giorno. {selected.length} ore segnate.
+        Indica le ore di servizio in sede: senza classe assegnata, sono disponibili per le sostituzioni. Seleziona
+        Lun, Mar… per l’intera giornata. {selected.length} ore segnate.
       </p>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[280px] border-collapse text-[11px]">

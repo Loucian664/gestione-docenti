@@ -90,7 +90,7 @@ function ReportPage() {
     <div>
       <PageHeader
         title="Equità e monte ore"
-        description="Coperture e assenze nel periodo. In fondo, lo storico di tutto l’anno scolastico."
+        description="Sostituzioni svolte da ciascun docente e assenze del periodo selezionato. In fondo, il riepilogo dell’anno scolastico."
         actions={
           <>
             <Button
@@ -225,7 +225,7 @@ function ReportPage() {
 
       <h2 className="mt-8 mb-3 font-display text-lg">Assenze per motivo</h2>
       <p className="mb-3 text-sm text-muted-foreground">
-        Giorni scolastici nel periodo. Permesso breve conta i giorni in cui è stato preso, non le ore.
+        Valori in giorni di scuola; per i permessi brevi si contano i giorni, non le ore.
       </p>
       <div className="paper-panel overflow-x-auto rounded-xl">
         {absenceRows.length === 0 ? (
@@ -268,7 +268,7 @@ function ReportPage() {
         <div>
           <h2 className="mb-1 font-display text-lg">Ore eccedenti</h2>
           <p className="text-sm text-muted-foreground">
-            Anno {data.settings.schoolYear}. Solo le ore segnate come eccedenti: chi ha coperto, la classe e l’ora arrotondata.
+            Anno scolastico {data.settings.schoolYear}: per ogni ora eccedente, docente, classe e orario.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -337,7 +337,7 @@ function ReportPage() {
 
       <h2 className="mt-8 mb-1 font-display text-lg">Anno scolastico {data.settings.schoolYear}</h2>
       <p className="mb-3 text-sm text-muted-foreground">
-        Dal {formatItDate(yearRange.from)} al {formatItDate(yearRange.to)}. Non dipende dal periodo sopra.
+        Dal {formatItDate(yearRange.from)} al {formatItDate(yearRange.to)}, indipendentemente dal periodo selezionato sopra.
       </p>
       {yearStatCards.length === 0 ? (
         <p className="mb-5 text-sm text-muted-foreground">

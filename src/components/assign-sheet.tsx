@@ -26,32 +26,32 @@ const GROUPS: { bucket: SubstituteBucket | SubstituteBucket[]; title: string; hi
   {
     bucket: "disp",
     title: "A disposizione",
-    hint: "Ora di servizio segnata. Non è eccedente.",
+    hint: "Rientra nell’orario di servizio: non è un’ora eccedente.",
   },
   {
     bucket: "buco",
-    title: "Prima scelta — buco in orario",
-    hint: "Già a scuola tra due lezioni, ora libera.",
+    title: "Prima scelta: ora libera tra due lezioni",
+    hint: "In servizio, senza lezione in quest’ora.",
   },
   {
     bucket: "sostegno-qui",
     title: "Sostegno già in questa classe",
-    hint: "È in quest’ora, nella classe scoperta. Puoi chiedergli di coprire.",
+    hint: "Già presente nella classe in quest’ora.",
   },
   {
     bucket: "sostegno-libera",
-    title: "Sostegno libero, la classe non c’è",
-    hint: "La sua classe entra più tardi o è già uscita. Può coprire questa.",
+    title: "Sostegno libero",
+    hint: "La sua classe non è presente in quest’ora (ingresso posticipato o uscita anticipata).",
   },
   {
     bucket: "pre-post",
     title: "Un’ora prima o un’ora dopo",
-    hint: "Basta anticipare l’ingresso o posticipare l’uscita di un’ora.",
+    hint: "Disponibile anticipando l’ingresso o posticipando l’uscita di un’ora.",
   },
   {
     bucket: "potenziamento",
-    title: "Potenziamento — sempre disponibile",
-    hint: "Anche se ha un proprio orario, può essere richiamato.",
+    title: "Potenziamento",
+    hint: "Sempre disponibile per le sostituzioni, anche con un orario proprio.",
   },
   {
     bucket: "in-sede",
@@ -60,23 +60,23 @@ const GROUPS: { bucket: SubstituteBucket | SubstituteBucket[]; title: string; hi
   },
   {
     bucket: "senza-orario",
-    title: "In elenco, senza orario",
-    hint: "Docenti aggiunti ma ancora senza quadro orario.",
+    title: "Senza orario",
+    hint: "Orario non ancora inserito: verifica la disponibilità.",
   },
   {
     bucket: "impegnato",
-    title: "Impegnati in un’altra classe",
-    hint: "Si può scegliere lo stesso, togliendoli dalla lezione in corso.",
+    title: "In un’altra classe",
+    hint: "Solo se necessario: la sua classe resterebbe scoperta.",
   },
   {
     bucket: "sostegno",
-    title: "Sostegno",
-    hint: "In un’altra classe, oppure non in quest’ora. Non in automatico.",
+    title: "Sostegno in altre classi",
+    hint: "In un’altra classe o non in servizio in quest’ora. Escluso dall’assegnazione automatica.",
   },
   {
     bucket: "non-in-sede",
-    title: "Non in sede",
-    hint: "Entrano più tardi o sono già usciti di oltre un’ora. Solo se necessario.",
+    title: "Non a scuola",
+    hint: "Non in servizio in quest’ora. Solo se necessario.",
   },
 ];
 
@@ -143,6 +143,8 @@ export function AssignSheet({
   // Chi copre già l'ora (dati salvati, non la scelta in corso)
   const coveringTeacher = coveredNow ? data.teachers.find((t) => t.id === current?.substituteId) : undefined;
   const coveringType = SUBSTITUTION_TYPES.find((t) => t.value === current?.type)?.label;
+  /** cosa vuol dire il tipo di copertura scelto */
+  const typeHint = SUBSTITUTION_TYPES.find((t) => t.value === type)?.hint;
   const shiftPhrase =
     current && isShiftType(current.type)
       ? classShifts(data, active.date).find((sh) => sh.needs.some((x) => x.key === active.key))?.phrase
@@ -235,9 +237,10 @@ export function AssignSheet({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Cerca un docente…"
+            placeholder="Cerca per nome o materia…"
             aria-label="Cerca docente"
           />
+          <p className="-mt-2 text-[12px] text-muted-foreground">Docenti in ordine di priorità: prima chi è in servizio senza lezione.</p>
 
           {GROUPS.map((group) => {
             const buckets = Array.isArray(group.bucket) ? group.bucket : [group.bucket];
@@ -262,7 +265,7 @@ export function AssignSheet({
           })}
 
           {filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground">Nessun docente corrisponde alla ricerca.</p>
+            <p className="text-sm text-muted-foreground">Nessun docente trovato.</p>
           )}
 
           {divisione && (
@@ -317,6 +320,7 @@ export function AssignSheet({
                 {isCovered(need) ? "Aggiorna copertura" : "Assegna"}
               </Button>
             </div>
+            {typeHint && <p className="text-[12px] text-muted-foreground">{typeHint}</p>}
           </div>
         )}
       </SheetContent>

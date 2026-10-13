@@ -69,7 +69,7 @@ function AssenzePage() {
     <div>
       <PageHeader
         title="Assenze e supplenze"
-        description="Calendario di plesso: chi manca, quante ore sono coperte. Clicca un giorno per aprire la bacheca."
+        description="Calendario delle assenze e delle ore coperte. Seleziona un giorno per aprirne la bacheca."
         actions={
           <Button
             onClick={() => {
@@ -134,7 +134,8 @@ function AssenzePage() {
           </Button>
         )}
         <p className="text-[12px] text-muted-foreground sm:max-w-xs">
-          Una riga per ogni ora: data, assente, materia, chi copre, tipo e se è coperta.
+          Excel: una riga per ogni ora, con data, docente assente, materia, sostituto, tipo e stato della copertura.
+          {sintesi ? " Sintesi: copia il riepilogo dell’assemblea sindacale per il dirigente." : ""}
         </p>
       </div>
 
@@ -257,7 +258,7 @@ function AssenzePage() {
         (list.length === 0 ? (
           <div className="paper-panel rounded-xl px-6 py-12 text-center">
             <p className="font-display text-xl">Nessuna assenza</p>
-            <p className="mt-1 text-sm text-muted-foreground">Il registro è vuoto.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Le assenze registrate compariranno qui.</p>
           </div>
         ) : (
           <ul className="flex flex-col gap-2">

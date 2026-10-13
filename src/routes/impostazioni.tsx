@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/layout";
 import { ThemePicker } from "@/components/theme-toggle";
@@ -50,7 +50,7 @@ function ImpostazioniPage() {
         }
         applyImport(parsed, file.name);
       } catch {
-        toast.error("File non riconosciuto. Serve il backup .json, non il file Excel.");
+        toast.error("File non riconosciuto: seleziona il file di backup (.json), non il file Excel.");
       }
     };
     reader.readAsText(file);
@@ -60,19 +60,20 @@ function ImpostazioniPage() {
     <div className="max-w-2xl">
       <PageHeader
         title="Impostazioni"
-        description="Strumento personale per le sostituzioni. Intestazione, orario e backup."
+        description="Dati della scuola, orari delle lezioni, aspetto e copie di sicurezza."
       />
 
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Aspetto</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Night mode a mano, oppure automatica con l’ora di inizio e di fine che scegli tu.
+          Tema chiaro, scuro o automatico; in automatico il tema scuro si attiva negli orari impostati.
         </p>
         <ThemePicker />
       </section>
 
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Plesso</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Nome della scuola, plesso e anno scolastico compaiono nell’intestazione dei documenti esportati.</p>
         <div className="mt-4 grid gap-3">
           <Field label="Nome scuola">
             <Input
@@ -102,7 +103,7 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Orario giornaliero</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Sei ore, lunedì–venerdì. Mensa, 7ª e 8ª solo se attivi il tempo prolungato.
+          Orari di inizio e fine delle lezioni. Mensa, 7ª e 8ª ora compaiono solo se attivi la fascia pomeridiana.
         </p>
         <ul className="mt-4 flex flex-col gap-2">
           {store.settings.periods.filter((p) => !p.tpOnly).map((p) => {
@@ -155,7 +156,7 @@ function ImpostazioniPage() {
               });
             }}
           />
-          Fascia 14:00 per tutte le classi (mensa o lezione). 7ª e 8ª solo T.P.
+          Fascia pomeridiana: ore 14:00 per tutte le classi (mensa o lezione); 7ª e 8ª ora solo per il tempo prolungato.
         </label>
         {store.settings.tpAfternoon && (
           <ul className="mt-3 flex flex-col gap-2">
@@ -214,7 +215,7 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Salvataggio</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Il registro resta su questo dispositivo. iPhone, iPad e Mac hanno ciascuno la propria copia: per passarlo usa il backup .json, non Excel.
+          I dati sono salvati solo su questo dispositivo: iPhone, iPad e Mac hanno ciascuno una propria copia. Per trasferirli usa il backup, non il file Excel.
         </p>
         {store.savedAt ? (
           <p className="mt-2 text-[13px] text-foreground">
@@ -225,10 +226,10 @@ function ImpostazioniPage() {
           <p className="mt-2 text-[13px] text-warning">Ancora nessun salvataggio su questo dispositivo.</p>
         )}
         <p className="mt-1 text-[13px] text-foreground">
-          JSON in uso: {store.importedBackupName?.trim() || "nessuno importato (registro di questo dispositivo)"}
+          Backup in uso: {store.importedBackupName?.trim() || "nessuno (dati creati su questo dispositivo)"}
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
-          Esporta: su iPhone e iPad passa da Condividi (File o Mail); sul Mac il file va in Download. Poi Importa backup e scegli quel .json.
+          Esporta il backup (su iPhone e iPad tramite Condividi, sul Mac nella cartella Download), poi sull’altro dispositivo usa «Importa backup».
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
@@ -265,7 +266,7 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Copia su GitHub</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Scarica il programma (non i tuoi dati). Sul Mac scompatta lo zip e carica i file su GitHub.
+          Scarica i file dell’applicazione, senza i dati. Sul Mac estrai lo zip e carica i file su GitHub.
         </p>
         <div className="mt-4">
           <Button
@@ -297,10 +298,10 @@ function ImpostazioniPage() {
       </section>
 
       <section className="paper-panel rounded-xl p-5">
-        <h2 className="font-display text-lg">Svuota registro</h2>
+        <h2 className="font-display text-lg">Cancella tutti i dati</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Cancella docenti, orario, assenze e sostituzioni da questo dispositivo. Non si può annullare: prima
-          esporta un backup se vuoi tenerti una copia.
+          Elimina da questo dispositivo docenti, orario, assenze, sostituzioni e impostazioni. L’operazione è
+          irreversibile: esporta prima un backup.
         </p>
         <div className="mt-4">
           <Button
@@ -311,13 +312,9 @@ function ImpostazioniPage() {
               setClearOpen(true);
             }}
           >
-            Svuota registro
+            Cancella tutti i dati
           </Button>
         </div>
-        <p className="mt-4 text-[13px] text-muted-foreground">
-          Scorciatoia: dalla <Link to="/" className="underline">bacheca</Link> registri l’assenza e copri le ore in
-          un unico passaggio.
-        </p>
       </section>
 
       <Dialog
@@ -330,12 +327,12 @@ function ImpostazioniPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {clearStep === 1 ? "Sicuro di voler svuotare il registro?" : "Ultima conferma"}
+              {clearStep === 1 ? "Cancellare tutti i dati?" : "Ultima conferma"}
             </DialogTitle>
             <DialogDescription>
               {clearStep === 1
-                ? "Cancellerai docenti, orario, assenze e sostituzioni salvati su questo dispositivo."
-                : "L’operazione non si può annullare. Prima esporta un backup se vuoi tenerti una copia."}
+                ? "Verranno eliminati docenti, orario, assenze, sostituzioni e impostazioni salvati su questo dispositivo."
+                : "L’operazione è irreversibile: esporta prima un backup se vuoi conservarne una copia."}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-wrap justify-end gap-2">
@@ -361,10 +358,10 @@ function ImpostazioniPage() {
                   store.clearAll();
                   setClearOpen(false);
                   setClearStep(1);
-                  toast.message("Registro vuoto");
+                  toast.message("Dati cancellati");
                 }}
               >
-                Svuota ora
+                Cancella ora
               </Button>
             )}
           </div>
@@ -374,10 +371,9 @@ function ImpostazioniPage() {
       <Dialog open={Boolean(pendingImport)} onOpenChange={(o) => !o && setPendingImport(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Questo file è più vecchio</DialogTitle>
+            <DialogTitle>Questo backup è più vecchio</DialogTitle>
             <DialogDescription>
-              Il registro su questo dispositivo ha modifiche successive (anche ore di mensa o laboratorio in
-              scheda). Importando quel JSON si torna al file e si perdono i cambiamenti fatti dopo.
+              Su questo dispositivo ci sono modifiche più recenti. Importandolo, si torna a quel backup e le modifiche successive andranno perse.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-wrap justify-end gap-2">
