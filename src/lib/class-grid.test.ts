@@ -260,10 +260,10 @@ describe("caselle delle classi", () => {
     assert.deepEqual(classLessonSlots(d, "c-2A", 1, "p3"), []);
   });
 
-  it("weekly view: the lesson, never the sostegno", () => {
+  it("weekly view: the lesson, never the sostegno, and no «+» for the compresenza", () => {
     const lines = weekCellLines(d, "c-2A", 1);
     assert.equal(lines[0]?.teacher, "Alfa X.");
-    assert.equal(lines[0]?.extra, " +");
+    assert.ok(!Object.values(lines[0] ?? {}).some((v) => String(v).includes("+")));
     assert.equal(lines[1]?.teacher, "");
     assert.equal(lines[1]?.subject, "");
     assert.equal(lines[2]?.teacher, "");

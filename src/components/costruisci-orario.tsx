@@ -676,7 +676,6 @@ export function CostruisciOrario({
                                 <>
                                   {line.period} {line.subject}{" "}
                                   <span className="font-semibold">{line.teacher}</span>
-                                  {line.extra}
                                 </>
                               ) : (
                                 `${line.period}  —`

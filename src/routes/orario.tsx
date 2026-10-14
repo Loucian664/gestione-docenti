@@ -481,7 +481,6 @@ function OrarioPage() {
                               <>
                                 {line.mark} {line.subject}{" "}
                                 <span className="font-semibold">{line.teacher}</span>
-                                {line.extra}
                               </>
                             ) : line.subject === "Mensa" ? (
                               "Mensa"
