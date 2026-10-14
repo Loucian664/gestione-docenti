@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useAppStore, snapshot } from "@/lib/store";
+import { trialFileTag } from "@/lib/saved-timetables";
 import {
   cellSlots,
   classCellSlots,
@@ -115,7 +116,8 @@ function OrarioPage() {
   const activeName = activeSlot ? (data.savedTimetables ?? []).find((s) => s.n === activeSlot)?.name : undefined;
 
   function fileStem(stem: string) {
-    return `${stem}-${schoolTag}`;
+    // un orario di prova si riconosce anche dal nome del file
+    return `${stem}${trialFileTag(data)}-${schoolTag}`;
   }
 
   async function currentOrarioJpeg(): Promise<{ blob: Blob; base: string }> {
