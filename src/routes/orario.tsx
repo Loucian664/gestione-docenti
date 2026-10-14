@@ -43,7 +43,7 @@ import { BucheList } from "@/components/buche-list";
 import { gapsOf, gapsRanking, isTimetableTeacher } from "@/lib/build-timetable";
 import { ensureTpPeriods, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "@/lib/periods";
 
-type OrarioSearch = { docente?: string };
+type OrarioSearch = { docente?: string; slot?: number };
 
 /** Prima colonna ferma delle griglie: fondo pieno e ombra leggera quando la griglia è scorsa di lato. */
 const STICKY_COL =
@@ -53,6 +53,8 @@ export const Route = createFileRoute("/orario")({
   component: OrarioPage,
   validateSearch: (raw: Record<string, unknown>): OrarioSearch => ({
     docente: typeof raw.docente === "string" ? raw.docente : undefined,
+    // slot da aprire in Costruisci (da Impostazioni)
+    slot: raw.slot !== undefined && [0, 1, 2, 3, 4, 5].includes(Number(raw.slot)) ? Number(raw.slot) : undefined,
   }),
 });
 
@@ -61,10 +63,11 @@ type TeacherEdit = { day: DayOfWeek; periodId: string; teacherId: string };
 
 function OrarioPage() {
   const search = Route.useSearch();
+  const navigate = Route.useNavigate();
   const store = useAppStore();
   const data = snapshot(store);
   const [view, setView] = useState<"quadro" | "settimana" | "class" | "teacher" | "costruisci">(
-    search.docente ? "teacher" : "quadro",
+    search.docente ? "teacher" : search.slot !== undefined ? "costruisci" : "quadro",
   );
   const [classId, setClassId] = useState(data.classes[0]?.id ?? "");
   const [teacherId, setTeacherId] = useState(search.docente ?? data.teachers[0]?.id ?? "");
@@ -81,6 +84,10 @@ function OrarioPage() {
       setTeacherId(search.docente);
     }
   }, [search.docente]);
+
+  useEffect(() => {
+    if (search.slot !== undefined) setView("costruisci");
+  }, [search.slot]);
 
   const days = data.settings.days;
   const quadroPeriods = visiblePeriods(data.settings);
@@ -103,6 +110,9 @@ function OrarioPage() {
   const className = data.classes.find((c) => c.id === classId)?.name ?? "classe";
 
   const schoolTag = schoolFileTag(data.settings.schoolName);
+  // prova in uso (slot 1–5): l'orario in vigore resta nello slot 0
+  const activeSlot = data.activeSlot ?? 0;
+  const activeName = activeSlot ? (data.savedTimetables ?? []).find((s) => s.n === activeSlot)?.name : undefined;
 
   function fileStem(stem: string) {
     return `${stem}-${schoolTag}`;
@@ -194,6 +204,13 @@ function OrarioPage() {
       />
 
       <div className="mb-4 flex flex-col gap-3">
+        {activeSlot !== 0 && (
+          <p className="inline-flex max-w-full items-center self-start rounded-full bg-primary px-3 py-1 text-[13px] font-medium text-primary-foreground">
+            <span className="truncate">
+              Slot {activeSlot} in uso{activeName ? ` · ${activeName}` : ""}
+            </span>
+          </p>
+        )}
         <Tabs
           className="flex-wrap overflow-visible"
           value={view}
@@ -344,7 +361,12 @@ function OrarioPage() {
         )}
       </div>
 
-      {view === "costruisci" && <CostruisciOrario />}
+      {view === "costruisci" && (
+        <CostruisciOrario
+          openSlot={search.slot}
+          onSlotOpened={() => void navigate({ search: (prev) => ({ ...prev, slot: undefined }), replace: true })}
+        />
+      )}
 
       {view === "quadro" && (
         <ScrollGrid unit={["Classe", "Classi"]}>

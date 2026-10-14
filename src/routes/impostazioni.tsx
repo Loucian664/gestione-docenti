@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useRef, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/layout";
 import { ThemePicker } from "@/components/theme-toggle";
+import { SaveSlots } from "@/components/save-slots";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/impostazioni")({ component: ImpostazioniP
 
 function ImpostazioniPage() {
   const store = useAppStore();
+  const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearStep, setClearStep] = useState<1 | 2>(1);
@@ -228,7 +230,16 @@ function ImpostazioniPage() {
         <p className="mt-1 text-[13px] text-foreground">
           Backup in uso: {store.importedBackupName?.trim() || "nessuno (dati creati su questo dispositivo)"}
         </p>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <h3 className="mt-4 text-sm font-medium">Orari salvati</h3>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">
+          Lo 0 è l’orario in vigore a scuola; negli slot da 1 a 5 ci sono le prove fatte con Costruisci. Lo slot acceso è
+          quello in uso nell’app. Sono compresi nel backup.
+        </p>
+        <SaveSlots
+          className="mt-2"
+          onOpen={(n) => void navigate({ to: "/orario", search: { slot: n } })}
+        />
+        <p className="mt-4 text-sm text-muted-foreground">
           Esporta il backup (su iPhone e iPad tramite Condividi, sul Mac nella cartella Download), poi sull’altro dispositivo usa «Importa backup».
         </p>
         <div className="mt-4 flex flex-wrap gap-2">

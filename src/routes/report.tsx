@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAppStore, snapshot } from "@/lib/store";
+import { officialData } from "@/lib/saved-timetables";
 import { loadByTeacher, absencesByReason, eccedenteLines, teacherShort } from "@/lib/coverage";
 import { formatItDate, monthRange, schoolYearRange } from "@/lib/dates";
 import { reportXlsx, eccedenteXlsx, eccedentePdf, schoolFileTag } from "@/lib/export";
@@ -19,7 +20,8 @@ export const Route = createFileRoute("/report")({ component: ReportPage });
 
 function ReportPage() {
   const store = useAppStore();
-  const data = snapshot(store);
+  // le sostituzioni fatte riguardano l'orario in vigore (slot 0)
+  const data = officialData(snapshot(store));
   const initial = monthRange(data.selectedDate);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);

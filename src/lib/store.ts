@@ -5,6 +5,7 @@ import type {
   Cattedra,
   DayOfWeek,
   PersistedData,
+  SavedTimetable,
   SchoolClass,
   Settings,
   Substitution,
@@ -15,6 +16,7 @@ import { buildSeed, EMPTY_DATA, applyOrganicoFixes } from "./seed";
 import { uid } from "./utils";
 import { isTimetableTeacher, applyTeacherCattedre } from "./build-timetable";
 import { isTpPeriodId } from "./periods";
+import { OFFICIAL_NAME, activeSlotOf, slotPart, timetableKey, withPart, type TimetablePart } from "./saved-timetables";
 import { todayIso } from "./dates";
 import {
   createDurableStorage,
@@ -71,6 +73,19 @@ type Actions = {
     dispSlots?: Record<string, { day: DayOfWeek; periodId: string }[]>,
   ) => void;
   undoCattedraSlots: () => void;
+  /** Salva un orario nello slot `entry.n` (1–5), al posto di quello che c’era; non cambia lo slot in uso. */
+  saveTimetable: (entry: SavedTimetable) => void;
+  renameSavedTimetable: (n: number, name: string) => void;
+  /** Svuota uno slot di prova (non quello in uso). */
+  clearSavedTimetable: (n: number) => void;
+  /** Usa lo slot `n` (0–5): l’orario in uso resta salvato nel suo slot e al suo posto va quello di `n`. */
+  activateSlot: (n: number) => void;
+  /** Mette un orario nello slot di prova `n` (1–5) e lo usa. */
+  putInSlot: (n: number, part: TimetablePart, name: string) => void;
+  /** «Rendi in vigore»: lo slot `n` diventa l’orario in vigore (slot 0) e quello in uso. */
+  makeOfficial: (n: number) => void;
+  /** Annulla l’ultimo «Rendi in vigore». */
+  undoMakeOfficial: () => void;
   setCattedre: (cattedre: Cattedra[]) => void;
   importData: (data: PersistedData, fileName?: string) => void;
   resetDemo: () => void;
@@ -91,10 +106,32 @@ export function snapshot(state: AppStore): PersistedData {
     cattedre: state.cattedre,
     cattedraBackup: state.cattedraBackup,
     cattedraDispBackup: state.cattedraDispBackup,
+    savedTimetables: state.savedTimetables,
+    activeSlot: state.activeSlot,
+    officialBackup: state.officialBackup,
     savedAt: state.savedAt,
     origin: state.origin,
     importedBackupName: state.importedBackupName,
   };
+}
+
+/**
+ * Gli slot dopo aver lasciato quello in uso: il suo orario (l’app) resta salvato lì. Lo slot 0 si salva
+ * col suo nome; una prova tiene il nome e prende la data nuova solo se l’orario è cambiato.
+ */
+function keepActive(state: PersistedData): SavedTimetable[] {
+  const n = activeSlotOf(state);
+  const part = slotPart(state, n)!;
+  const list = state.savedTimetables ?? [];
+  const old = list.find((x) => x.n === n);
+  const same = old && timetableKey(old) === timetableKey(part);
+  const entry: SavedTimetable = {
+    n,
+    name: old?.name ?? (n === 0 ? OFFICIAL_NAME : `Slot ${n}`),
+    savedAt: same ? old.savedAt : Date.now(),
+    ...part,
+  };
+  return [...list.filter((x) => x.n !== n), entry].sort((a, b) => a.n - b.n);
 }
 
 const seed = buildSeed();
@@ -300,24 +337,124 @@ export const useAppStore = create<AppStore>()(
           });
         },
 
+        saveTimetable: (entry) =>
+          save({
+            savedTimetables: [...(get().savedTimetables ?? []).filter((x) => x.n !== entry.n), entry].sort(
+              (a, b) => a.n - b.n,
+            ),
+          }),
+
+        renameSavedTimetable: (n, name) =>
+          save({ savedTimetables: (get().savedTimetables ?? []).map((x) => (x.n === n ? { ...x, name } : x)) }),
+
+        clearSavedTimetable: (n) => {
+          if (n === 0 || n === activeSlotOf(get())) return;
+          save({ savedTimetables: (get().savedTimetables ?? []).filter((x) => x.n !== n) });
+        },
+
+        activateSlot: (n) => {
+          const state = snapshot(get());
+          if (n === activeSlotOf(state)) return;
+          const kept = keepActive(state);
+          const target = kept.find((x) => x.n === n);
+          if (!target) return;
+          const { slots, teachers } = withPart(state, target);
+          // lo slot in uso è l’orario dell’app: la sua copia salvata non serve (per lo 0 si toglie)
+          save({ slots, teachers, activeSlot: n, savedTimetables: n === 0 ? kept.filter((x) => x.n !== 0) : kept });
+        },
+
+        putInSlot: (n, part, name) => {
+          if (n < 1) return;
+          const state = snapshot(get());
+          const entry: SavedTimetable = { n, name, savedAt: Date.now(), ...part };
+          const kept = activeSlotOf(state) === n ? (state.savedTimetables ?? []) : keepActive(state);
+          const { slots, teachers } = withPart(state, part);
+          save({
+            slots,
+            teachers,
+            activeSlot: n,
+            savedTimetables: [...kept.filter((x) => x.n !== n), entry].sort((a, b) => a.n - b.n),
+          });
+        },
+
+        makeOfficial: (n) => {
+          const state = snapshot(get());
+          const target = slotPart(state, n);
+          const official = slotPart(state, 0);
+          if (n === 0 || !target) return;
+          const kept = activeSlotOf(state) === 0 ? (state.savedTimetables ?? []) : keepActive(state);
+          const { slots, teachers } = withPart(state, target);
+          save({
+            slots,
+            teachers,
+            activeSlot: 0,
+            savedTimetables: kept.filter((x) => x.n !== 0),
+            officialBackup: official
+              ? { n: 0, name: OFFICIAL_NAME, savedAt: Date.now(), ...official }
+              : undefined,
+          });
+        },
+
+        undoMakeOfficial: () => {
+          const state = snapshot(get());
+          const backup = state.officialBackup;
+          if (!backup) return;
+          if (activeSlotOf(state) === 0) {
+            const { slots, teachers } = withPart(state, backup);
+            save({ slots, teachers, officialBackup: undefined });
+            return;
+          }
+          save({
+            savedTimetables: [...(state.savedTimetables ?? []).filter((x) => x.n !== 0), backup].sort(
+              (a, b) => a.n - b.n,
+            ),
+            officialBackup: undefined,
+          });
+        },
+
         setCattedre: (cattedre) => save({ cattedre }),
 
         importData: (data, fileName) => {
           noteUserMutation();
           const importedBackupName = (fileName ?? data.importedBackupName)?.trim() || undefined;
-          set({ ...applyOrganicoFixes(data), savedAt: Date.now(), origin: "user", importedBackupName });
+          // gli slot diventano quelli del file (nessuno se è un backup di prima)
+          set({
+            ...applyOrganicoFixes(data),
+            savedTimetables: data.savedTimetables ?? [],
+            activeSlot: data.activeSlot ?? 0,
+            officialBackup: data.officialBackup,
+            savedAt: Date.now(),
+            origin: "user",
+            importedBackupName,
+          });
           writePersistSync(snapshot(get()), { force: true });
         },
 
         resetDemo: () => {
           noteUserMutation();
-          set({ ...buildSeed(), savedAt: Date.now(), origin: "seed", importedBackupName: undefined });
+          set({
+            ...buildSeed(),
+            savedTimetables: [],
+            activeSlot: 0,
+            officialBackup: undefined,
+            savedAt: Date.now(),
+            origin: "seed",
+            importedBackupName: undefined,
+          });
           writePersistSync(snapshot(get()), { force: true });
         },
 
         clearAll: () => {
           noteUserMutation();
-          set({ ...EMPTY_DATA, savedAt: Date.now(), origin: "user", importedBackupName: undefined });
+          set({
+            ...EMPTY_DATA,
+            savedTimetables: [],
+            activeSlot: 0,
+            officialBackup: undefined,
+            savedAt: Date.now(),
+            origin: "user",
+            importedBackupName: undefined,
+          });
           writePersistSync(snapshot(get()), { force: true });
         },
       };
@@ -342,6 +479,9 @@ export const useAppStore = create<AppStore>()(
         cattedre: state.cattedre,
         cattedraBackup: state.cattedraBackup,
         cattedraDispBackup: state.cattedraDispBackup,
+        savedTimetables: state.savedTimetables,
+        activeSlot: state.activeSlot,
+        officialBackup: state.officialBackup,
         savedAt: state.savedAt,
         origin: state.origin,
         importedBackupName: state.importedBackupName,
