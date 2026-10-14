@@ -576,16 +576,15 @@ export function weekCellLines(data: PersistedData, classId: string, day: DayOfWe
   period: number;
   subject: string;
   teacher: string;
-  extra: string;
 }[] {
   const cls = data.classes.find((c) => c.id === classId);
   return visiblePeriods(data.settings, cls?.tempo).map((p) => {
-    // il sostegno non è mai la lezione della casella (resta solo il «+» della compresenza)
+    // il sostegno non è mai la lezione della casella, e la compresenza non lascia segni
     const occupants = classCellSlots(data, classId, day, p.id);
     const primary = occupants.find((s) => !isSostegnoSlot(data, s));
     if (!primary) {
       const mensa = isMensaPeriod(p) && occupants.length > 0 && occupants.every((s) => isMensaLesson(s));
-      return { mark: hourMark(p), period: p.index, subject: mensa ? "Mensa" : "", teacher: "", extra: "" };
+      return { mark: hourMark(p), period: p.index, subject: mensa ? "Mensa" : "", teacher: "" };
     }
     const t = data.teachers.find((x) => x.id === primary.teacherId);
     const mensaLesson = isMensaPeriod(p) && isMensaLesson(primary);
@@ -594,7 +593,6 @@ export function weekCellLines(data: PersistedData, classId: string, day: DayOfWe
       period: p.index,
       subject: mensaLesson ? "Mensa" : subjectAbbr(primary.subject),
       teacher: t ? teacherShort(t, data.teachers) : "",
-      extra: occupants.length > 1 ? " +" : "",
     };
   });
 }
