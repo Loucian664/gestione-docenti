@@ -345,6 +345,9 @@ export function mergeSlices(a: PersistSlice, b: PersistSlice): PersistSlice {
     cattedraDispBackup: preferB
       ? b.cattedraDispBackup ?? a.cattedraDispBackup
       : a.cattedraDispBackup ?? b.cattedraDispBackup,
+    savedTimetables: preferB ? b.savedTimetables ?? a.savedTimetables : a.savedTimetables ?? b.savedTimetables,
+    activeSlot: preferB ? b.activeSlot ?? a.activeSlot : a.activeSlot ?? b.activeSlot,
+    officialBackup: preferB ? b.officialBackup ?? a.officialBackup : a.officialBackup ?? b.officialBackup,
     selectedDate: preferB ? b.selectedDate || a.selectedDate : a.selectedDate || b.selectedDate,
     savedAt: Math.max(Number(a.savedAt) || 0, Number(b.savedAt) || 0),
     origin: aUser || bUser ? "user" : a.origin === "seed" || b.origin === "seed" ? "seed" : a.origin ?? b.origin,

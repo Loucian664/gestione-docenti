@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { SUBSTITUTION_TYPES, type SubstitutionType } from "@/lib/types";
 import { useAppStore, snapshot } from "@/lib/store";
+import { officialData } from "@/lib/saved-timetables";
 import {
   classShifts,
   isCovered,
@@ -88,7 +89,8 @@ export function AssignSheet({
   onClose: () => void;
 }) {
   const store = useAppStore();
-  const data = snapshot(store);
+  // le sostituzioni usano sempre l'orario in vigore (slot 0)
+  const data = officialData(snapshot(store));
   const ranked = useMemo(() => (need ? rankSubstitutes(data, need) : []), [need, data]);
   const [query, setQuery] = useState("");
 

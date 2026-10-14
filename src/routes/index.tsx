@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAppStore, snapshot } from "@/lib/store";
+import { officialData } from "@/lib/saved-timetables";
 import {
   autoAssignPlan,
   classShifts,
@@ -51,7 +52,8 @@ export const Route = createFileRoute("/")({ component: OggiPage });
 
 function OggiPage() {
   const store = useAppStore();
-  const data = snapshot(store);
+  // Oggi e le sostituzioni usano sempre l'orario in vigore (slot 0)
+  const data = officialData(snapshot(store));
   const date = store.selectedDate;
   const weekend = isWeekend(date, data.settings.days);
   const needs = useMemo(() => coverageNeeds(data, date), [data, date]);
@@ -600,7 +602,7 @@ function Stat({
 
 function PrintSheet({ date, needs }: { date: string; needs: CoverageNeed[] }) {
   const store = useAppStore();
-  const data = snapshot(store);
+  const data = officialData(snapshot(store));
   const heading = dailySheetHeading(date);
   const body = dailySheetText(data, date, needs)
     .split("\n")

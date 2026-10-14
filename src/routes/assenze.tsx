@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import { AbsenceDialog } from "@/components/absence-dialog";
 import { useAppStore, snapshot } from "@/lib/store";
+import { officialData } from "@/lib/saved-timetables";
 import { dayCoverage, teacherName, teacherShort } from "@/lib/coverage";
 import { ABSENCE_REASONS, type Absence } from "@/lib/types";
 import {
@@ -33,7 +34,8 @@ const WEEKDAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
 
 function AssenzePage() {
   const store = useAppStore();
-  const data = snapshot(store);
+  // le assenze si coprono con l'orario in vigore (slot 0)
+  const data = officialData(snapshot(store));
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Absence | null>(null);

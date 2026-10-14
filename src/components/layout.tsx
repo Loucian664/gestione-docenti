@@ -11,6 +11,7 @@ import {
 import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
+import { officialData } from "@/lib/saved-timetables";
 import { coverageNeeds, isCovered } from "@/lib/coverage";
 import { snapshot } from "@/lib/store";
 import { applyOrganicoFixes, DEFAULT_SCHOOL_NAME, LEGACY_SCHOOL_NAMES } from "@/lib/seed";
@@ -137,7 +138,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
     };
   }, [persistReady]);
 
-  const snap = snapshot(data);
+  // ore da coprire oggi: con l'orario in vigore (slot 0)
+  const snap = officialData(snapshot(data));
   const uncovered = coverageNeeds(snap, data.selectedDate).filter((n) => !isCovered(n)).length;
 
   return (

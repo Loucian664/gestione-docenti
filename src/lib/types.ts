@@ -157,6 +157,20 @@ export type Settings = {
   tpAfternoon?: boolean;
 };
 
+/**
+ * Orario salvato in uno slot: 0 è l’orario in vigore (qui solo mentre se ne usa un altro), 1–5 le
+ * prove. Contiene ciò che Costruisci cambia: lezioni e ore a disposizione del mattino dei docenti di
+ * materia.
+ */
+export type SavedTimetable = {
+  n: number;
+  name: string;
+  savedAt: number;
+  lessons: TimetableSlot[];
+  /** ore a disposizione del mattino, per docente */
+  disp: Record<string, { day: DayOfWeek; periodId: string }[]>;
+};
+
 export type PersistedData = {
   settings: Settings;
   teachers: Teacher[];
@@ -169,6 +183,12 @@ export type PersistedData = {
   cattedraBackup?: TimetableSlot[];
   /** Disposizioni prima dell'ultima proposta di Costruisci (per Annulla). */
   cattedraDispBackup?: Record<string, { day: DayOfWeek; periodId: string }[]>;
+  /** Orari salvati negli slot (0 in vigore, 1–5 prove). Quello dello slot in uso è l’orario dell’app. */
+  savedTimetables?: SavedTimetable[];
+  /** Slot dell’orario in uso nell’app: 0 l’orario in vigore (predefinito), 1–5 una prova. */
+  activeSlot?: number;
+  /** Orario in vigore prima dell’ultimo «Rendi in vigore» (per «Annulla»). */
+  officialBackup?: SavedTimetable;
   /** Unix ms of last user save. 0 = example seed, never overwrite a real save. */
   savedAt?: number;
   /** "user" = this device's registro. "seed" = example data. */

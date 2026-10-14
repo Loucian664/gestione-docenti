@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, Eraser, Lock, LockOpen, Search, TriangleAlert, Undo2, X } from "lucide-react";
+import { Check, ChevronDown, Eraser, Lock, LockOpen, Save, Search, TriangleAlert, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,6 +11,15 @@ import {
 import { NativeSelect } from "@/components/ui/native-select";
 import { Tabs } from "@/components/ui/tabs";
 import { useAppStore, snapshot } from "@/lib/store";
+import { SaveSlots, SaveToSlotDialog } from "@/components/save-slots";
+import {
+  OFFICIAL_COPY_NAME,
+  activeSlotOf,
+  openSavedTimetable,
+  slotsWithLessons,
+  timetablePart,
+  type TimetablePart,
+} from "@/lib/saved-timetables";
 import {
   isTimetableTeacher,
   timetableDemand,
@@ -47,6 +56,7 @@ import {
   type Cattedra,
   type DayOfWeek,
   type PersistedData,
+  type SavedTimetable,
   type Teacher,
   type TimetableSlot,
 } from "@/lib/types";
@@ -113,7 +123,14 @@ function MarkGlyph({ state, label }: { state: CellState; label?: string }) {
   return null;
 }
 
-export function CostruisciOrario() {
+export function CostruisciOrario({
+  openSlot,
+  onSlotOpened,
+}: {
+  /** slot da aprire subito (da Impostazioni) */
+  openSlot?: number;
+  onSlotOpened?: () => void;
+} = {}) {
   const store = useAppStore();
   const data = snapshot(store);
   const previewRef = useRef<HTMLElement>(null);
@@ -126,6 +143,12 @@ export function CostruisciOrario() {
   const [currentReport, setCurrentReport] = useState<TimetableReport | null>(null);
   const [confirmFor, setConfirmFor] = useState<"proposta" | "ritocchi" | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
+  // slot aperto come proposta: le sue ore a disposizione del mattino al posto di quelle in vigore
+  const [openSave, setOpenSave] = useState<SavedTimetable | null>(null);
+  // proposta salvata in uno slot
+  const [savedIn, setSavedIn] = useState<number | null>(null);
+  // «Salva nello slot…»: la proposta o i ritocchi
+  const [saveFor, setSaveFor] = useState<"proposta" | "ritocchi" | null>(null);
   const editRef = useRef<HTMLElement>(null);
   const [newSubject, setNewSubject] = useState("");
   const [newHours, setNewHours] = useState("1");
@@ -160,7 +183,11 @@ export function CostruisciOrario() {
     });
     return [...keep, ...pendingSlots];
   }, [pendingSlots, data.slots, data.teachers, data.settings.periods]);
-  const previewData = useMemo(() => (previewSlots ? { ...data, slots: previewSlots } : null), [data, previewSlots]);
+  const slotBase = useMemo(() => (openSave ? openSavedTimetable(data, openSave).base : data), [openSave, data]);
+  const previewData = useMemo(
+    () => (previewSlots ? { ...slotBase, slots: previewSlots } : null),
+    [slotBase, previewSlots],
+  );
   // lezioni del mattino dei docenti di materia: quelle che Costruisci e i ritocchi cambiano
   const pool = useMemo(() => new Set(included.map((t) => t.id)), [included]);
   const inUseDraft = useMemo(
@@ -169,17 +196,25 @@ export function CostruisciOrario() {
   );
   const applySlots =
     confirmFor === "ritocchi" ? (edit?.draft ?? null) : confirmFor === "proposta" ? (result?.slots ?? null) : null;
+  // da dove partono le ore a disposizione: quelle in vigore o quelle dello slot aperto
+  const editBase = edit?.from === "proposta" && openSave ? slotBase : data;
+  const applyBase = confirmFor === "proposta" ? slotBase : editBase;
   // ore a disposizione del mattino: dove le lascia la proposta o dove stanno dopo i ritocchi
+  const editDispChange = (draft: TimetableSlot[]) =>
+    new TimetableEditor({ ...editBase, slots: slotsWithLessons(editBase, draft) }).dispChange();
   const applyChange = useMemo(() => {
     if (confirmFor === "proposta") return result?.disp ?? null;
     if (confirmFor !== "ritocchi" || !edit) return null;
-    const keep = data.slots.filter((s) => !(pool.has(s.teacherId) && !isTpPeriodId(data.settings.periods, s.periodId)));
-    return new TimetableEditor({ ...data, slots: [...keep, ...edit.draft] }).dispChange();
-  }, [confirmFor, result, edit, data, pool]);
+    return new TimetableEditor({ ...editBase, slots: slotsWithLessons(editBase, edit.draft) }).dispChange();
+  }, [confirmFor, result, edit, editBase]);
   const applyInfo = useMemo(
-    () => (applySlots ? dispOutcome(data, applySlots, applyChange) : null),
-    [data, applySlots, applyChange],
+    () => (applySlots ? dispOutcome(applyBase, applySlots, applyChange) : null),
+    [applyBase, applySlots, applyChange],
   );
+  // slot dell'orario in uso nell'app (0 = in vigore)
+  const active = activeSlotOf(data);
+  // ritocchi dell'orario in uso mentre si prova uno slot: restano in quello slot
+  const fixedUseSlot = confirmFor === "ritocchi" && edit?.from === "uso" && active !== 0 ? active : null;
   const dispMovedText = (m: { teacherId: string; day: DayOfWeek; from: string; to: string }) => {
     const t = data.teachers.find((x) => x.id === m.teacherId);
     const hour = (id: string) => `${data.settings.periods.find((x) => x.id === id)?.index ?? "?"}ª`;
@@ -187,21 +222,22 @@ export function CostruisciOrario() {
   };
   // ore al giorno scelte: con le disposizioni che restano dopo «Usa…», chi va sistemato a mano
   // «Da zero»: le disposizioni le rimette il responsabile dove indicato (nelle buche)
-  const fillTodo = confirmFor === "proposta" && resultMode === "scratch" && result ? result.report.dispFill : [];
+  const fillTodo =
+    confirmFor === "proposta" && resultMode === "scratch" && result && !openSave ? result.report.dispFill : [];
   const patternTodo = useMemo(() => {
-    if (fillTodo.length || !applySlots || !applyInfo || !data.teachers.some((t) => teacherDayPatterns(t).length))
+    if (fillTodo.length || !applySlots || !applyInfo || !applyBase.teachers.some((t) => teacherDayPatterns(t).length))
       return [[], []];
-    const teachers = data.teachers.map((t) =>
+    const teachers = applyBase.teachers.map((t) =>
       applyInfo.dispSlots[t.id] ? { ...t, dispSlots: applyInfo.dispSlots[t.id] } : t,
     );
     const ids = new Set(inUseDraft.map((s) => s.id));
     const keep = data.slots.filter((s) => !ids.has(s.id));
-    const rows = evaluateCurrent({ ...data, teachers, slots: [...keep, ...applySlots] }).patterns.rows;
+    const rows = evaluateCurrent({ ...applyBase, teachers, slots: [...keep, ...applySlots] }).patterns.rows;
     return [
       rows.filter((r) => r.excess > 0).map((r) => r.name),
       rows.filter((r) => r.excess === 0 && r.missing > 0).map((r) => r.name),
     ];
-  }, [applyInfo, applySlots, data, inUseDraft, fillTodo.length]);
+  }, [applyInfo, applySlots, applyBase, data.slots, inUseDraft, fillTodo.length]);
   // ore bloccate che corrispondono a una lezione dell'orario in uso
   const lockCount = useMemo(() => {
     const m = new Map<string, number>();
@@ -233,6 +269,8 @@ export function CostruisciOrario() {
       .then((res) => {
         setResult(res);
         setResultMode(runMode);
+        setOpenSave(null);
+        setSavedIn(null);
         window.setTimeout(() => {
           previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 50);
@@ -246,19 +284,32 @@ export function CostruisciOrario() {
       });
   }
 
-  function apply() {
-    if (!applySlots || !applyInfo) return;
-    store.replaceCattedraSlots(applySlots, applyInfo.dispSlots);
+  /** «Usa questo orario»: va nello slot di prova `n` e diventa quello in uso; lo slot 0 non cambia. */
+  function putInUse(n: number, name: string) {
+    if (!confirmFor || !applyInfo) return;
+    store.putInSlot(n, partFor(confirmFor), name);
     const removed = applyInfo.removed.length;
     const moved = applyInfo.moved.length;
     setConfirmFor(null);
     setResult(null);
     setEdit(null);
+    setOpenSave(null);
+    setSavedIn(null);
     const notes = [
       moved ? (moved === 1 ? "Spostata 1 ora a disposizione nello stesso giorno." : `Spostate ${moved} ore a disposizione nello stesso giorno.`) : "",
       removed ? `Tolte ${removed} ore a disposizione che cadevano su una lezione.` : "",
     ].filter(Boolean);
-    toast.success(["Orario aggiornato.", ...notes].join(" "));
+    toast.success([`Slot ${n} in uso. L’orario in vigore resta nello slot 0.`, ...notes].join(" "));
+  }
+
+  /** Uno slot aperto, così com’è: diventa quello in uso. */
+  function activateOpened() {
+    if (!openSave) return;
+    store.activateSlot(openSave.n);
+    closeProposal();
+    toast.success(
+      openSave.n === 0 ? "In uso l’orario in vigore." : `Slot ${openSave.n} in uso. L’orario in vigore resta nello slot 0.`,
+    );
   }
 
   function openEdit(from: EditState["from"]) {
@@ -266,10 +317,105 @@ export function CostruisciOrario() {
     window.setTimeout(() => editRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
 
-  function undo() {
-    store.undoCattedraSlots();
-    toast.message("Ripristinato l’orario di prima.");
+  /** Apre uno slot come proposta: si confronta con l’orario in vigore, si ritocca, si usa. */
+  function showSaved(save: SavedTimetable, keepEdit = false) {
+    const open = openSavedTimetable(data, save);
+    setCurrentReport(evaluateCurrent(data));
+    setResult({
+      slots: open.lessons,
+      report: evaluateCurrent({ ...open.base, slots: slotsWithLessons(data, open.lessons) }),
+      iterations: 0,
+      disp: null,
+    });
+    setResultMode("improve");
+    setOpenSave(save);
+    setSavedIn(null);
+    if (!keepEdit) setEdit(null);
+    return open.dropped;
   }
+
+  function openSaved(n: number) {
+    const save = (data.savedTimetables ?? []).find((s) => s.n === n);
+    if (!save) return;
+    if (handleRef.current) {
+      toast.message("Aspetta che finisca la ricerca, oppure fermala.");
+      return;
+    }
+    const dropped = showSaved(save);
+    if (dropped) {
+      toast.message(
+        dropped === 1
+          ? "1 lezione di docenti o classi che non ci sono più non è stata caricata."
+          : `${dropped} lezioni di docenti o classi che non ci sono più non sono state caricate.`,
+      );
+    }
+    window.setTimeout(() => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+
+  // da Impostazioni: apre lo slot richiesto una volta sola
+  const openSavedRef = useRef(openSaved);
+  openSavedRef.current = openSaved;
+  const onSlotOpenedRef = useRef(onSlotOpened);
+  onSlotOpenedRef.current = onSlotOpened;
+  const handledSlot = useRef<number | null>(null);
+  useEffect(() => {
+    if (openSlot === undefined || handledSlot.current === openSlot) return;
+    handledSlot.current = openSlot;
+    openSavedRef.current(openSlot);
+    onSlotOpenedRef.current?.();
+  }, [openSlot]);
+
+  function closeProposal() {
+    setResult(null);
+    setOpenSave(null);
+    setSavedIn(null);
+  }
+
+  /** L’orario da salvare o da usare: la proposta o i ritocchi. */
+  function partFor(what: "proposta" | "ritocchi"): TimetablePart {
+    if (what === "proposta" && result) {
+      return timetablePart(slotBase, result.slots, dispOutcome(slotBase, result.slots, result.disp).dispSlots);
+    }
+    if (what === "ritocchi" && edit) {
+      return timetablePart(editBase, edit.draft, dispOutcome(editBase, edit.draft, editDispChange(edit.draft)).dispSlots);
+    }
+    return timetablePart(data);
+  }
+
+  function saveName(what: "proposta" | "ritocchi"): string {
+    if (what === "ritocchi" && edit?.from === "uso") {
+      if (active === 0) return "Ritoccato";
+      return (data.savedTimetables ?? []).find((s) => s.n === active)?.name ?? `Slot ${active}`;
+    }
+    if (openSave) {
+      if (openSave.n === 0) return what === "proposta" ? OFFICIAL_COPY_NAME : "Orario in vigore ritoccato";
+      return openSave.name;
+    }
+    const proposal = resultMode === "scratch" ? "Da zero" : "Migliorato";
+    return what === "proposta" ? proposal : `${proposal} e ritoccato`;
+  }
+
+  function afterSave(what: "proposta" | "ritocchi", n: number) {
+    const entry = (useAppStore.getState().savedTimetables ?? []).find((s) => s.n === n);
+    if (what === "proposta") {
+      setSavedIn(n);
+      if (entry && openSave?.n === n) setOpenSave(entry);
+    }
+    if (what === "ritocchi" && edit) {
+      setEdit({ ...edit, savedIn: n, savedLen: edit.history.length });
+      // ritocchi dello slot aperto, salvati nello stesso slot: la proposta diventa il nuovo contenuto
+      if (entry && edit.from === "proposta" && openSave?.n === n) showSaved(entry, true);
+    }
+  }
+
+  const editDirty = Boolean(edit && edit.history.length !== (edit.savedLen ?? 0));
+  const openWarning =
+    [
+      editDirty ? "I ritocchi non salvati andranno persi." : "",
+      result && !openSave && !savedIn ? "La proposta non salvata andrà persa." : "",
+    ]
+      .filter(Boolean)
+      .join(" ") || null;
 
   function openClassPick(t: Teacher, day: DayOfWeek, periodId: string) {
     const must = (t.mustSlots ?? []).find((a) => sameCell(a, day, periodId));
@@ -292,10 +438,28 @@ export function CostruisciOrario() {
     });
   }
 
-  const canUndo = Boolean(store.cattedraBackup?.length);
-
   return (
     <div className="flex flex-col gap-4">
+      <section className="paper-panel rounded-xl p-4 sm:p-5">
+        <h2 className="font-display text-lg">Orari salvati</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Lo 0 è l’orario in vigore a scuola; negli slot da 1 a 5 conservi le prove. Lo slot acceso è quello in uso
+          nell’app.
+        </p>
+        <SaveSlots
+          className="mt-3"
+          onOpen={openSaved}
+          openWarning={openWarning}
+          onInUseChange={() => {
+            // è cambiato l'orario in uso: proposta e ritocchi aperti erano confrontati con l'altro
+            setResult(null);
+            setEdit(null);
+            setOpenSave(null);
+            setSavedIn(null);
+          }}
+        />
+      </section>
+
       <HowItWorks />
 
       <AvailabilityPanel
@@ -362,15 +526,6 @@ export function CostruisciOrario() {
           <Button variant="outline" onClick={() => openEdit("uso")} disabled={Boolean(running) || !inUseDraft.length}>
             Ritocca a mano
           </Button>
-          {canUndo && !running && (
-            <button
-              type="button"
-              onClick={undo}
-              className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Annulla l’ultimo orario usato
-            </button>
-          )}
         </div>
         {running && <SearchProgress progress={running} onStop={() => handleRef.current?.stop()} />}
       </section>
@@ -381,6 +536,7 @@ export function CostruisciOrario() {
           edit={edit}
           settings={data.settings}
           teachersAll={data.teachers}
+          baseTeachers={edit.from === "proposta" && openSave ? slotBase.teachers : undefined}
           classesAll={data.classes}
           slots={data.slots}
           cattedre={data.cattedre}
@@ -390,6 +546,7 @@ export function CostruisciOrario() {
           onChange={setEdit}
           onClose={() => setEdit(null)}
           onApply={() => setConfirmFor("ritocchi")}
+          onSave={() => setSaveFor("ritocchi")}
           onUpdateTeacher={(id, patch) => store.updateTeacher(id, patch)}
         />
       )}
@@ -397,22 +554,51 @@ export function CostruisciOrario() {
       {!edit && previewSlots && previewData && result && (
         <section ref={previewRef} className="mt-1 max-md:pb-16">
           <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm">
-            <h2 className="mr-auto font-display text-lg">Proposta</h2>
-            <span className="hidden text-[13px] text-muted-foreground sm:inline">Non ancora salvata</span>
+            <h2 className="mr-auto min-w-0 font-display text-lg">
+              {openSave ? `Slot ${openSave.n} · ${openSave.name}` : "Proposta"}
+            </h2>
+            <span className="hidden text-[13px] text-muted-foreground sm:inline">
+              {savedIn ? `Salvata nello slot ${savedIn}` : openSave ? "Aperto dallo slot" : "Non ancora salvata"}
+            </span>
+            {/* «Salva» resta in alto anche sul telefono; sul computer va prima di «Usa…» */}
+            <Button
+              variant="outline"
+              className="md:order-1"
+              onClick={() => setSaveFor("proposta")}
+              aria-label="Salva nello slot"
+            >
+              <Save aria-hidden />
+              <span className="md:hidden">Salva</span>
+              <span className="hidden md:inline">Salva nello slot…</span>
+            </Button>
             {/* sul telefono i bottoni stanno in una barra fissa in basso */}
             <div className="fixed inset-x-0 bottom-14 z-30 flex items-center gap-2 border-t border-border bg-background/95 px-4 py-2 backdrop-blur-sm md:contents">
-              <Button variant="outline" onClick={propose} disabled={Boolean(running)}>
-                Riprova
-              </Button>
+              {openSave ? (
+                <Button variant="outline" onClick={closeProposal}>
+                  Chiudi
+                </Button>
+              ) : (
+                <Button variant="outline" onClick={propose} disabled={Boolean(running)}>
+                  Riprova
+                </Button>
+              )}
               <Button variant="outline" onClick={() => openEdit("proposta")}>
                 Ritocca
               </Button>
-              <Button className="max-md:flex-1" onClick={() => setConfirmFor("proposta")}>
-                Usa questa proposta
+              <Button
+                className="max-md:flex-1 md:order-2"
+                onClick={() => (openSave ? activateOpened() : setConfirmFor("proposta"))}
+              >
+                {openSave ? "Usa questo orario" : "Usa questa proposta"}
               </Button>
             </div>
           </div>
-          <ReportPanel current={currentReport} proposal={result.report} mode={resultMode} />
+          <ReportPanel
+            current={currentReport}
+            proposal={result.report}
+            mode={openSave ? "edit" : resultMode}
+            label={openSave ? `Slot ${openSave.n}` : undefined}
+          />
           <div className="mt-4 flex flex-col gap-3">
             <Tabs
               className="flex-wrap overflow-visible"
@@ -511,7 +697,7 @@ export function CostruisciOrario() {
               data={previewData}
               report={result.report}
               scratch={resultMode === "scratch"}
-              disp={dispOutcome(data, result.slots, result.disp).dispSlots}
+              disp={dispOutcome(slotBase, result.slots, result.disp).dispSlots}
               teachers={included}
               days={data.settings.days}
               periods={morning}
@@ -570,15 +756,22 @@ export function CostruisciOrario() {
         onTwoFree={(t, on) => store.updateTeacher(t.id, { allowTwoFree: on })}
       />
 
-      <Dialog open={confirmFor !== null} onOpenChange={(open) => !open && setConfirmFor(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{confirmFor === "ritocchi" ? "Usare questo orario?" : "Usare questa proposta?"}</DialogTitle>
-            <DialogDescription>Cambiano solo le lezioni del mattino dei docenti di materia.</DialogDescription>
-          </DialogHeader>
-          <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
+      <SaveToSlotDialog
+        open={confirmFor !== null}
+        mode="use"
+        onClose={() => setConfirmFor(null)}
+        title={confirmFor === "ritocchi" ? "Usare questo orario?" : "Usare questa proposta?"}
+        description={
+          fixedUseSlot
+            ? `Cambiano le lezioni del mattino dei docenti di materia dello slot ${fixedUseSlot}, quello in uso. L’orario in vigore (slot 0) non cambia.`
+            : "Cambiano solo le lezioni del mattino dei docenti di materia. Va in uno slot di prova e diventa quello in uso: l’orario in vigore (slot 0) non cambia."
+        }
+        notes={
+          <ul className="mb-3 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
             <li>
-              Le ore a disposizione restano dove sono
+              {applyBase === data
+                ? "Le ore a disposizione restano dove sono"
+                : "Le ore a disposizione del mattino sono quelle salvate nello slot"}
               {applyInfo?.moved.length
                 ? `, tranne ${applyInfo.moved.length === 1 ? "una, spostata" : `${applyInfo.moved.length}, spostate`} nello stesso giorno: ${applyInfo.moved.map(dispMovedText).join("; ")}`
                 : ""}
@@ -599,16 +792,24 @@ export function CostruisciOrario() {
               <li>Ore al giorno scelte: poi aggiungi le disposizioni di {joinNames(patternTodo[1]!)}.</li>
             )}
             <li>Le ore di sostegno vanno sistemate manualmente.</li>
-            <li>Puoi sempre tornare indietro con «Annulla l’ultimo orario usato».</li>
           </ul>
-          <div className="mt-2 flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setConfirmFor(null)}>
-              Annulla
-            </Button>
-            <Button onClick={apply}>{confirmFor === "ritocchi" ? "Usa questo orario" : "Usa la proposta"}</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        }
+        defaultName={confirmFor ? saveName(confirmFor) : ""}
+        openSlot={openSave?.n ?? null}
+        fixedSlot={fixedUseSlot}
+        onPick={(n, name) => putInUse(n, name)}
+      />
+
+      <SaveToSlotDialog
+        open={saveFor !== null}
+        onClose={() => setSaveFor(null)}
+        defaultName={saveFor ? saveName(saveFor) : ""}
+        getPart={() => partFor(saveFor ?? "proposta")}
+        openSlot={openSave?.n ?? null}
+        onSaved={(n) => {
+          if (saveFor) afterSave(saveFor, n);
+        }}
+      />
     </div>
   );
 }
@@ -620,6 +821,9 @@ type EditState = {
   history: TimetableSlot[][];
   /** da dove si parte: l’orario in uso o una proposta */
   from: "uso" | "proposta";
+  /** salvati in uno slot: quale, e a quanti cambi */
+  savedIn?: number;
+  savedLen?: number;
 };
 
 const VERDICT_CELL: Record<MoveEffect["verdict"], string> = {
@@ -811,6 +1015,7 @@ function Ritocchi({
   edit,
   settings,
   teachersAll,
+  baseTeachers,
   classesAll,
   slots,
   cattedre,
@@ -820,12 +1025,15 @@ function Ritocchi({
   onChange,
   onClose,
   onApply,
+  onSave,
   onUpdateTeacher,
 }: {
   sectionRef: React.RefObject<HTMLElement | null>;
   edit: EditState;
   settings: PersistedData["settings"];
   teachersAll: Teacher[];
+  /** docenti con le ore a disposizione da cui si parte (quelle dello slot aperto), se diverse */
+  baseTeachers?: Teacher[];
   classesAll: PersistedData["classes"];
   slots: TimetableSlot[];
   cattedre: PersistedData["cattedre"];
@@ -836,6 +1044,7 @@ function Ritocchi({
   onChange: (next: EditState) => void;
   onClose: () => void;
   onApply: () => void;
+  onSave: () => void;
   onUpdateTeacher: (id: string, patch: Partial<Teacher>) => void;
 }) {
   const days = useMemo(() => [...settings.days].sort((a, b) => a - b), [settings.days]);
@@ -859,23 +1068,28 @@ function Ritocchi({
     () => slots.filter((s) => !(pool.has(s.teacherId) && !isTpPeriodId(settings.periods, s.periodId))),
     [slots, pool, settings.periods],
   );
+  // da uno slot: si parte dalle sue ore a disposizione; il confronto resta con l'orario in uso
+  const base = useMemo<PersistedData>(
+    () => (baseTeachers ? { ...inUse, teachers: baseTeachers } : inUse),
+    [inUse, baseTeachers],
+  );
   const draftData = useMemo<PersistedData>(
-    () => ({ ...inUse, slots: [...keep, ...edit.draft] }),
-    [inUse, keep, edit.draft],
+    () => ({ ...base, slots: [...keep, ...edit.draft] }),
+    [base, keep, edit.draft],
   );
   const editor = useMemo(() => new TimetableEditor(draftData), [draftData]);
   const current = useMemo(() => evaluateCurrent(inUse), [inUse]);
   const report = useMemo(() => editor.report(current.lessonsExpected), [editor, current]);
   const tById = useMemo(() => new Map(teachersAll.map((t) => [t.id, t])), [teachersAll]);
-  // ore a disposizione spostate nello stesso giorno (per chiudere un’ora buca) rispetto all’orario in uso
+  // ore a disposizione spostate nello stesso giorno (per chiudere un’ora buca) rispetto alla partenza
   const dispMoved = useMemo(
     () =>
-      dispOutcome(inUse, edit.draft, editor.dispChange()).moved.map((m) => {
+      dispOutcome(base, edit.draft, editor.dispChange()).moved.map((m) => {
         const t = tById.get(m.teacherId);
         const hour = (id: string) => `${settings.periods.find((x) => x.id === id)?.index ?? "?"}ª`;
         return `${t ? teacherShort(t, teachersAll) : m.teacherId} · ${DAY_SHORT[m.day]} ${hour(m.from)} → ${hour(m.to)}`;
       }),
-    [inUse, edit.draft, editor, tById, settings.periods, teachersAll],
+    [base, edit.draft, editor, tById, settings.periods, teachersAll],
   );
   const withLessons = useMemo(() => new Set(edit.draft.map((s) => s.teacherId)), [edit.draft]);
   const cells = useMemo(() => {
@@ -1237,7 +1451,9 @@ function Ritocchi({
       <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm xl:col-span-2">
         <h2 className="mr-auto font-display text-lg">Ritocchi</h2>
         <span className="hidden text-[13px] text-muted-foreground sm:inline">
-          {edit.history.length === 0
+          {edit.savedIn && edit.history.length === edit.savedLen
+            ? `Salvato nello slot ${edit.savedIn}`
+            : edit.history.length === 0
             ? edit.from === "proposta"
               ? "Sulla proposta"
               : dispMoved.length === 1
@@ -1249,6 +1465,20 @@ function Ritocchi({
               ? "1 cambio, non ancora salvato"
               : `${edit.history.length} cambi, non ancora salvati`}
         </span>
+        {/* «Salva» resta in alto anche sul telefono; sul computer va prima di «Usa questo orario» */}
+        <Button
+          variant="outline"
+          className="md:order-1"
+          onClick={() => {
+            setConfirmClose(false);
+            onSave();
+          }}
+          aria-label="Salva nello slot"
+        >
+          <Save aria-hidden />
+          <span className="md:hidden">Salva</span>
+          <span className="hidden md:inline">Salva nello slot…</span>
+        </Button>
         {/* sul telefono i bottoni stanno in una barra fissa in basso */}
         <div className="fixed inset-x-0 bottom-14 z-30 flex items-center gap-2 border-t border-border bg-background/95 px-4 py-2 backdrop-blur-sm md:contents">
           <Button
@@ -1265,13 +1495,18 @@ function Ritocchi({
             variant="outline"
             className={cn(confirmClose && "border-destructive text-destructive")}
             onClick={() => {
-              if (edit.history.length && !confirmClose) setConfirmClose(true);
+              if (edit.history.length !== (edit.savedLen ?? 0) && !confirmClose) setConfirmClose(true);
               else onClose();
             }}
           >
             {confirmClose ? "Esci senza salvare?" : "Chiudi"}
           </Button>
-          <Button className="max-md:flex-1" onClick={onApply} disabled={!canApply} aria-label="Usa questo orario">
+          <Button
+            className="max-md:flex-1 md:order-2"
+            onClick={onApply}
+            disabled={!canApply}
+            aria-label="Usa questo orario"
+          >
             <span className="md:hidden">{confirmClose ? "Usa" : "Usa questo orario"}</span>
             <span className="hidden md:inline">Usa questo orario</span>
           </Button>
@@ -3192,11 +3427,14 @@ function ReportPanel({
   current,
   proposal,
   mode,
+  label: labelProp,
 }: {
   current: TimetableReport | null;
   proposal: TimetableReport;
   /** edit: ritocchi a mano (la tabella si apre a richiesta) */
   mode: SolveMode | "edit";
+  /** nome della colonna dell'orario nuovo (es. «Slot 3») */
+  label?: string;
 }) {
   const groups = compareGroups(current, proposal);
   const hasCurrent = Boolean(current && current.lessons > 0);
@@ -3226,7 +3464,7 @@ function ReportPanel({
           ? `${better === 1 ? "Migliora 1 voce" : `Migliorano ${better} voci`}, nessuna peggiora.`
           : `${better === 1 ? "Migliora 1 voce" : `Migliorano ${better} voci`}; per rispettare le tue scelte ${worse === 1 ? "ne peggiora 1" : `ne peggiorano ${worse}`}.`
       : `${better === 1 ? "1 voce migliora" : `${better} voci migliorano`}, ${worse === 0 ? "nessuna peggiora" : worse === 1 ? "1 peggiora" : `${worse} peggiorano`}. Le disposizioni le metti tu: nella scheda «Docenti» vedi dove («+ disp.», nelle buche).`;
-  const label = mode === "edit" ? "Nuovo" : "Proposta";
+  const label = labelProp ?? (mode === "edit" ? "Nuovo" : "Proposta");
   const table = (
     <table className="mt-3 w-full table-fixed border-collapse text-[13px] sm:text-sm">
       <colgroup>
