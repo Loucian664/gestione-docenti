@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { isTimetableTeacher } from "./build-timetable.ts";
-import { backupJson, parseBackupJson } from "./export.ts";
+import { classTimetableSheet } from "./class-grid.ts";
+import { backupJson, parseBackupJson, timetableXlsx } from "./export.ts";
 import { TP_PERIODS } from "./periods.ts";
 import { mergeSlices } from "./persist-storage.ts";
 import {
@@ -13,6 +14,8 @@ import {
   slotsWithLessons,
   timetableKey,
   timetablePart,
+  trialFileTag,
+  trialLabel,
 } from "./saved-timetables.ts";
 import { buildSeed } from "./seed.ts";
 import { snapshot, useAppStore } from "./store.ts";
@@ -278,5 +281,24 @@ describe("slot in uso, «Rendi in vigore» e «Annulla»", () => {
       (back.savedTimetables ?? []).map((s) => s.n),
       [0, 2],
     );
+  });
+});
+
+describe("stampe e file di una prova", () => {
+  it("con una prova in uso c’è la scritta «PROVA – SLOT n», con l’orario in vigore no", () => {
+    const d = data();
+    const official = { n: 0, name: "Orario in vigore", savedAt: 1, ...timetablePart(d) };
+    const trial = { ...d, activeSlot: 2, savedTimetables: [official] };
+    assert.equal(trialLabel(d), null);
+    assert.equal(trialFileTag(d), "");
+    assert.equal(trialLabel(trial), "PROVA – SLOT 2");
+    assert.equal(trialFileTag(trial), "-prova-slot2");
+    // Oggi, sostituzioni e report: orario in vigore, senza scritta
+    assert.equal(trialLabel(officialData(trial)), null);
+    const title = (x: typeof d) => String(classTimetableSheet(x).rows[1]?.[0]?.v);
+    assert.equal(title(d), "ORARIO SETTIMANALE DELLE LEZIONI");
+    assert.equal(title(trial), "ORARIO SETTIMANALE DELLE LEZIONI · PROVA – SLOT 2");
+    assert.match(timetableXlsx(trial).name, /^orario-prova-slot2-/);
+    assert.match(timetableXlsx(d).name, /^orario-[^p]/);
   });
 });

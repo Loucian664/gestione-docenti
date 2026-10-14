@@ -19,6 +19,7 @@ import { ABSENCE_REASONS, dayNameUpper, DAY_SHORT, SUBSTITUTION_TYPES, type DayO
 import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "./periods";
 import { teacherSheetName } from "./teacher-print";
 import { classCellLesson, sideMark } from "./class-grid";
+import { trialLabel } from "./saved-timetables";
 import { mergedAbbr, mergedUpper } from "./subject-groups";
 
 
@@ -763,7 +764,9 @@ function drawSheetHeading(
   ctx.font = "600 12px 'Source Sans 3', system-ui, sans-serif";
   ctx.fillText(plessoHeading(data), width / 2, pad + 14);
   ctx.font = "700 15px 'Source Sans 3', system-ui, sans-serif";
-  ctx.fillText(title, width / 2, pad + 34);
+  // un orario di prova (slot 1–5) non si scambia per quello in vigore
+  const trial = trialLabel(data);
+  ctx.fillText(trial ? `${title} · ${trial}` : title, width / 2, pad + 34);
   ctx.font = "500 10px 'Source Sans 3', system-ui, sans-serif";
   ctx.fillStyle = "#444";
   ctx.fillText(asYearLine(data), width / 2, pad + 50);

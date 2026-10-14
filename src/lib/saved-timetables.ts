@@ -136,9 +136,21 @@ export function withPart(
 export function officialData(data: PersistedData): PersistedData {
   if (activeSlotOf(data) === 0) return data;
   const official = slotPart(data, 0);
-  if (!official) return data;
+  if (!official) return { ...data, activeSlot: 0 };
   const { slots, teachers } = withPart(data, official);
-  return { ...data, slots, teachers };
+  return { ...data, slots, teachers, activeSlot: 0 };
+}
+
+/** Scritta sui fogli e sui file fatti mentre si usa una prova (slot 1–5); null con l’orario in vigore. */
+export function trialLabel(data: PersistedData): string | null {
+  const n = activeSlotOf(data);
+  return n ? `PROVA – SLOT ${n}` : null;
+}
+
+/** Aggiunta al nome dei file fatti mentre si usa una prova: «-prova-slot2». */
+export function trialFileTag(data: PersistedData): string {
+  const n = activeSlotOf(data);
+  return n ? `-prova-slot${n}` : "";
 }
 
 /** Gli slot di prova uguali all’orario in vigore. */

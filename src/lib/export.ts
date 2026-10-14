@@ -3,6 +3,7 @@ import { coverageNeeds, isCovered, isShiftType, classShifts, eccedenteLines, tea
 import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, SUBSTITUTION_TYPES } from "./types";
 import { classTimetableSheet, XLSX_S } from "./class-grid";
+import { trialFileTag } from "./saved-timetables";
 import { xlsxFile, xlsxSpecFile, xlsxWorkbookFile, XLSX_GRID_DAY, XLSX_GRID_TEXT, type XlsxCellInput } from "./xlsx";
 import { jpegBlobToPdf, jpegsToPdf } from "./pdf";
 import { orarioTeacherJpeg, teachersOnTimetable, eccedenteJpegs } from "./sheet-image";
@@ -376,7 +377,7 @@ export function timetableXlsx(data: PersistedData): File {
       landscape: true,
     };
   };
-  return xlsxWorkbookFile(orarioDownloadName(data.settings.schoolName, "orario", "xlsx"), [
+  return xlsxWorkbookFile(orarioDownloadName(data.settings.schoolName, `orario${trialFileTag(data)}`, "xlsx"), [
     toSpec("cognomi", "Cognomi"),
     toSpec("materie", "Materie"),
   ]);
@@ -566,5 +567,5 @@ export async function docentiPdfZip(data: PersistedData): Promise<File> {
       data: new Uint8Array(await pdf.arrayBuffer()),
     });
   }
-  return zipFile(orarioDownloadName(data.settings.schoolName, "orari-docenti", "zip"), entries);
+  return zipFile(orarioDownloadName(data.settings.schoolName, `orari-docenti${trialFileTag(data)}`, "zip"), entries);
 }

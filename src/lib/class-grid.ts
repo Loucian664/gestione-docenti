@@ -1,6 +1,7 @@
 import { cellSlots, classLessonSlots, isDispHour } from "./coverage";
 import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "./periods";
 import { teacherSheetName } from "./teacher-print";
+import { trialLabel } from "./saved-timetables";
 import { mergedUpper } from "./subject-groups";
 import {
   dayNameUpper,
@@ -222,7 +223,8 @@ export function classTimetableSheet(
   };
 
   titleRow(plessoHeading(data), XLSX_S.kicker, 18);
-  titleRow("ORARIO SETTIMANALE DELLE LEZIONI", XLSX_S.title, 22);
+  const trial = trialLabel(data);
+  titleRow(`ORARIO SETTIMANALE DELLE LEZIONI${trial ? ` · ${trial}` : ""}`, XLSX_S.title, 22);
   titleRow(asYearLine(data), XLSX_S.year, 16);
 
   const header: GridCell[] = [
