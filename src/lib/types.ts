@@ -67,6 +67,11 @@ export type Teacher = {
    * Di norma ne è ammessa al massimo una.
    */
   allowTwoFree?: boolean;
+  /**
+   * Su richiesta del docente: nessuna ora buca tra le lezioni. Assente = le accetta (di norma al
+   * massimo una al giorno); con questa opzione «accetta 2 ore libere» non vale.
+   */
+  noGaps?: boolean;
   /** Righe della scheda (classe, materia, ore). Restano sul docente anche se le cattedre globali si perdono. */
   cardRows?: { classId: string; subject: string; hours: number }[];
 };
