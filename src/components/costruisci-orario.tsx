@@ -184,6 +184,11 @@ export function CostruisciOrario({
     return [...keep, ...pendingSlots];
   }, [pendingSlots, data.slots, data.teachers, data.settings.periods]);
   const slotBase = useMemo(() => (openSave ? openSavedTimetable(data, openSave).base : data), [openSave, data]);
+  // scheda «Docenti» dell'anteprima: con uno slot aperto, le ore a disposizione sono quelle salvate nello slot
+  const previewTeachers = useMemo(
+    () => (openSave ? slotBase.teachers.filter(isTimetableTeacher).sort(byName) : included),
+    [openSave, slotBase.teachers, included],
+  );
   const previewData = useMemo(
     () => (previewSlots ? { ...slotBase, slots: previewSlots } : null),
     [slotBase, previewSlots],
@@ -697,7 +702,7 @@ export function CostruisciOrario({
               report={result.report}
               scratch={resultMode === "scratch"}
               disp={dispOutcome(slotBase, result.slots, result.disp).dispSlots}
-              teachers={included}
+              teachers={previewTeachers}
               days={data.settings.days}
               periods={morning}
             />
