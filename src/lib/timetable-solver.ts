@@ -102,6 +102,8 @@ type TeacherInfo = {
   fill: number;
   /** accetta 2 ore libere tra le lezioni nello stesso giorno (di norma al massimo una) */
   allow2: boolean;
+  /** non accetta ore buche: tra le lezioni di un giorno nessuna ora vuota */
+  noGaps: boolean;
 };
 
 type ClassInfo = { id: string; name: string };
@@ -607,7 +609,8 @@ export function prepare(
       expectedLast: U > 0 ? (lessons * lastCells) / U : 0,
       patterns,
       fill: keepDisp ? 0 : dispCount(t),
-      allow2: Boolean(t.allowTwoFree),
+      allow2: Boolean(t.allowTwoFree) && !t.noGaps,
+      noGaps: Boolean(t.noGaps),
     };
   });
 
@@ -1456,14 +1459,15 @@ export class TimetableSolver {
 
   /**
    * Vincoli della giornata che dipendono da dove stanno le ore libere (dopo dayCost):
-   * al massimo un'ora libera tra le lezioni, buca o disposizione (salvo chi ne accetta 2), e mai
-   * dalla 1ª alla 6ª con 2 ore buche.
+   * al massimo un'ora libera tra le lezioni, buca o disposizione (salvo chi ne accetta 2), mai
+   * dalla 1ª alla 6ª con 2 ore buche e nessuna buca per chi non le accetta.
    */
   private dayHardFree(t: number): number {
     const g = this.lastGaps;
+    const info = this.p.teachers[t]!;
     const span = this.lastSpan6 && g >= 2 ? g - 1 : 0;
-    const middle = this.p.teachers[t]!.allow2 ? 0 : Math.max(0, this.lastMiddle - 1);
-    return Math.max(span, middle);
+    const middle = info.allow2 ? 0 : Math.max(0, this.lastMiddle - 1);
+    return Math.max(span, middle, info.noGaps ? g : 0);
   }
 
   /**
@@ -2506,7 +2510,7 @@ export type TimetableReport = {
     away: Issue[];
     travel: Issue[];
     no: Issue[];
-    /** a scuola dalla 1ª alla 6ª con 2 o più ore buche */
+    /** ore libere tra le lezioni oltre il consentito: a scuola dalla 1ª alla 6ª con 2 o più ore buche, o buche per chi non le accetta */
     longGaps: Issue[];
     rientro: Issue[];
     must: Issue[];
@@ -2868,8 +2872,13 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
         if (info.full) rep.docenti.full.push({ text: `${info.name} · ${dayName(d)}: dalla 1ª alla 6ª` });
       }
       // al massimo un'ora libera tra le lezioni, buca o disposizione (salvo chi ne accetta 2);
-      // dalla 1ª alla 6ª mai 2 ore senza lezione, anche se le riempie una disposizione
-      if (!info.allow2 && middle >= 2 && !(span6 && rawGaps > middle))
+      // dalla 1ª alla 6ª mai 2 ore senza lezione, anche se le riempie una disposizione;
+      // chi non accetta ore buche non ne ha, nemmeno quelle dove andrebbe una disposizione
+      if (info.noGaps && rawGaps > 0)
+        rep.hard.longGaps.push({
+          text: `${info.name} · ${dayName(d)}: ${rawGaps === 1 ? "1 ora buca" : `${rawGaps} ore buche`}, che il docente non accetta`,
+        });
+      else if (!info.allow2 && middle >= 2 && !(span6 && rawGaps > middle))
         rep.hard.longGaps.push({
           text: `${info.name} · ${dayName(d)}: ${middle} ore libere tra le lezioni${
             middleDisp === 0 ? "" : middleDisp === middle ? " (a disposizione)" : ` (${middleDisp} a disposizione)`

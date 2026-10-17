@@ -908,6 +908,47 @@ describe("timetable-solver", () => {
     assert.equal(hardOf(at({})), hardOf(at({ allowTwoFree: true })) + 1);
   });
 
+  it("chi non accetta ore libere non ha buche; «accetta 2 ore libere» non vale; una disposizione non è una buca", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    const pick = pickTeacherDay(applied, 3);
+    const name = prepare(applied, "slots").teachers.find((t) => t.id === pick.id)!.name;
+    const mine = (r: TimetableReport) => r.hard.longGaps.filter((i) => i.text.startsWith(`${name} · `));
+    const hardOf = (d: PersistedData) => {
+      const prep = prepare(d, "slots");
+      const s = new TimetableSolver(prep, 1);
+      s.setState(prep.unitStart);
+      return s.hard;
+    };
+    // lezioni alla 1ª, 2ª e 4ª: in mezzo una buca (la 3ª), che di norma va bene
+    const hole = (patch: Partial<Teacher>) => reshape(applied, pick, ["p1", "p2", "p4"], patch);
+    const none = /1 ora buca, che il docente non accetta$/;
+    assert.ok(!mine(evaluateCurrent(hole({}))).some((i) => none.test(i.text)));
+    assert.ok(mine(evaluateCurrent(hole({ noGaps: true }))).some((i) => none.test(i.text)));
+    assert.ok(hardOf(hole({ noGaps: true })) > hardOf(hole({})));
+    // lezioni alla 1ª, 2ª e 5ª: «accetta 2 ore libere» non basta a chi non accetta ore libere
+    const two = reshape(applied, pick, ["p1", "p2", "p5"], { noGaps: true, allowTwoFree: true });
+    assert.ok(mine(evaluateCurrent(two)).some((i) => /2 ore buche, che il docente non accetta$/.test(i.text)));
+    // un'ora a disposizione tra le lezioni è presenza, non una buca
+    const disp = hole({ noGaps: true, dispHours: 1, dispSlots: [{ day: pick.day, periodId: "p3" }] });
+    assert.ok(!mine(evaluateCurrent(disp)).some((i) => /non accetta$/.test(i.text)));
+  });
+
+  it("«Migliora l'attuale» toglie la buca a chi non la accetta", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    const pick = pickTeacherDay(applied, 3);
+    const name = prepare(applied, "slots").teachers.find((t) => t.id === pick.id)!.name;
+    const refused = (r: TimetableReport) =>
+      r.hard.longGaps.filter((i) => i.text.startsWith(`${name} · `) && i.text.includes("che il docente non accetta"));
+    // lezioni alla 1ª, 2ª e 4ª: una buca alla 3ª; il docente non le accetta
+    const start = reshape(applied, pick, ["p1", "p2", "p4"], { noGaps: true });
+    assert.ok(refused(evaluateCurrent(start)).length > 0, "all'inizio la buca c'è");
+    const res = solveTimetable(start, { timeMs: 1500, seed: 71, mode: "improve" });
+    assert.equal(refused(res.report).length, 0);
+    assert.equal(res.report.gapsByTeacher.find((g) => g.id === pick.id)?.gaps ?? 0, 0);
+  });
+
   it("disposizioni: nei ritocchi si spostano nello stesso giorno per chiudere un'ora buca, nell'orario in uso no", () => {
     const data = buildSeed();
     const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 62 }));
