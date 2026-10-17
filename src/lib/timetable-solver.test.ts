@@ -35,6 +35,12 @@ function withSlots(data: PersistedData, res: ReturnType<typeof solveTimetable>):
   return { ...data, teachers, slots: [...keep, ...res.slots] };
 }
 
+/** Orologio finto per la ricerca: lo stesso orario di partenza anche col computer sotto carico. */
+function ticks(): () => number {
+  let t = 0;
+  return () => t++;
+}
+
 describe("timetable-solver", () => {
   it("dati vuoti: nessun errore e nessuna ora", () => {
     const res = solveTimetable(EMPTY_DATA, { timeMs: 200, seed: 1 });
@@ -911,7 +917,7 @@ describe("timetable-solver", () => {
 
   it("chi non accetta ore libere non ha buche; «accetta 2 ore libere» non vale; una disposizione non è una buca", () => {
     const data = buildSeed();
-    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61, now: ticks() }));
     const pick = pickTeacherDay(applied, 3);
     const name = prepare(applied, "slots").teachers.find((t) => t.id === pick.id)!.name;
     const mine = (r: TimetableReport) => r.hard.longGaps.filter((i) => i.text.startsWith(`${name} · `));
@@ -937,7 +943,7 @@ describe("timetable-solver", () => {
 
   it("«Migliora l'attuale» toglie la buca a chi non la accetta", () => {
     const data = buildSeed();
-    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61, now: ticks() }));
     const pick = pickTeacherDay(applied, 3);
     const name = prepare(applied, "slots").teachers.find((t) => t.id === pick.id)!.name;
     const refused = (r: TimetableReport) =>
@@ -945,7 +951,7 @@ describe("timetable-solver", () => {
     // lezioni alla 1ª, 2ª e 4ª: una buca alla 3ª; il docente non le accetta
     const start = reshape(applied, pick, ["p1", "p2", "p4"], { noGaps: true });
     assert.ok(refused(evaluateCurrent(start)).length > 0, "all'inizio la buca c'è");
-    const res = solveTimetable(start, { timeMs: 1500, seed: 71, mode: "improve" });
+    const res = solveTimetable(start, { timeMs: 1500, seed: 71, mode: "improve", now: ticks() });
     assert.equal(refused(res.report).length, 0);
     assert.equal(res.report.gapsByTeacher.find((g) => g.id === pick.id)?.gaps ?? 0, 0);
   });
@@ -1059,7 +1065,7 @@ describe("timetable-solver", () => {
 
   it("disposizioni nelle buche: anche da un altro giorno, ma solo se nient'altro peggiora", () => {
     const data = buildSeed();
-    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61, now: ticks() }));
     // giorno a: lezioni alla 1ª, 2ª e 4ª (buca alla 3ª); giorno b: lezioni di fila e la disposizione subito dopo
     const { d, id, a, b, nB } = withGaps(applied, 1, (c) =>
       reshape(reshape(applied, { id: c.id, day: c.a }, ["p1", "p2", "p4"], {}), { id: c.id, day: c.b }, ["p1", "p2", "p3", "p4"].slice(0, c.nB), {
@@ -1080,7 +1086,7 @@ describe("timetable-solver", () => {
 
   it("disposizioni: si spostano anche per rispettare le ore al giorno scelte, senza fare buche", () => {
     const data = buildSeed();
-    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61, now: ticks() }));
     // giorno a: lezioni alla 1ª, 2ª e 3ª; giorno b: lezioni di fila e la disposizione subito dopo
     const { d, id, a, b, nB } = withGaps(applied, 0, (c) =>
       reshape(reshape(applied, { id: c.id, day: c.a }, ["p1", "p2", "p3"], {}), { id: c.id, day: c.b }, ["p1", "p2", "p3", "p4"].slice(0, c.nB), {
@@ -1106,7 +1112,7 @@ describe("timetable-solver", () => {
 
   it("disposizioni nelle buche: prima quella sotto una lezione, poi quella dichiarata ma non segnata", () => {
     const data = buildSeed();
-    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61, now: ticks() }));
     // lezioni alla 1ª, 2ª e 4ª: buca alla 3ª; disposizione alla 1ª, sotto una lezione
     const at = (c: { id: string; a: DayOfWeek }, patch: Partial<Teacher>) => reshape(applied, { id: c.id, day: c.a }, ["p1", "p2", "p4"], patch);
     const { id, a } = withGaps(applied, 1, (c) => at(c, {}));
@@ -1123,7 +1129,7 @@ describe("timetable-solver", () => {
 
   it("disposizioni «Da zero»: si rimettono tutte senza fare buche; a parità restano dov'erano", () => {
     const data = buildSeed();
-    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61, now: ticks() }));
     // lezioni alla 1ª, 2ª e 3ª e disposizione alla 1ª, sotto una lezione
     const under = withGaps(applied, 0, (c) =>
       reshape(applied, { id: c.id, day: c.a }, ["p1", "p2", "p3"], { dispHours: 1, dispSlots: [{ day: c.a, periodId: "p1" }] }),
