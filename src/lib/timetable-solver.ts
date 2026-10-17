@@ -1381,6 +1381,33 @@ export class TimetableSolver {
   }
 
   /**
+   * Prova le ore a disposizione del mattino del docente in `masks` (per giorno, bit = posizione) e dice
+   * come va la sua settimana. Cambia p.dispMask0: da usare su un risolutore fatto apposta.
+   */
+  dispTry(t: number, masks: ArrayLike<number>): DispScore {
+    const p = this.p;
+    const D = p.D;
+    for (let d = 0; d < D; d++) {
+      p.dispMask0[t * D + d] = masks[d]!;
+      this.computeTeacherDay(t, d);
+    }
+    this.computeTeacherWeek(t);
+    // voci che una disposizione può peggiorare: dalla 1ª alla 6ª, 2 buche, cattedra intera, due plessi, un'ora sola, giorno vuoto
+    const rows = [0, 0, 0, 0, 0, 0];
+    const emptyW = p.teachers[t]!.emptyW;
+    for (let d = 0; d < D; d++) {
+      const o = (t * D + d) * MET_TD;
+      rows[0]! += this.tdMet[o]!;
+      rows[1]! += this.tdMet[o + 4]!;
+      rows[2]! += this.tdMet[o + 5]!;
+      rows[3]! += this.tdMet[o + 6]!;
+      rows[4]! += this.tdMet[o + 7]!;
+      if (emptyW > 0 && this.tdDuties[t * D + d] === 0) rows[5]! += 1;
+    }
+    return { hard: this.twHard[t]!, gaps: this.twGaps[t]!, rows, soft: this.twCost[t]! };
+  }
+
+  /**
    * Costo di una giornata di un docente: lezioni (il pomeriggio fisso conta) e, se segnate,
    * ore a disposizione, che sono presenza a scuola e non ore buche.
    */
@@ -3165,6 +3192,185 @@ export function dispOutcome(
     }
   }
   return { dispSlots, removed, moved };
+}
+
+/** Un'ora a disposizione del mattino spostata dall'app; `from` null: una in più (dichiarata ma non segnata). */
+export type DispMove = {
+  teacherId: string;
+  from: { day: DayOfWeek; periodId: string } | null;
+  to: { day: DayOfWeek; periodId: string };
+};
+
+/** Ore a disposizione sistemate dall'app. `dispSlots`: solo i docenti che cambiano, con tutte le loro. */
+export type DispPlan = { dispSlots: Record<string, { day: DayOfWeek; periodId: string }[]>; moves: DispMove[] };
+
+/** Come va la settimana di un docente con le disposizioni in un certo posto (vedi dispTry). */
+type DispScore = { hard: number; gaps: number; rows: number[]; soft: number };
+
+/** confronto voce per voce: a viene prima di b */
+function keyLess(a: number[], b: number[]): boolean {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i]! < b[i]!;
+  return false;
+}
+
+/**
+ * Ore a disposizione del mattino nelle ore buche, in automatico. `data.slots`: tutto l'orario, lezioni
+ * nuove comprese. Una disposizione si sposta (anche in un altro giorno) solo se calano le buche del
+ * docente o i suoi vincoli non rispettati (es. le ore al giorno scelte) e nient'altro peggiora: buche,
+ * vincoli, giornate dalla 1ª alla 6ª, con 2 buche, di un'ora sola o vuote. Quelle che cadono su una
+ * lezione e quelle dichiarate ma non segnate vanno dove servono, se serve; altrimenti restano come
+ * prima (le prime le toglie poi dispOutcome).
+ * `replace` («Da zero»): le lezioni sono nuove, quindi le disposizioni del mattino si rimettono tutte,
+ * prima nelle buche e poi nel posto migliore; a parità dove erano o lì vicino.
+ */
+export function dispIntoGaps(data: PersistedData, opts: { replace?: boolean } = {}): DispPlan {
+  const out: DispPlan = { dispSlots: {}, moves: [] };
+  const replace = Boolean(opts.replace);
+  const prep = prepare(data, "slots", { keepDisp: true });
+  if (!prep.U) return out;
+  const { D, P } = prep;
+  const s = new TimetableSolver(prep, 1);
+  s.setState(prep.unitStart);
+  const dayIdx = new Map<number, number>(prep.days.map((d, i) => [d, i]));
+  const posIdx = new Map(prep.periods.map((x, i) => [x.id, i]));
+  // cella d*P+pos del mattino, -1 se non c'è
+  const cellOf = (a: { day: DayOfWeek; periodId: string }) => {
+    const d = dayIdx.get(a.day);
+    const pos = posIdx.get(a.periodId);
+    return d === undefined || pos === undefined || prep.mOfPos[pos]! < 0 ? -1 : d * P + pos;
+  };
+  const toCell = (z: number) => ({ day: prep.days[(z / P) | 0]!, periodId: prep.periods[z % P]!.id });
+  const dayOf = (z: number) => (z / P) | 0;
+  const hourOf = (z: number) => prep.pIndex[z % P]!;
+  const byId = new Map(data.teachers.map((t) => [t.id, t]));
+
+  for (let t = 0; t < prep.T; t++) {
+    const teacher = byId.get(prep.teachers[t]!.id);
+    if (!teacher) continue;
+    const total = dispCount(teacher);
+    if (total === 0) continue;
+    const list = teacher.dispSlots ?? [];
+    const occ = (z: number) => s.tOcc[t * D * P + z]!;
+    // dove può andare: mattino, senza ×, «no», prima della 4ª nei giorni di rientro, e senza lezione
+    const free = (z: number) => ((prep.dispCand[t * D + dayOf(z)]! >>> (z % P)) & 1) === 1 && occ(z) === 0;
+    // orig: da dove viene (-1 = in più); cur: dove sta (-1 = ancora da mettere)
+    type Item = { orig: number; cur: number };
+    const items: Item[] = [];
+    const masksOf = (cells: number[]) => {
+      const m = new Array<number>(D).fill(0);
+      for (const z of cells) if (z >= 0) m[dayOf(z)]! |= 1 << (z % P);
+      return m;
+    };
+    const itemMasks = () => masksOf(items.map((it) => it.cur));
+    const seen = new Set<number>();
+    const olds: number[] = [];
+    for (const a of list) {
+      const z = cellOf(a);
+      if (z < 0 || seen.has(z)) continue;
+      seen.add(z);
+      if (replace) {
+        // quelle in un'ora dove non possono stare (e senza lezione) restano dove sono, fuori dal conto
+        if (free(z) || occ(z) > 0) olds.push(z);
+      } else if ((prep.dispMask0[t * D + dayOf(z)]! >>> (z % P)) & 1) items.push({ orig: z, cur: z });
+      else if (occ(z) > 0) items.push({ orig: z, cur: -1 });
+    }
+
+    if (replace && olds.length) {
+      // tutte di nuovo, una alla volta nel posto migliore; a parità dov'erano o lì vicino
+      const placed: number[] = [];
+      for (let i = 0; i < olds.length; i++) {
+        let bestZ = -1;
+        let bestKey: number[] = [];
+        for (let z = 0; z < D * P; z++) {
+          if (!free(z) || placed.includes(z)) continue;
+          const sc = s.dispTry(t, masksOf([...placed, z]));
+          let near = 99;
+          for (const o of olds) if (dayOf(o) === dayOf(z)) near = Math.min(near, Math.abs(hourOf(o) - hourOf(z)));
+          const key = [sc.hard, sc.gaps, sc.rows.reduce((x, y) => x + y, 0), near, Math.round(sc.soft * 1000)];
+          if (bestZ < 0 || keyLess(key, bestKey)) {
+            bestZ = z;
+            bestKey = key;
+          }
+        }
+        if (bestZ < 0) break;
+        placed.push(bestZ);
+      }
+      // da dove a dove: prima nello stesso giorno, poi la più vicina
+      const gone = olds.filter((z) => !placed.includes(z));
+      for (const z of placed) {
+        if (olds.includes(z)) {
+          items.push({ orig: z, cur: z });
+          continue;
+        }
+        let gi = -1;
+        let gKey: number[] = [];
+        gone.forEach((g, i) => {
+          const key = [Math.abs(dayOf(g) - dayOf(z)), Math.abs(hourOf(g) - hourOf(z))];
+          if (gi < 0 || keyLess(key, gKey)) {
+            gi = i;
+            gKey = key;
+          }
+        });
+        items.push({ orig: gi >= 0 ? gone.splice(gi, 1)[0]! : -1, cur: z });
+      }
+      for (const g of gone) items.push({ orig: g, cur: -1 });
+    }
+    for (let i = list.length; i < total; i++) items.push({ orig: -1, cur: -1 });
+    if (!items.length) continue;
+
+    // poi una alla volta, finché calano buche o vincoli e nient'altro peggiora
+    let now = s.dispTry(t, itemMasks());
+    for (;;) {
+      let pick: Item | null = null;
+      let pickZ = -1;
+      let pickKey: number[] = [];
+      for (const it of items) {
+        const ref = it.cur >= 0 ? it.cur : it.orig;
+        for (let z = 0; z < D * P; z++) {
+          if (!free(z) || items.some((x) => x.cur === z)) continue;
+          const was = it.cur;
+          it.cur = z;
+          const sc = s.dispTry(t, itemMasks());
+          it.cur = was;
+          if (sc.hard > now.hard || sc.gaps > now.gaps || (sc.hard === now.hard && sc.gaps === now.gaps)) continue;
+          if (sc.rows.some((v, i) => v > now.rows[i]!)) continue;
+          const key = [
+            sc.hard,
+            sc.gaps,
+            sc.rows.reduce((x, y) => x + y, 0),
+            // prima quelle da mettere (quelle sotto una lezione, poi quelle in più), poi quelle già al loro posto
+            was >= 0 ? 2 : it.orig >= 0 ? 0 : 1,
+            Math.round(sc.soft * 1000),
+            ref >= 0 ? Math.abs(dayOf(ref) - dayOf(z)) : 0,
+            ref >= 0 ? Math.abs(hourOf(ref) - hourOf(z)) : 0,
+          ];
+          if (!pick || keyLess(key, pickKey)) {
+            pick = it;
+            pickZ = z;
+            pickKey = key;
+          }
+        }
+      }
+      if (!pick) break;
+      pick.cur = pickZ;
+      now = s.dispTry(t, itemMasks());
+    }
+
+    const moved = items.filter((it) => it.cur >= 0 && it.cur !== it.orig).sort((a, b) => a.cur - b.cur);
+    if (!moved.length) continue;
+    const next = [...list];
+    for (const it of moved) {
+      if (it.orig < 0) continue;
+      const i = next.findIndex((a) => cellOf(a) === it.orig);
+      if (i >= 0) next.splice(i, 1);
+    }
+    for (const it of moved) {
+      next.push(toCell(it.cur));
+      out.moves.push({ teacherId: teacher.id, from: it.orig >= 0 ? toCell(it.orig) : null, to: toCell(it.cur) });
+    }
+    out.dispSlots[teacher.id] = next;
+  }
+  return out;
 }
 
 // ---------- ritocchi a mano ----------
