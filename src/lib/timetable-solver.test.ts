@@ -6,6 +6,7 @@ import {
   dayPatternOptions,
   diffFacts,
   dispAfterLessons,
+  dispIntoGaps,
   dispOutcome,
   evaluateCurrent,
   patternExcess,
@@ -1022,5 +1023,124 @@ describe("timetable-solver", () => {
           assert.ok(gapsOf([...lessons, ...moved]) >= now, `giorno ${day}: la disposizione della ${a}ª chiuderebbe una buca alla ${h}ª`);
         }
     }
+  });
+
+  /** Docenti con 3 lezioni del mattino un giorno (a) e 2 o 4 un altro (b): per le disposizioni nelle buche. */
+  function* twoDays(applied: PersistedData) {
+    const morning = new Set(["p1", "p2", "p3", "p4", "p5", "p6"]);
+    for (const t of applied.teachers) {
+      if (t.otherPlesso || t.awaySlots?.length || t.avoidSlots?.length || t.rientroDays?.length || t.dispSlots?.length) continue;
+      if ((t.lockedSlots?.length ?? 0) > 0 || t.lockWeek || t.dayPatterns?.length || t.dayPattern) continue;
+      const on = (day: DayOfWeek) => applied.slots.filter((x) => x.teacherId === t.id && x.day === day);
+      const ok = (day: DayOfWeek, n: number[]) => n.includes(on(day).length) && on(day).every((x) => morning.has(x.periodId));
+      for (const a of applied.settings.days) {
+        if (!ok(a, [3])) continue;
+        for (const b of applied.settings.days) if (b !== a && ok(b, [2, 4])) yield { id: t.id, a, b, nB: on(b).length };
+      }
+    }
+  }
+
+  /** Il primo docente di twoDays per cui `make` dà un orario con `gaps` ore buche nella settimana. */
+  function withGaps(applied: PersistedData, gaps: number, make: (c: { id: string; a: DayOfWeek; b: DayOfWeek; nB: number }) => PersistedData) {
+    for (const c of twoDays(applied)) {
+      const d = make(c);
+      if (gapsOf(d, c.id) === gaps) return { ...c, d };
+    }
+    throw new Error(`serve un docente con ${gaps} ore buche`);
+  }
+
+  function gapsOf(d: PersistedData, id: string): number {
+    return evaluateCurrent(d).gapsByTeacher.find((g) => g.id === id)?.gaps ?? 0;
+  }
+
+  function withPlan(d: PersistedData, plan: ReturnType<typeof dispIntoGaps>): PersistedData {
+    return { ...d, teachers: d.teachers.map((t) => (plan.dispSlots[t.id] ? { ...t, dispSlots: plan.dispSlots[t.id] } : t)) };
+  }
+
+  it("disposizioni nelle buche: anche da un altro giorno, ma solo se nient'altro peggiora", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    // giorno a: lezioni alla 1ª, 2ª e 4ª (buca alla 3ª); giorno b: lezioni di fila e la disposizione subito dopo
+    const { d, id, a, b, nB } = withGaps(applied, 1, (c) =>
+      reshape(reshape(applied, { id: c.id, day: c.a }, ["p1", "p2", "p4"], {}), { id: c.id, day: c.b }, ["p1", "p2", "p3", "p4"].slice(0, c.nB), {
+        dispHours: 1,
+        dispSlots: [{ day: c.b, periodId: `p${c.nB + 1}` }],
+      }),
+    );
+    const plan = dispIntoGaps(d);
+    assert.deepEqual(plan.moves, [{ teacherId: id, from: { day: b, periodId: `p${nB + 1}` }, to: { day: a, periodId: "p3" } }]);
+    assert.deepEqual(plan.dispSlots, { [id]: [{ day: a, periodId: "p3" }] });
+    assert.equal(gapsOf(withPlan(d, plan), id), 0);
+    assert.equal(evaluateCurrent(withPlan(d, plan)).score.hard, evaluateCurrent(d).score.hard);
+    // con le ore al giorno di adesso come scelta lo spostamento le cambierebbe: la disposizione resta dov'è
+    const now = [...teacherDayInfo(d, id)!.now!].sort((x, y) => y - x);
+    const fixed = { ...d, teachers: d.teachers.map((t) => (t.id === id ? { ...t, dayPatterns: [now] } : t)) };
+    assert.deepEqual(dispIntoGaps(fixed), { dispSlots: {}, moves: [] });
+  });
+
+  it("disposizioni: si spostano anche per rispettare le ore al giorno scelte, senza fare buche", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    // giorno a: lezioni alla 1ª, 2ª e 3ª; giorno b: lezioni di fila e la disposizione subito dopo
+    const { d, id, a, b, nB } = withGaps(applied, 0, (c) =>
+      reshape(reshape(applied, { id: c.id, day: c.a }, ["p1", "p2", "p3"], {}), { id: c.id, day: c.b }, ["p1", "p2", "p3", "p4"].slice(0, c.nB), {
+        dispHours: 1,
+        dispSlots: [{ day: c.b, periodId: `p${c.nB + 1}` }],
+      }),
+    );
+    // ore al giorno scelte: quelle con la disposizione nel giorno a invece che nel b
+    const days = prepare(d, "slots").days;
+    const want = [...teacherDayInfo(d, id)!.now!];
+    want[days.indexOf(a)]! += 1;
+    want[days.indexOf(b)]! -= 1;
+    const fixed = { ...d, teachers: d.teachers.map((t) => (t.id === id ? { ...t, dayPatterns: [want.sort((x, y) => y - x)] } : t)) };
+    assert.equal(evaluateCurrent(fixed).hard.pattern.length, 1);
+    const plan = dispIntoGaps(fixed);
+    assert.equal(plan.moves.length, 1);
+    assert.deepEqual(plan.moves[0]!.from, { day: b, periodId: `p${nB + 1}` });
+    const after = evaluateCurrent(withPlan(fixed, plan));
+    assert.equal(after.hard.pattern.length, 0);
+    assert.ok(after.score.hard < evaluateCurrent(fixed).score.hard);
+    assert.equal(gapsOf(withPlan(fixed, plan), id), 0);
+  });
+
+  it("disposizioni nelle buche: prima quella sotto una lezione, poi quella dichiarata ma non segnata", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    // lezioni alla 1ª, 2ª e 4ª: buca alla 3ª; disposizione alla 1ª, sotto una lezione
+    const at = (c: { id: string; a: DayOfWeek }, patch: Partial<Teacher>) => reshape(applied, { id: c.id, day: c.a }, ["p1", "p2", "p4"], patch);
+    const { id, a } = withGaps(applied, 1, (c) => at(c, {}));
+    const under = { day: a, periodId: "p1" };
+    const hole = { day: a, periodId: "p3" };
+    const one = dispIntoGaps(at({ id, a }, { dispHours: 1, dispSlots: [under] }));
+    assert.deepEqual(one, { dispSlots: { [id]: [hole] }, moves: [{ teacherId: id, from: under, to: hole }] });
+    const loose = dispIntoGaps(at({ id, a }, { dispHours: 1, dispSlots: [] }));
+    assert.deepEqual(loose, { dispSlots: { [id]: [hole] }, moves: [{ teacherId: id, from: null, to: hole }] });
+    // due da mettere e una buca: va quella sotto la lezione
+    const two = dispIntoGaps(at({ id, a }, { dispHours: 2, dispSlots: [under] }));
+    assert.deepEqual(two, { dispSlots: { [id]: [hole] }, moves: [{ teacherId: id, from: under, to: hole }] });
+  });
+
+  it("disposizioni «Da zero»: si rimettono tutte senza fare buche; a parità restano dov'erano", () => {
+    const data = buildSeed();
+    const applied = withSlots(data, solveTimetable(data, { timeMs: 600, seed: 61 }));
+    // lezioni alla 1ª, 2ª e 3ª e disposizione alla 1ª, sotto una lezione
+    const under = withGaps(applied, 0, (c) =>
+      reshape(applied, { id: c.id, day: c.a }, ["p1", "p2", "p3"], { dispHours: 1, dispSlots: [{ day: c.a, periodId: "p1" }] }),
+    );
+    assert.deepEqual(dispIntoGaps(under.d).moves, [], "senza buche, nell'orario salvato non si sposta");
+    const plan = dispIntoGaps(under.d, { replace: true });
+    assert.deepEqual(plan.moves, [
+      { teacherId: under.id, from: { day: under.a, periodId: "p1" }, to: { day: under.a, periodId: "p4" } },
+    ]);
+    assert.equal(gapsOf(withPlan(under.d, plan), under.id), 0);
+    // disposizione subito dopo le lezioni del giorno b: resta dov'è
+    const after = withGaps(applied, 0, (c) =>
+      reshape(applied, { id: c.id, day: c.b }, ["p1", "p2", "p3", "p4"].slice(0, c.nB), {
+        dispHours: 1,
+        dispSlots: [{ day: c.b, periodId: `p${c.nB + 1}` }],
+      }),
+    );
+    assert.deepEqual(dispIntoGaps(after.d, { replace: true }), { dispSlots: {}, moves: [] });
   });
 });

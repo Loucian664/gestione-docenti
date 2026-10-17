@@ -29,12 +29,14 @@ import {
 } from "@/lib/build-timetable";
 import {
   dayPatternOptions,
+  dispIntoGaps,
   dispOutcome,
   evaluateCurrent,
   teacherDayInfo,
   teacherDayPatterns,
   teacherHoursHere,
   TimetableEditor,
+  type DispMove,
   type FindResult,
   type FindTarget,
   type FixOption,
@@ -187,14 +189,40 @@ export function CostruisciOrario({
     return [...keep, ...pendingSlots];
   }, [pendingSlots, data.slots, data.teachers, data.settings.periods]);
   const slotBase = useMemo(() => (openSave ? openSavedTimetable(data, openSave).base : data), [openSave, data]);
+  // ore a disposizione messe dall'app nelle buche: «Da zero» (tutte da capo) e slot aperti (non lo 0);
+  // «Migliora» le sposta già da sé, nello stesso giorno
+  const dispPlan = useMemo(() => {
+    if (!result || result.disp || openSave?.n === 0 || (!openSave && resultMode !== "scratch")) return null;
+    const plan = dispIntoGaps({ ...slotBase, slots: slotsWithLessons(slotBase, result.slots) }, { replace: !openSave });
+    return plan.moves.length ? plan : null;
+  }, [result, openSave, resultMode, slotBase]);
+  // da dove partono le ore a disposizione della proposta: quelle in vigore o dello slot, più quelle messe dall'app
+  const propBase = useMemo(
+    () =>
+      dispPlan
+        ? {
+            ...slotBase,
+            teachers: slotBase.teachers.map((t) =>
+              dispPlan.dispSlots[t.id] ? { ...t, dispSlots: dispPlan.dispSlots[t.id] } : t,
+            ),
+          }
+        : slotBase,
+    [slotBase, dispPlan],
+  );
+  // il confronto della proposta, con le ore a disposizione dove finiranno
+  const proposalReport = useMemo(() => {
+    if (!result) return null;
+    if (result.disp || (!openSave && resultMode !== "scratch")) return result.report;
+    return evaluateCurrent({ ...propBase, slots: slotsWithLessons(propBase, result.slots) });
+  }, [result, openSave, resultMode, propBase]);
   // scheda «Docenti» dell'anteprima: con uno slot aperto, le ore a disposizione sono quelle salvate nello slot
   const previewTeachers = useMemo(
-    () => (openSave ? slotBase.teachers.filter(isTimetableTeacher).sort(byName) : included),
-    [openSave, slotBase.teachers, included],
+    () => (propBase !== data ? propBase.teachers.filter(isTimetableTeacher).sort(byName) : included),
+    [propBase, data, included],
   );
   const previewData = useMemo(
-    () => (previewSlots ? { ...slotBase, slots: previewSlots } : null),
-    [slotBase, previewSlots],
+    () => (previewSlots ? { ...propBase, slots: previewSlots } : null),
+    [propBase, previewSlots],
   );
   // la testata di «Proposta» (fissa in alto) è in vista? Allora la barra di avanzamento sta lì
   const showHeader = Boolean(!edit && previewSlots && previewData && result);
@@ -216,9 +244,13 @@ export function CostruisciOrario({
   );
   const applySlots =
     confirmFor === "ritocchi" ? (edit?.draft ?? null) : confirmFor === "proposta" ? (result?.slots ?? null) : null;
-  // da dove partono le ore a disposizione: quelle in vigore o quelle dello slot aperto
-  const editBase = edit?.from === "proposta" && openSave ? slotBase : data;
-  const applyBase = confirmFor === "proposta" ? slotBase : editBase;
+  // da dove partono le ore a disposizione: quelle in vigore o quelle della proposta (slot aperto, messe dall'app)
+  const editBase = edit?.from === "proposta" ? propBase : data;
+  const applyBase = confirmFor === "proposta" ? propBase : editBase;
+  // «Usa…»: ore a disposizione dello slot aperto, e quelle sistemate dall'app nella proposta
+  const applyFromSlot = Boolean(openSave) && (confirmFor === "proposta" || edit?.from === "proposta");
+  const applyMoves =
+    confirmFor === "proposta" || (confirmFor === "ritocchi" && edit?.from === "proposta") ? (dispPlan?.moves ?? []) : [];
   // ore a disposizione del mattino: dove le lascia la proposta o dove stanno dopo i ritocchi
   const editDispChange = (draft: TimetableSlot[]) =>
     new TimetableEditor({ ...editBase, slots: slotsWithLessons(editBase, draft) }).dispChange();
@@ -235,17 +267,23 @@ export function CostruisciOrario({
   const active = activeSlotOf(data);
   // ritocchi dell'orario in uso mentre si prova uno slot: restano in quello slot
   const fixedUseSlot = confirmFor === "ritocchi" && edit?.from === "uso" && active !== 0 ? active : null;
-  const dispMovedText = (m: { teacherId: string; day: DayOfWeek; from: string; to: string }) => {
-    const t = data.teachers.find((x) => x.id === m.teacherId);
-    const hour = (id: string) => `${data.settings.periods.find((x) => x.id === id)?.index ?? "?"}ª`;
-    return `${t ? teacherShort(t, data.teachers) : m.teacherId} · ${DAY_SHORT[m.day]} ${hour(m.from)} → ${hour(m.to)}`;
+  const shortOf = (id: string) => {
+    const t = data.teachers.find((x) => x.id === id);
+    return t ? teacherShort(t, data.teachers) : id;
+  };
+  const hourOf = (id: string) => `${data.settings.periods.find((x) => x.id === id)?.index ?? "?"}ª`;
+  const dispMovedText = (m: { teacherId: string; day: DayOfWeek; from: string; to: string }) =>
+    `${shortOf(m.teacherId)} · ${DAY_SHORT[m.day]} ${hourOf(m.from)} → ${hourOf(m.to)}`;
+  // es. «Vavalà · Ven 3ª → Mar 4ª», «Rossi · Lun 3ª → 4ª», «Bianchi · aggiunta Mer 2ª»
+  const dispPlanText = (m: DispMove) => {
+    const to = `${DAY_SHORT[m.to.day]} ${hourOf(m.to.periodId)}`;
+    if (!m.from) return `${shortOf(m.teacherId)} · aggiunta ${to}`;
+    const from = `${DAY_SHORT[m.from.day]} ${hourOf(m.from.periodId)}`;
+    return `${shortOf(m.teacherId)} · ${from} → ${m.from.day === m.to.day ? hourOf(m.to.periodId) : to}`;
   };
   // ore al giorno scelte: con le disposizioni che restano dopo «Usa…», chi va sistemato a mano
-  // «Da zero»: le disposizioni le rimette il responsabile dove indicato (nelle buche)
-  const fillTodo =
-    confirmFor === "proposta" && resultMode === "scratch" && result && !openSave ? result.report.dispFill : [];
   const patternTodo = useMemo(() => {
-    if (fillTodo.length || !applySlots || !applyInfo || !applyBase.teachers.some((t) => teacherDayPatterns(t).length))
+    if (!applySlots || !applyInfo || !applyBase.teachers.some((t) => teacherDayPatterns(t).length))
       return [[], []];
     const teachers = applyBase.teachers.map((t) =>
       applyInfo.dispSlots[t.id] ? { ...t, dispSlots: applyInfo.dispSlots[t.id] } : t,
@@ -257,7 +295,7 @@ export function CostruisciOrario({
       rows.filter((r) => r.excess > 0).map((r) => r.name),
       rows.filter((r) => r.excess === 0 && r.missing > 0).map((r) => r.name),
     ];
-  }, [applyInfo, applySlots, applyBase, data.slots, inUseDraft, fillTodo.length]);
+  }, [applyInfo, applySlots, applyBase, data.slots, inUseDraft]);
   // ore bloccate che corrispondono a una lezione dell'orario in uso
   const lockCount = useMemo(() => {
     const m = new Map<string, number>();
@@ -310,25 +348,34 @@ export function CostruisciOrario({
     store.putInSlot(n, partFor(confirmFor), name);
     const removed = applyInfo.removed.length;
     const moved = applyInfo.moved.length;
+    const fixed = applyMoves.length;
     setConfirmFor(null);
     setResult(null);
     setEdit(null);
     setOpenSave(null);
     setSavedIn(null);
     const notes = [
+      fixed ? (fixed === 1 ? "Sistemata 1 ora a disposizione dall’app." : `Sistemate ${fixed} ore a disposizione dall’app.`) : "",
       moved ? (moved === 1 ? "Spostata 1 ora a disposizione nello stesso giorno." : `Spostate ${moved} ore a disposizione nello stesso giorno.`) : "",
       removed ? `Tolte ${removed} ore a disposizione che cadevano su una lezione.` : "",
     ].filter(Boolean);
     toast.success([`Slot ${n} in uso. L’orario in vigore resta nello slot 0.`, ...notes].join(" "));
   }
 
-  /** Uno slot aperto, così com’è: diventa quello in uso. */
+  /** Uno slot aperto diventa quello in uso; le ore a disposizione sistemate dall’app restano nello slot. */
   function activateOpened() {
     if (!openSave) return;
-    store.activateSlot(openSave.n);
+    const fixed = openSave.n > 0 ? (dispPlan?.moves.length ?? 0) : 0;
+    if (fixed) store.putInSlot(openSave.n, partFor("proposta"), openSave.name);
+    else store.activateSlot(openSave.n);
     closeProposal();
+    const withFixed = fixed
+      ? `, con ${fixed === 1 ? "1 ora a disposizione sistemata" : `${fixed} ore a disposizione sistemate`} dall’app`
+      : "";
     toast.success(
-      openSave.n === 0 ? "In uso l’orario in vigore." : `Slot ${openSave.n} in uso. L’orario in vigore resta nello slot 0.`,
+      openSave.n === 0
+        ? "In uso l’orario in vigore."
+        : `Slot ${openSave.n} in uso${withFixed}. L’orario in vigore resta nello slot 0.`,
     );
   }
 
@@ -394,7 +441,7 @@ export function CostruisciOrario({
   /** L’orario da salvare o da usare: la proposta o i ritocchi. */
   function partFor(what: "proposta" | "ritocchi"): TimetablePart {
     if (what === "proposta" && result) {
-      return timetablePart(slotBase, result.slots, dispOutcome(slotBase, result.slots, result.disp).dispSlots);
+      return timetablePart(propBase, result.slots, dispOutcome(propBase, result.slots, result.disp).dispSlots);
     }
     if (what === "ritocchi" && edit) {
       return timetablePart(editBase, edit.draft, dispOutcome(editBase, edit.draft, editDispChange(edit.draft)).dispSlots);
@@ -547,7 +594,7 @@ export function CostruisciOrario({
         </div>
         <p className="mt-2 text-[13px] text-muted-foreground">
           {mode === "scratch"
-            ? "Genera un nuovo orario. Le ore buche colmabili con ore a disposizione non vengono conteggiate, ma al massimo una al giorno."
+            ? "Genera un nuovo orario e poi mette le ore a disposizione nelle ore buche. Nella ricerca le ore buche colmabili con ore a disposizione non vengono conteggiate, ma al massimo una al giorno."
             : "Migliora l’orario in uso senza peggiorare nessuna voce. Le ore a disposizione si spostano solo nello stesso giorno, per chiudere un’ora buca."}
           {speed === "accurata" ? " Richiede più tempo, ma in genere trova soluzioni migliori." : ""}
         </p>
@@ -568,7 +615,7 @@ export function CostruisciOrario({
           edit={edit}
           settings={data.settings}
           teachersAll={data.teachers}
-          baseTeachers={edit.from === "proposta" && openSave ? slotBase.teachers : undefined}
+          baseTeachers={edit.from === "proposta" && propBase !== data ? propBase.teachers : undefined}
           classesAll={data.classes}
           slots={data.slots}
           cattedre={data.cattedre}
@@ -583,7 +630,7 @@ export function CostruisciOrario({
         />
       )}
 
-      {!edit && previewSlots && previewData && result && (
+      {!edit && previewSlots && previewData && result && proposalReport && (
         <section ref={previewRef} className="mt-1 max-md:pb-16">
           <div
             ref={headerRef}
@@ -636,9 +683,17 @@ export function CostruisciOrario({
               </Button>
             </div>
           </div>
+          {dispPlan && (
+            <p className="mt-3 text-[13px] text-muted-foreground">
+              Ore a disposizione sistemate dall’app, per togliere ore buche o rispettare i vincoli (nella scheda
+              «Docenti» con <span className="rounded bg-success-soft px-1 font-medium text-success">+ disp.</span>):{" "}
+              {dispPlan.moves.map(dispPlanText).join("; ")}.
+              {openSave ? " Restano nello slot con «Usa questo orario» o «Salva nello slot…»." : ""}
+            </p>
+          )}
           <ReportPanel
             current={currentReport}
-            proposal={result.report}
+            proposal={proposalReport}
             mode={openSave ? "edit" : resultMode}
             label={openSave ? `Slot ${openSave.n}` : undefined}
           />
@@ -737,9 +792,9 @@ export function CostruisciOrario({
           {previewMode === "docenti" && (
             <TeacherWeekPreview
               data={previewData}
-              report={result.report}
-              scratch={resultMode === "scratch"}
-              disp={dispOutcome(slotBase, result.slots, result.disp).dispSlots}
+              report={proposalReport}
+              added={dispPlan?.moves ?? []}
+              disp={dispOutcome(propBase, result.slots, result.disp).dispSlots}
               teachers={previewTeachers}
               days={data.settings.days}
               periods={morning}
@@ -811,10 +866,15 @@ export function CostruisciOrario({
         }
         notes={
           <ul className="mb-3 flex list-disc flex-col gap-1.5 pl-5 text-sm text-muted-foreground">
+            {applyMoves.length > 0 && (
+              <li>
+                Ore a disposizione sistemate dall’app, per togliere ore buche o rispettare i vincoli:{" "}
+                {applyMoves.map(dispPlanText).join("; ")}.
+              </li>
+            )}
             <li>
-              {applyBase === data
-                ? "Le ore a disposizione restano dove sono"
-                : "Le ore a disposizione del mattino sono quelle salvate nello slot"}
+              {applyMoves.length ? "Le altre ore a disposizione" : "Le ore a disposizione"}
+              {applyFromSlot ? " del mattino sono quelle salvate nello slot" : " restano dove sono"}
               {applyInfo?.moved.length
                 ? `, tranne ${applyInfo.moved.length === 1 ? "una, spostata" : `${applyInfo.moved.length}, spostate`} nello stesso giorno: ${applyInfo.moved.map(dispMovedText).join("; ")}`
                 : ""}
@@ -822,12 +882,6 @@ export function CostruisciOrario({
                 ? `; ${applyInfo.removed.length} cadono su una lezione nuova e vengono tolte.`
                 : "."}
             </li>
-            {fillTodo.length > 0 && (
-              <li>
-                Poi sposta le disposizioni nelle buche indicate («+ disp.» nella scheda «Docenti»):{" "}
-                {fillTodo.map((x) => x.text).join("; ")}.
-              </li>
-            )}
             {patternTodo[0]!.length > 0 && (
               <li className="text-destructive">Ore al giorno scelte non rispettate: {joinNames(patternTodo[0]!)}.</li>
             )}
@@ -2796,7 +2850,7 @@ function ClassPickDialog({
 function TeacherWeekPreview({
   data,
   report,
-  scratch,
+  added,
   disp,
   teachers,
   days,
@@ -2805,8 +2859,8 @@ function TeacherWeekPreview({
   data: PersistedData;
   /** per le ore buche (le stesse del confronto) */
   report: TimetableReport;
-  /** «Da zero»: le disposizioni vanno rimesse (dove indicato con «+ disp.») */
-  scratch: boolean;
+  /** ore a disposizione messe o spostate dall’app («+ disp.») */
+  added: DispMove[];
   /** disposizioni dopo la proposta (dove cambiano) */
   disp: Record<string, { day: DayOfWeek; periodId: string }[]>;
   teachers: Teacher[];
@@ -2816,18 +2870,18 @@ function TeacherWeekPreview({
   const gapsOf = new Map(report.gapsByTeacher.map((g) => [g.id, g]));
   const has = (list: { day: DayOfWeek; periodId: string }[] | undefined, day: DayOfWeek, periodId: string) =>
     (list ?? []).some((a) => a.day === day && a.periodId === periodId);
+  const isAdded = (teacherId: string, day: DayOfWeek, periodId: string) =>
+    added.some((m) => m.teacherId === teacherId && m.to.day === day && m.to.periodId === periodId);
   return (
     <div className="paper-panel mt-3 overflow-x-auto rounded-xl">
       <p className="px-3 pt-3 text-[12px] text-muted-foreground">
         <span className="rounded bg-warning-soft px-1 font-medium text-warning">buca</span> ora vuota tra due lezioni ·{" "}
-        {scratch ? (
+        <span className="text-ink-faint">disp.</span> a disposizione (non è una buca)
+        {added.length > 0 && (
           <>
-            <span className="rounded bg-success-soft px-1 font-medium text-success">+ disp.</span> qui va un’ora a
-            disposizione del docente (così non è una buca)
-          </>
-        ) : (
-          <>
-            <span className="text-ink-faint">disp.</span> a disposizione (non è una buca)
+            {" "}
+            · <span className="rounded bg-success-soft px-1 font-medium text-success">+ disp.</span> ora a disposizione
+            spostata qui dall’app
           </>
         )}
       </p>
@@ -2868,22 +2922,22 @@ function TeacherWeekPreview({
                             {p.index} {cls?.name ?? ""} <span className="font-semibold">{slot.subject}</span>
                           </div>
                         );
+                      if (isAdded(t.id, d, p.id))
+                        return (
+                          <div key={p.id}>
+                            {p.index} <span className="rounded bg-success-soft px-1 font-medium text-success">+ disp.</span>
+                          </div>
+                        );
                       if (has(g?.cells, d, p.id))
                         return (
                           <div key={p.id}>
                             {p.index} <span className="rounded bg-warning-soft px-1 font-medium text-warning">buca</span>
                           </div>
                         );
-                      if (has(g?.fill, d, p.id))
-                        return (
-                          <div key={p.id}>
-                            {p.index} <span className="rounded bg-success-soft px-1 font-medium text-success">+ disp.</span>
-                          </div>
-                        );
                       return (
                         <div key={p.id} className="text-ink-faint">
                           {p.index}{" "}
-                          {!scratch && has(tDisp, d, p.id) ? "disp." : has(t.awaySlots, d, p.id) ? "altrove" : " —"}
+                          {has(tDisp, d, p.id) ? "disp." : has(t.awaySlots, d, p.id) ? "altrove" : " —"}
                         </div>
                       );
                     })}
@@ -3500,7 +3554,6 @@ function ReportDetails({ r }: { r: TimetableReport }) {
       <IssueList title="Giornate lunghe" items={[...t.six, ...t.span6, ...t.five]} />
       <IssueList title="Ore buche (ore vuote tra due lezioni)" items={gaps} />
       <IssueList title="Tra due lezioni, ma non sono buche" items={[...r.notGaps.disp, ...r.notGaps.away]} />
-      <IssueList title="Ore a disposizione da mettere nelle buche" items={r.dispFill} />
       <IssueList title="Giornate con più ore buche" items={t.multiGap} />
       <IssueList title="Altro per i docenti" items={[...t.empty, ...t.mixed, ...t.single]} />
       <IssueList title="Compiti: italiano e matematica alle prime ore" items={r.firstHours.missing} />
@@ -3559,7 +3612,7 @@ function ReportPanel({
         : worse === 0
           ? `${better === 1 ? "Migliora 1 voce" : `Migliorano ${better} voci`}, nessuna peggiora.`
           : `${better === 1 ? "Migliora 1 voce" : `Migliorano ${better} voci`}; per rispettare le tue scelte ${worse === 1 ? "ne peggiora 1" : `ne peggiorano ${worse}`}.`
-      : `${better === 1 ? "1 voce migliora" : `${better} voci migliorano`}, ${worse === 0 ? "nessuna peggiora" : worse === 1 ? "1 peggiora" : `${worse} peggiorano`}. Le disposizioni le metti tu: nella scheda «Docenti» vedi dove («+ disp.», nelle buche).`;
+      : `${better === 1 ? "1 voce migliora" : `${better} voci migliorano`}, ${worse === 0 ? "nessuna peggiora" : worse === 1 ? "1 peggiora" : `${worse} peggiorano`}.`;
   const label = labelProp ?? (mode === "edit" ? "Nuovo" : "Proposta");
   const table = (
     <table className="mt-3 w-full table-fixed border-collapse text-[13px] sm:text-sm">
