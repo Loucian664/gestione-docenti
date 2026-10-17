@@ -150,6 +150,9 @@ export function CostruisciOrario({
   // «Salva nello slot…»: la proposta o i ritocchi
   const [saveFor, setSaveFor] = useState<"proposta" | "ritocchi" | null>(null);
   const editRef = useRef<HTMLElement>(null);
+  // testata di «Proposta» (fissa in alto): se è in vista porta lei la barra, altrimenti la fascia in cima
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerVisible, setHeaderVisible] = useState(false);
   const [newSubject, setNewSubject] = useState("");
   const [newHours, setNewHours] = useState("1");
   const [previewMode, setPreviewMode] = useState<"settimana" | "docenti" | "class" | "quadro">("settimana");
@@ -193,6 +196,18 @@ export function CostruisciOrario({
     () => (previewSlots ? { ...slotBase, slots: previewSlots } : null),
     [slotBase, previewSlots],
   );
+  // la testata di «Proposta» (fissa in alto) è in vista? Allora la barra di avanzamento sta lì
+  const showHeader = Boolean(!edit && previewSlots && previewData && result);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!showHeader || !el || typeof IntersectionObserver === "undefined") {
+      setHeaderVisible(false);
+      return;
+    }
+    const io = new IntersectionObserver(([e]) => setHeaderVisible(Boolean(e?.isIntersecting)), { threshold: 0.99 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [showHeader]);
   // lezioni del mattino dei docenti di materia: quelle che Costruisci e i ritocchi cambiano
   const pool = useMemo(() => new Set(included.map((t) => t.id)), [included]);
   const inUseDraft = useMemo(
@@ -445,6 +460,18 @@ export function CostruisciOrario({
 
   return (
     <div className="flex flex-col gap-4">
+      {running && !headerVisible && (
+        <div
+          role="status"
+          className="sticky top-0 z-30 -mx-1 flex items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm"
+        >
+          <span className="font-display text-lg">Proposta</span>
+          <SearchBar progress={running} className="min-w-0 flex-1 md:mr-auto md:flex-none" />
+          <Button variant="outline" onClick={() => handleRef.current?.stop()}>
+            Basta così
+          </Button>
+        </div>
+      )}
       <section className="paper-panel rounded-xl p-4 sm:p-5">
         <h2 className="font-display text-lg">Orari salvati</h2>
         <p className="mt-0.5 text-sm text-muted-foreground">
@@ -558,13 +585,20 @@ export function CostruisciOrario({
 
       {!edit && previewSlots && previewData && result && (
         <section ref={previewRef} className="mt-1 max-md:pb-16">
-          <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm">
-            <h2 className="mr-auto min-w-0 font-display text-lg">
+          <div
+            ref={headerRef}
+            className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 border-b border-border bg-background px-1 py-2 md:bg-background/95 md:backdrop-blur-sm"
+          >
+            <h2 className={cn("min-w-0 font-display text-lg", !running && "mr-auto")}>
               {openSave ? `Slot ${openSave.n} · ${openSave.name}` : "Proposta"}
             </h2>
-            <span className="hidden text-[13px] text-muted-foreground sm:inline">
-              {savedIn ? `Salvata nello slot ${savedIn}` : openSave ? "Aperto dallo slot" : "Non ancora salvata"}
-            </span>
+            {running ? (
+              <SearchBar progress={running} className="min-w-0 flex-1 md:mr-auto md:flex-none" />
+            ) : (
+              <span className="hidden text-[13px] text-muted-foreground sm:inline">
+                {savedIn ? `Salvata nello slot ${savedIn}` : openSave ? "Aperto dallo slot" : "Non ancora salvata"}
+              </span>
+            )}
             {/* «Salva» resta in alto anche sul telefono; sul computer va prima di «Usa…» */}
             <Button
               variant="outline"
@@ -578,16 +612,20 @@ export function CostruisciOrario({
             </Button>
             {/* sul telefono i bottoni stanno in una barra fissa in basso */}
             <div className="fixed inset-x-0 bottom-14 z-30 flex items-center gap-2 border-t border-border bg-background/95 px-4 py-2 backdrop-blur-sm md:contents">
-              {openSave ? (
-                <Button variant="outline" onClick={closeProposal}>
+              {running ? (
+                <Button variant="outline" className="max-md:px-3" onClick={() => handleRef.current?.stop()}>
+                  Basta così
+                </Button>
+              ) : openSave ? (
+                <Button variant="outline" className="max-md:px-3" onClick={closeProposal}>
                   Chiudi
                 </Button>
               ) : (
-                <Button variant="outline" onClick={propose} disabled={Boolean(running)}>
+                <Button variant="outline" className="max-md:px-3" onClick={propose}>
                   Riprova
                 </Button>
               )}
-              <Button variant="outline" onClick={() => openEdit("proposta")}>
+              <Button variant="outline" className="max-md:px-3" onClick={() => openEdit("proposta")}>
                 Ritocca
               </Button>
               <Button
@@ -3216,6 +3254,34 @@ function formatCount(n: number): string {
   return String(n);
 }
 
+/** La migliore proposta trovata finora: vincoli ancora da sistemare (se ce ne sono) e ore buche. */
+function bestSoFar(p: RunProgress): string {
+  const hard = p.bestHard > 0 ? `${p.bestHard === 1 ? "1 vincolo" : `${p.bestHard} vincoli`} ancora da sistemare, ` : "";
+  return `${hard}${p.bestGaps === 1 ? "1 ora buca" : `${p.bestGaps} ore buche`}`;
+}
+
+/** Barra di avanzamento della ricerca, accanto al titolo «Proposta». */
+function SearchBar({ progress, className }: { progress: RunProgress; className?: string }) {
+  const pct = Math.round(progress.fraction * 100);
+  const detail = progress.iterations > 0 ? `migliore finora: ${bestSoFar(progress)}` : "preparo i dati…";
+  return (
+    <div className={cn("flex items-center gap-2.5", className)}>
+      <div
+        className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted md:h-2 md:w-48 md:flex-none"
+        role="progressbar"
+        aria-label="Avanzamento della ricerca"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+      >
+        <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${pct}%` }} />
+      </div>
+      <span className="min-w-9 text-right text-[13px] font-semibold tabular-nums">{pct}%</span>
+      <span className="hidden whitespace-nowrap text-[13px] tabular-nums text-muted-foreground 2xl:inline">{detail}</span>
+    </div>
+  );
+}
+
 function SearchProgress({ progress, onStop }: { progress: RunProgress; onStop: () => void }) {
   const pct = Math.round(progress.fraction * 100);
   return (
@@ -3238,7 +3304,7 @@ function SearchProgress({ progress, onStop }: { progress: RunProgress; onStop: (
       </div>
       <p className="mt-2 text-[12px] text-muted-foreground tabular-nums">
         {progress.iterations > 0
-          ? `Migliore finora: ${progress.bestHard > 0 ? `${progress.bestHard} vincoli ancora da sistemare, ` : ""}${progress.bestGaps} ore buche · ${formatCount(progress.iterations)} combinazioni provate`
+          ? `Migliore finora: ${bestSoFar(progress)} · ${formatCount(progress.iterations)} combinazioni provate`
           : "Preparo i dati…"}
         {progress.workers > 1 ? ` · ${progress.workers} ricerche in parallelo` : ""}
       </p>
