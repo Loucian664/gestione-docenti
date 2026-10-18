@@ -136,6 +136,22 @@ function keepActive(state: PersistedData): SavedTimetable[] {
   return [...list.filter((x) => x.n !== n), entry].sort((a, b) => a.n - b.n);
 }
 
+/**
+ * Tutti i campi dei dati, anche quelli che mancano in `data`: importando, tornando all’esempio o cancellando tutto
+ * non resta niente dei dati di prima (cattedre salvate, copie per «Annulla», slot).
+ */
+function wholeData(data: PersistedData): PersistedData {
+  return {
+    ...data,
+    cattedre: data.cattedre,
+    cattedraBackup: data.cattedraBackup,
+    cattedraDispBackup: data.cattedraDispBackup,
+    savedTimetables: data.savedTimetables ?? [],
+    activeSlot: data.activeSlot ?? 0,
+    officialBackup: data.officialBackup,
+  };
+}
+
 const seed = buildSeed();
 
 export const useAppStore = create<AppStore>()(
@@ -424,10 +440,7 @@ export const useAppStore = create<AppStore>()(
           const importedBackupName = (fileName ?? data.importedBackupName)?.trim() || undefined;
           // gli slot diventano quelli del file (nessuno se è un backup di prima)
           set({
-            ...applyOrganicoFixes(data),
-            savedTimetables: data.savedTimetables ?? [],
-            activeSlot: data.activeSlot ?? 0,
-            officialBackup: data.officialBackup,
+            ...wholeData(applyOrganicoFixes(data)),
             savedAt: Date.now(),
             origin: "user",
             importedBackupName,
@@ -438,10 +451,7 @@ export const useAppStore = create<AppStore>()(
         resetDemo: () => {
           noteUserMutation();
           set({
-            ...buildSeed(),
-            savedTimetables: [],
-            activeSlot: 0,
-            officialBackup: undefined,
+            ...wholeData(buildSeed()),
             savedAt: Date.now(),
             origin: "seed",
             importedBackupName: undefined,
@@ -452,10 +462,7 @@ export const useAppStore = create<AppStore>()(
         clearAll: () => {
           noteUserMutation();
           set({
-            ...EMPTY_DATA,
-            savedTimetables: [],
-            activeSlot: 0,
-            officialBackup: undefined,
+            ...wholeData(EMPTY_DATA),
             savedAt: Date.now(),
             origin: "user",
             importedBackupName: undefined,
