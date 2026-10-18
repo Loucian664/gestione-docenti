@@ -1,3 +1,6 @@
+import { Link } from "@tanstack/react-router";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { missingText, type MissingTeacher } from "@/lib/build-timetable";
 import { cn } from "@/lib/utils";
 
@@ -29,5 +32,31 @@ export function MissingTeachersBox({
         {[without ? note : "", tn ? TN_NOTE : ""].filter(Boolean).join(" ")}
       </p>
     </div>
+  );
+}
+
+/** «Proponi» con materie senza docente: la finestra che spiega perché l'orario non si propone. */
+export function MissingTeachersDialog({ items, onClose }: { items: MissingTeacher[]; onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Materie senza docente</DialogTitle>
+          <DialogDescription>L’orario si propone quando ogni materia ha il suo docente. Mancano:</DialogDescription>
+        </DialogHeader>
+        <p className="text-sm">{items.map(missingText).join(", ")}</p>
+        <p className="text-sm text-muted-foreground">
+          Il docente si indica nella sua scheda, in Docenti → «Classi e materie», oppure in «Cattedre e ore».
+        </p>
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
+          <Button variant="outline" onClick={onClose}>
+            Chiudi
+          </Button>
+          <Button asChild>
+            <Link to="/docenti">Apri Docenti</Link>
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
