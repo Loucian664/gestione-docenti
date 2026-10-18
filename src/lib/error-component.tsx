@@ -12,9 +12,9 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
       <span className="text-destructive" aria-hidden="true">
         <TriangleAlert className="size-10" strokeWidth={2} />
       </span>
-      <h1 className="text-lg font-semibold">Something went wrong</h1>
+      <h1 className="text-lg font-semibold">Qualcosa non ha funzionato</h1>
       <p className="max-w-md text-sm break-words text-muted-foreground">
-        {error.message || "An unexpected error occurred. Try reloading the page."}
+        {(error instanceof Error && error.message) || "Errore imprevisto. Prova a ricaricare la pagina."}
       </p>
     </main>
   );
