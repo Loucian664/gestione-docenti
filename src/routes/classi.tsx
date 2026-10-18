@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useAppStore, snapshot } from "@/lib/store";
+import { missingTeachers } from "@/lib/build-timetable";
+import { TN_NOTE } from "@/components/missing-teachers";
 import type { SchoolClass, Tempo } from "@/lib/types";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -22,6 +24,7 @@ function ClassiPage() {
   const data = snapshot(store);
   const [editing, setEditing] = useState<SchoolClass | null | "new">(null);
   const grouped = [1, 2, 3] as const;
+  const missing = missingTeachers(data);
 
   function saveTempo(c: SchoolClass, tempo: Tempo) {
     if (c.tempo === tempo) return;
@@ -48,17 +51,32 @@ function ClassiPage() {
             <section key={grade} className="paper-panel rounded-xl p-4">
               <h2 className="font-display text-xl">{grade}ª</h2>
               <ul className="mt-3 flex flex-col gap-1.5">
-                {items.map((c) => (
+                {items.map((c) => {
+                  const without = missing.filter((m) => m.classId === c.id && !m.tn);
+                  const extra = missing.filter((m) => m.classId === c.id && m.tn);
+                  return (
                   <li key={c.id} className="flex items-center gap-2 rounded-md px-1 hover:bg-muted">
                     <button
                       type="button"
                       onClick={() => setEditing(c)}
-                      className="flex min-h-12 min-w-0 flex-1 items-center text-left"
+                      className="flex min-h-12 min-w-0 flex-1 flex-col justify-center text-left"
                     >
-                      <span className="font-medium">{c.name}</span>
-                      {c.students ? (
-                        <span className="ml-2 text-[13px] text-muted-foreground">{c.students} alunni</span>
-                      ) : null}
+                      <span>
+                        <span className="font-medium">{c.name}</span>
+                        {c.students ? (
+                          <span className="ml-2 text-[13px] text-muted-foreground">{c.students} alunni</span>
+                        ) : null}
+                      </span>
+                      {without.length > 0 && (
+                        <span className="text-[12px] leading-snug text-warning">
+                          Senza docente: {without.map((m) => `${m.subject} ${m.hours} h`).join(", ")}
+                        </span>
+                      )}
+                      {extra.length > 0 && (
+                        <span className="text-[12px] leading-snug text-warning" title={TN_NOTE}>
+                          {extra.map((m) => `${m.subject} ${m.hours} h`).join(", ")} in una classe a tempo normale
+                        </span>
+                      )}
                     </button>
                     <NativeSelect
                       value={c.tempo}
@@ -70,7 +88,8 @@ function ClassiPage() {
                       <option value="TP">Tempo prolungato</option>
                     </NativeSelect>
                   </li>
-                ))}
+                  );
+                })}
                 {items.length === 0 && <p className="px-3 text-sm text-muted-foreground">Nessuna sezione presente.</p>}
               </ul>
             </section>

@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { cattedreOfTeacher, lessonsOfRemovedRows, resolveCattedre, timetableDemand } from "./build-timetable.ts";
+import {
+  cattedreOfTeacher,
+  lessonsOfRemovedRows,
+  missingTeachers,
+  missingText,
+  resolveCattedre,
+  timetableDemand,
+} from "./build-timetable.ts";
 import { buildSeed } from "./seed.ts";
 import { snapshot, useAppStore } from "./store.ts";
 
@@ -9,6 +16,8 @@ const st = () => useAppStore.getState();
 /** L'esempio con le cattedre salvate, come dopo la prima scheda docente. */
 function withCattedre() {
   st().resetDemo();
+  // resetDemo non tocca le cattedre salvate dalla prova precedente
+  st().setCattedre([]);
   st().setCattedre(resolveCattedre(snapshot(st())));
   return snapshot(st());
 }
@@ -46,6 +55,27 @@ describe("materie senza docente", () => {
     assert.equal(after.slots.length, d.slots.length - drop.length);
     assert.ok(!after.slots.some((s) => drop.some((x) => x.id === s.id)));
     assert.ok(timetableDemand(after).unassigned.some((u) => u.classId === goneRow.classId && u.subject === "Inglese"));
+    st().resetDemo();
+  });
+
+  it("Mensa e Laboratorio senza docente: «tempo normale» solo nelle classi senza rientri", () => {
+    const d = withCattedre();
+    const tn = d.classes.find((c) => c.tempo === "TN")!;
+    const tp = d.classes.find((c) => c.tempo === "TP")!;
+    st().setCattedre([
+      ...d.cattedre!,
+      { classId: tn.id, subject: "Laboratorio", hours: 2, teacherId: "" },
+      { classId: tp.id, subject: "Mensa", hours: 1, teacherId: "" },
+    ]);
+    const missing = missingTeachers(snapshot(st()));
+    const lab = missing.find((m) => m.classId === tn.id && m.subject === "Laboratorio");
+    const mensa = missing.find((m) => m.classId === tp.id && m.subject === "Mensa");
+    assert.equal(lab?.tn, true);
+    assert.equal(mensa?.tn, false);
+    assert.equal(missingText(lab!), `${tn.name} Laboratorio 2 h (tempo normale)`);
+    assert.equal(missingText(mensa!), `${tp.name} Mensa 1 h`);
+    // non entrano tra le materie che Costruisci lascia fuori
+    assert.equal(timetableDemand(snapshot(st())).unassigned.length, 0);
     st().resetDemo();
   });
 });

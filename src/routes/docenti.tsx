@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAppStore, snapshot } from "@/lib/store";
 import { teacherName } from "@/lib/coverage";
-import { cattedreOfTeacher, lessonsOfRemovedRows } from "@/lib/build-timetable";
+import { cattedreOfTeacher, lessonsOfRemovedRows, missingTeachers, missingText } from "@/lib/build-timetable";
+import { MissingTeachersBox } from "@/components/missing-teachers";
 import { DAY_SHORT, ROLE_LABELS, ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole, type TimetableSlot } from "@/lib/types";
 import { Plus, Search, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
@@ -43,6 +44,7 @@ function DocentiPage() {
       })
       .sort((a, b) => a.lastName.localeCompare(b.lastName, "it"));
   }, [data.teachers, q]);
+  const missing = missingTeachers(data);
 
   return (
     <div>
@@ -60,6 +62,11 @@ function DocentiPage() {
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-faint" />
         <Input className="pl-9" placeholder="Cerca per cognome o materia" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
+      <MissingTeachersBox
+        className="mb-4"
+        items={missing}
+        note="Il docente si indica nella sua scheda, in «Classi e materie»."
+      />
       <ul className="paper-panel divide-y divide-border rounded-xl md:hidden">
         {list.map((t) => (
           <li key={t.id} className="flex items-start gap-2 py-3 pr-2 pl-4">
@@ -255,6 +262,17 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
     return [...count].map(([k, n]) => (n > 1 ? `${k} (${n} ore)` : k)).join(", ");
   }
 
+  /** Dopo il salvataggio o l'eliminazione: le classi che aveva e che ora restano senza docente. */
+  function warnLeftWithout() {
+    const items = missingTeachers(snapshot(useAppStore.getState())).filter((m) =>
+      initialRows.some((r) => r.classId === m.classId && r.subject === m.subject),
+    );
+    if (!items.length) return;
+    toast.warning(`Restano senza docente: ${items.map(missingText).join(", ")}.`, {
+      description: "Il docente si indica nella sua scheda, in «Classi e materie».",
+    });
+  }
+
   function save() {
     const payload = {
       lastName: lastName.trim(),
@@ -296,6 +314,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
         ? { description: `${drop.length === 1 ? "Tolta 1 lezione" : `Tolte ${drop.length} lezioni`} dall’orario.` }
         : undefined,
     );
+    warnLeftWithout();
     onClose();
   }
 
@@ -488,6 +507,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                 variant="outline"
                 onClick={() => {
                   store.removeTeacher(current.id);
+                  warnLeftWithout();
                   toast.message("Docente rimosso");
                   onClose();
                 }}
