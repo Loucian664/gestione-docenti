@@ -2505,10 +2505,11 @@ export class TimetableSolver {
 
 // ---------- resoconto ----------
 
-export type Issue = { text: string };
-
 /** Un docente o una classe. */
 export type Who = { kind: "teacher" | "class"; id: string; name: string };
+
+/** Una voce del resoconto; nei vincoli rigidi anche di chi è e in quali ore (per mostrarle nella sua settimana). */
+export type Issue = { text: string; who?: Who; cells?: { day: DayOfWeek; periodId: string }[] };
 
 /**
  * Una voce del confronto che riguarda un docente o una classe, in un giorno (`d`, `day`) o nella settimana
@@ -2734,7 +2735,12 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
         let last = M - 1;
         while (last >= 0 && row[last]! < 0) last -= 1;
         for (let m = first + 1; m < last; m++)
-          if (row[m]! < 0) rep.hard.holes.push({ text: `${cname} · ${dayName(d)} ${hourLabel(p.morningPos[m]!)}: classe senza docente` });
+          if (row[m]! < 0)
+            rep.hard.holes.push({
+              text: `${cname} · ${dayName(d)} ${hourLabel(p.morningPos[m]!)}: classe senza docente`,
+              who: cwho,
+              cells: [{ day: p.days[d]!, periodId: p.periods[p.morningPos[m]!]!.id }],
+            });
       }
     }
     if (M >= 2) {
@@ -2826,14 +2832,14 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
           if (lFirst < 0) lFirst = pos;
           lLast = pos;
           const where = `${info.name} · ${dayName(d)} ${hourLabel(pos)}`;
-          if (n > 1) rep.hard.conflicts.push({ text: `${where}: ${n} classi insieme` });
+          const at = (text: string): Issue => ({ text, who: twho, cells: [{ day: p.days[d]!, periodId: p.periods[pos]!.id }] });
+          if (n > 1) rep.hard.conflicts.push(at(`${where}: ${n} classi insieme`));
           if (isM) {
-            if (p.unavail[base + pos] === 1) rep.hard.away.push({ text: `${where}: lezione in un'ora segnata altrove` });
-            if (p.unavail[base + pos] === 2) rep.hard.travel.push({ text: `${where}: senza ora di spostamento dall'altro plesso` });
-            if (p.unavail[base + pos] === 3) rep.hard.no.push({ text: `${where}: lezione in un'ora «no»` });
-            if (p.unavail[base + pos] === 4 && !p.dispYield)
-              rep.hard.away.push({ text: `${where}: lezione in un'ora a disposizione` });
-            if (p.rientro[t * D + d] && p.pIndex[pos]! < 4) rep.hard.rientro.push({ text: `${where}: giorno di rientro, prima della 4ª` });
+            if (p.unavail[base + pos] === 1) rep.hard.away.push(at(`${where}: lezione in un'ora segnata altrove`));
+            if (p.unavail[base + pos] === 2) rep.hard.travel.push(at(`${where}: senza ora di spostamento dall'altro plesso`));
+            if (p.unavail[base + pos] === 3) rep.hard.no.push(at(`${where}: lezione in un'ora «no»`));
+            if (p.unavail[base + pos] === 4 && !p.dispYield) rep.hard.away.push(at(`${where}: lezione in un'ora a disposizione`));
+            if (p.rientro[t * D + d] && p.pIndex[pos]! < 4) rep.hard.rientro.push(at(`${where}: giorno di rientro, prima della 4ª`));
             lessonsM += 1;
           } else afternoon = true;
         }
@@ -2850,9 +2856,11 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       // dayGaps: buche vere; rawGaps: anche quelle dove vanno le disposizioni
       let dayGaps = 0;
       let rawGaps = 0;
+      const rawCells: { day: DayOfWeek; periodId: string }[] = [];
       for (let pos = first + 1; pos < last; pos++) {
         if (!s.isGap(t, d, pos)) continue;
         rawGaps += 1;
+        rawCells.push({ day: p.days[d]!, periodId: p.periods[pos]!.id });
         if (rawGaps <= fillDay[d]!) {
           fillWhere.push(`${dayName(d)} ${hourLabel(pos)}`);
           fillCells.push({ day: p.days[d]!, periodId: p.periods[pos]!.id });
@@ -2866,6 +2874,7 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       // tra due lezioni, ma non buche: ore a disposizione e ore altrove (o di spostamento)
       let middle = 0;
       let middleDisp = 0;
+      const middleCells: { day: DayOfWeek; periodId: string }[] = [];
       for (let pos = lFirst + 1; pos < lLast; pos++) {
         if (s.tOcc[base + pos]! > 0) continue;
         const un = p.unavail[base + pos]!;
@@ -2874,7 +2883,11 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
           rep.notGaps.disp.push({ text: `${where}: a disposizione` });
           middle += 1;
           middleDisp += 1;
-        } else if (s.isGap(t, d, pos)) middle += 1;
+          middleCells.push({ day: p.days[d]!, periodId: p.periods[pos]!.id });
+        } else if (s.isGap(t, d, pos)) {
+          middle += 1;
+          middleCells.push({ day: p.days[d]!, periodId: p.periods[pos]!.id });
+        }
         else if (un === 1) rep.notGaps.away.push({ text: `${where}: altrove (×)` });
         else if (un === 2) rep.notGaps.away.push({ text: `${where}: spostamento tra plessi` });
       }
@@ -2904,15 +2917,23 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       if (info.noGaps && rawGaps > 0)
         rep.hard.longGaps.push({
           text: `${info.name} · ${dayName(d)}: ${rawGaps === 1 ? "1 ora buca" : `${rawGaps} ore buche`}, che il docente non accetta`,
+          who: twho,
+          cells: rawCells,
         });
       else if (!info.allow2 && middle >= 2 && !(span6 && rawGaps > middle))
         rep.hard.longGaps.push({
           text: `${info.name} · ${dayName(d)}: ${middle} ore libere tra le lezioni${
             middleDisp === 0 ? "" : middleDisp === middle ? " (a disposizione)" : ` (${middleDisp} a disposizione)`
           }`,
+          who: twho,
+          cells: middleCells,
         });
       else if (span6 && rawGaps >= 2)
-        rep.hard.longGaps.push({ text: `${info.name} · ${dayName(d)}: dalla 1ª alla 6ª con ${rawGaps} ore senza lezione in mezzo` });
+        rep.hard.longGaps.push({
+          text: `${info.name} · ${dayName(d)}: dalla 1ª alla 6ª con ${rawGaps} ore senza lezione in mezzo`,
+          who: twho,
+          cells: rawCells,
+        });
       if (duties === 1) {
         rep.docenti.single.push({ text: `${info.name} · ${dayName(d)}: una sola ora` });
         fact("single", twho, d, "", 1);
@@ -2934,7 +2955,7 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       if (excess === 0) rep.patterns.ok += 1;
       else {
         const now = perDay.map((n, d) => `${dayName(d)} ${n}`).join(", ");
-        rep.hard.pattern.push({ text: `${info.name}: ${now}; scelte ${patterns.map((x) => patternText(x)).join(" o ")}` });
+        rep.hard.pattern.push({ text: `${info.name}: ${now}; scelte ${patterns.map((x) => patternText(x)).join(" o ")}`, who: twho });
         fact("patterns", twho, -1, "", excess, now);
       }
       rep.patterns.rows.push({ id: info.id, name: info.name, perDay, patterns, fits, excess, missing });
@@ -2943,23 +2964,28 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       rep.gapsByTeacher.push({ id: info.id, name: info.name, gaps, where: gapWhere.join(", "), cells: gapCells, fill: fillCells });
     if (fillCells.length) rep.dispFill.push({ text: `${info.name}: ${fillWhere.join(", ")}` });
     if (info.lessons > 0) lastRows.push({ name: info.name, count: s.lastCount[t]! });
-    const missOf = (list: SlotWish[]) => {
+    const missOf = (list: SlotWish[], cells?: { day: DayOfWeek; periodId: string }[]) => {
       const missing: string[] = [];
       for (const a of list) {
         const ok = a.classes.some((c) => {
           const u = s.grid[c * DM + a.d * M + a.m]!;
           return u >= 0 && p.unitTeacher[u] === t;
         });
-        if (!ok) missing.push(`${dayName(a.d)} ${hourLabel(p.morningPos[a.m]!)}`);
+        if (ok) continue;
+        missing.push(`${dayName(a.d)} ${hourLabel(p.morningPos[a.m]!)}`);
+        cells?.push({ day: p.days[a.d]!, periodId: p.periods[p.morningPos[a.m]!]!.id });
       }
       return missing;
     };
     if (p.must[t]!.length) {
-      const missing = missOf(p.must[t]!);
+      const cells: { day: DayOfWeek; periodId: string }[] = [];
+      const missing = missOf(p.must[t]!, cells);
       const n = missing.length - p.mustOffset[t]!;
       if (n > 0)
         rep.hard.must.push({
           text: `${info.name}: ${n === 1 ? "1 obbligo non rispettato" : `${n} obblighi non rispettati`} (${missing.join(", ")})`,
+          who: twho,
+          cells,
         });
     }
     if (p.cpref[t]!.length) {
