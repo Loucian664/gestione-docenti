@@ -208,6 +208,9 @@ describe("timetable-solver", () => {
     const onLesson = evaluateCurrent(mark({ avoidSlots: [{ day: hit.day, periodId: "p2" }] }));
     assert.equal(onLesson.hard.no.length, 1);
     assert.ok(onLesson.score.hard > 0);
+    assert.equal(onLesson.hard.no[0]!.who?.id, hit.teacherId);
+    assert.deepEqual(onLesson.hard.no[0]!.cells, [{ day: hit.day, periodId: "p2" }]);
+    assert.deepEqual(withAway.hard.travel[0]!.cells, [{ day: hit.day, periodId: "p2" }]);
   });
 
   it("obblighi non rispettati: «1 obbligo non rispettato», «2 obblighi non rispettati»", () => {
@@ -244,6 +247,9 @@ describe("timetable-solver", () => {
     const two = evaluateCurrent(mark(free));
     assert.equal(two.hard.must.length, 1);
     assert.match(two.hard.must[0]!.text, /: 2 obblighi non rispettati \(/);
+    // per il riquadro «Da sistemare»: di chi è e in quali ore
+    assert.deepEqual(two.hard.must[0]!.who, { kind: "teacher", id: hit.teacherId, name: two.hard.must[0]!.who?.name });
+    assert.deepEqual(two.hard.must[0]!.cells, free);
   });
 
   it("materie unite: si spostano insieme, ma nella proposta ogni ora ha la sua materia vera", () => {

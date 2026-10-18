@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, Eraser, Lock, LockOpen, Save, Search, TriangleAlert, Undo2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Eraser, Lock, LockOpen, Save, Search, TriangleAlert, Undo2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -41,6 +41,7 @@ import {
   type FindTarget,
   type FixOption,
   type FixStep,
+  type Issue,
   type MoveEffect,
   type RowKey,
   type SolveMode,
@@ -223,6 +224,14 @@ export function CostruisciOrario({
   const previewData = useMemo(
     () => (previewSlots ? { ...propBase, slots: previewSlots } : null),
     [propBase, previewSlots],
+  );
+  // per le voci «Da sistemare»: la proposta con le ore a disposizione dove finiranno
+  const issueData = useMemo(
+    () =>
+      previewData && result
+        ? withDispSlots(previewData, dispOutcome(propBase, result.slots, result.disp).dispSlots)
+        : null,
+    [previewData, propBase, result],
   );
   // la testata di «Proposta» (fissa in alto) è in vista? Allora la barra di avanzamento sta lì
   const showHeader = Boolean(!edit && previewSlots && previewData && result);
@@ -696,6 +705,7 @@ export function CostruisciOrario({
             proposal={proposalReport}
             mode={openSave ? "edit" : resultMode}
             label={openSave ? `Slot ${openSave.n}` : undefined}
+            data={issueData ?? previewData}
           />
           <div className="mt-4 flex flex-col gap-3">
             <Tabs
@@ -1177,6 +1187,11 @@ function Ritocchi({
   const editor = useMemo(() => new TimetableEditor(draftData), [draftData]);
   const current = useMemo(() => evaluateCurrent(inUse), [inUse]);
   const report = useMemo(() => editor.report(current.lessonsExpected), [editor, current]);
+  // per le voci «Da sistemare»: con le ore a disposizione dove finiranno
+  const issueData = useMemo(
+    () => withDispSlots(draftData, dispOutcome(base, edit.draft, editor.dispChange()).dispSlots),
+    [draftData, base, edit.draft, editor],
+  );
   const tById = useMemo(() => new Map(teachersAll.map((t) => [t.id, t])), [teachersAll]);
   // ore a disposizione spostate nello stesso giorno (per chiudere un’ora buca) rispetto alla partenza
   const dispMoved = useMemo(
@@ -1611,7 +1626,7 @@ function Ritocchi({
       </div>
 
       <div className="xl:col-span-2">
-        <ReportPanel current={current} proposal={report} mode="edit" />
+        <ReportPanel current={current} proposal={report} mode="edit" data={issueData} />
       </div>
 
       <div className="paper-panel mt-3 rounded-xl p-4 sm:p-5">
@@ -3572,11 +3587,162 @@ function ReportDetails({ r }: { r: TimetableReport }) {
   );
 }
 
+function withDispSlots(data: PersistedData, disp: Record<string, Cell[]>): PersistedData {
+  return { ...data, teachers: data.teachers.map((t) => (disp[t.id] ? { ...t, dispSlots: disp[t.id]! } : t)) };
+}
+
+// i vincoli rigidi non rispettati, a gruppi, con parole semplici
+const HARD_GROUPS: { key: keyof TimetableReport["hard"]; title: string }[] = [
+  { key: "conflicts", title: "Docente in due classi alla stessa ora" },
+  { key: "holes", title: "Classe senza docente" },
+  { key: "no", title: "Lezioni in un’ora «no»" },
+  { key: "away", title: "Lezioni in ore segnate altrove o a disposizione" },
+  { key: "travel", title: "Senza l’ora per spostarsi tra i plessi" },
+  { key: "longGaps", title: "Troppe ore libere tra le lezioni" },
+  { key: "rientro", title: "Giorno di rientro" },
+  { key: "must", title: "Obblighi di classe" },
+  { key: "pattern", title: "Ore al giorno diverse da quelle scelte" },
+];
+
+/** Riquadro «Da sistemare»: ogni voce apre la settimana del docente o della classe, con le ore in rosso. */
+function HardIssuesBox({ r, data }: { r: TimetableReport; data: PersistedData }) {
+  const [open, setOpen] = useState<Issue | null>(null);
+  const groups = HARD_GROUPS.map((g) => ({ ...g, items: r.hard[g.key] })).filter((g) => g.items.length > 0);
+  if (!groups.length) return null;
+  return (
+    <div className="mt-3 rounded-lg bg-danger-soft px-3 py-2.5">
+      <p className="text-sm font-medium text-destructive">Da sistemare</p>
+      {groups.map((g) => (
+        <div key={g.key} className="mt-2">
+          <p className="text-[13px] font-medium text-foreground">{g.title}</p>
+          <ul className="mt-0.5">
+            {g.items.map((it, i) => (
+              <li key={`${g.key}-${i}`}>
+                {it.who ? (
+                  <button
+                    type="button"
+                    onClick={() => setOpen(it)}
+                    className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-start gap-1 rounded-md px-1.5 py-1 text-left text-[13px] leading-snug text-muted-foreground hover:bg-card hover:text-foreground"
+                  >
+                    <span className="min-w-0 flex-1">{it.text}</span>
+                    <ChevronRight className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  </button>
+                ) : (
+                  <p className="py-1 text-[13px] leading-snug text-muted-foreground">{it.text}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      <IssueWeekDialog issue={open} data={data} onClose={() => setOpen(null)} />
+    </div>
+  );
+}
+
+/** La settimana del docente o della classe di una voce, solo da guardare: le ore della voce in rosso. */
+function IssueWeekDialog({ issue, data, onClose }: { issue: Issue | null; data: PersistedData; onClose: () => void }) {
+  const who = issue?.who;
+  const days = [...data.settings.days].sort((a, b) => a - b);
+  const mine = who
+    ? data.slots.filter((s) => (who.kind === "teacher" ? s.teacherId === who.id : s.classId === who.id))
+    : [];
+  const cells = issue?.cells ?? [];
+  const isRed = (day: DayOfWeek, periodId: string) => cells.some((c) => c.day === day && c.periodId === periodId);
+  // le ore del mattino, più quelle del pomeriggio dove c’è qualcosa
+  const periods = data.settings.periods
+    .filter((p) => !p.tpOnly || mine.some((s) => s.periodId === p.id) || cells.some((c) => c.periodId === p.id))
+    .sort((a, b) => a.index - b.index);
+  const teacher = who?.kind === "teacher" ? data.teachers.find((t) => t.id === who.id) : undefined;
+  const has = (list: { day: DayOfWeek; periodId: string }[] | undefined, day: DayOfWeek, periodId: string) =>
+    (list ?? []).some((a) => a.day === day && a.periodId === periodId);
+  const empty = (day: DayOfWeek, periodId: string) => {
+    if (!teacher) return "—";
+    if (has(teacher.dispSlots, day, periodId)) return "disp.";
+    if (has(teacher.avoidSlots, day, periodId)) return "no";
+    if (has(teacher.awaySlots, day, periodId)) return "altrove";
+    return "—";
+  };
+  return (
+    <Dialog open={Boolean(issue)} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{who?.name ?? ""}</DialogTitle>
+          <DialogDescription>{issue?.text}</DialogDescription>
+        </DialogHeader>
+        <table className="w-full table-fixed border-collapse text-[11px] leading-tight">
+          <colgroup>
+            <col className="w-10" />
+            {days.map((d) => (
+              <col key={d} />
+            ))}
+          </colgroup>
+          <thead>
+            <tr className="border-b border-border text-left text-[12px] text-muted-foreground">
+              <th className="py-1.5 pr-1 font-medium" />
+              {days.map((d) => (
+                <th key={d} className="px-0.5 py-1.5 font-medium text-foreground">
+                  {DAY_SHORT[d]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {periods.map((p) => (
+              <tr key={p.id} className="border-b border-border last:border-0">
+                <td className="py-1 pr-1 align-top text-[12px] font-medium text-muted-foreground">
+                  {p.label.replace(/ ora$/, "")}
+                </td>
+                {days.map((d) => {
+                  const here = mine.filter((s) => s.day === d && s.periodId === p.id);
+                  const red = isRed(d, p.id);
+                  return (
+                    <td key={d} className="p-0.5 align-top">
+                      <div
+                        className={cn(
+                          "min-h-9 rounded px-1 py-1 break-words",
+                          red ? "bg-danger-soft font-medium text-destructive ring-1 ring-destructive/40" : "",
+                        )}
+                      >
+                        {here.length === 0 ? (
+                          <span className={red ? "" : "text-ink-faint"}>{empty(d, p.id)}</span>
+                        ) : (
+                          here.map((s, i) => {
+                            const t = data.teachers.find((x) => x.id === s.teacherId);
+                            return (
+                              <div key={s.id} className={cn(i > 0 && "mt-1")}>
+                                <div className={red ? "" : "text-foreground"}>
+                                  {who?.kind === "teacher"
+                                    ? (data.classes.find((c) => c.id === s.classId)?.name ?? "")
+                                    : s.subject}
+                                </div>
+                                <div className={red ? "" : "text-muted-foreground"}>
+                                  {who?.kind === "teacher" ? s.subject : t ? teacherShort(t, data.teachers) : ""}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {cells.length > 0 && <p className="mt-3 text-[12px] text-muted-foreground">In rosso le ore da sistemare.</p>}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ReportPanel({
   current,
   proposal,
   mode,
   label: labelProp,
+  data,
 }: {
   current: TimetableReport | null;
   proposal: TimetableReport;
@@ -3584,6 +3750,8 @@ function ReportPanel({
   mode: SolveMode | "edit";
   /** nome della colonna dell'orario nuovo (es. «Slot 3») */
   label?: string;
+  /** l'orario nuovo, per la settimana delle voci «Da sistemare» */
+  data: PersistedData;
 }) {
   const groups = compareGroups(current, proposal);
   const hasCurrent = Boolean(current && current.lessons > 0);
@@ -3680,6 +3848,7 @@ function ReportPanel({
         {proposal.lessonsExpected}
       </p>
       {summary && <p className="mt-1 text-sm font-medium text-foreground">{summary}</p>}
+      <HardIssuesBox r={proposal} data={data} />
       {mode === "edit" ? (
         <details className="mt-3 border-t border-border pt-3">
           <summary className="cursor-pointer text-sm font-medium">Confronto voce per voce</summary>
