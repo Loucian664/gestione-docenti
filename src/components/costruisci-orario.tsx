@@ -12,7 +12,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Tabs } from "@/components/ui/tabs";
 import { useAppStore, snapshot } from "@/lib/store";
 import { SaveSlots, SaveToSlotDialog } from "@/components/save-slots";
-import { MissingTeachersBox } from "@/components/missing-teachers";
+import { MissingTeachersBox, MissingTeachersDialog } from "@/components/missing-teachers";
 import {
   OFFICIAL_COPY_NAME,
   activeSlotOf,
@@ -23,6 +23,7 @@ import {
 } from "@/lib/saved-timetables";
 import {
   isTimetableTeacher,
+  blockingMissing,
   missingTeachers,
   timetableDemand,
   resolveCattedre,
@@ -174,6 +175,9 @@ export function CostruisciOrario({
   const skipped = useMemo(() => data.teachers.filter((t) => !isTimetableTeacher(t)).sort(byName), [data.teachers]);
   const demand = useMemo(() => timetableDemand(data), [data]);
   const missing = useMemo(() => missingTeachers(data), [data]);
+  // le materie che la proposta deve mettere: senza docente, «Proponi» si ferma con una finestra
+  const blocking = blockingMissing(missing);
+  const [missingOpen, setMissingOpen] = useState(false);
   const hoursHere = useMemo(() => teacherHoursHere(data), [data]);
   const cattedre = useMemo(() => resolveCattedre(data), [data]);
   const classOrder = useMemo(
@@ -322,6 +326,10 @@ export function CostruisciOrario({
 
   function propose() {
     if (handleRef.current) return;
+    if (blocking.length > 0) {
+      setMissingOpen(true);
+      return;
+    }
     if (timetableDemand(data).lessons.length === 0) {
       toast.message("Niente da piazzare: inserisci prima docenti, classi e ore in orario.");
       return;
@@ -607,8 +615,13 @@ export function CostruisciOrario({
         <MissingTeachersBox
           className="mt-4"
           items={missing}
-          note="Le ore senza docente restano fuori dalla proposta. Il docente si indica nella sua scheda, in Docenti, o in «Cattedre e ore»."
+          note={
+            blocking.length > 0
+              ? "L’orario si propone quando ogni materia ha il suo docente. Il docente si indica nella sua scheda, in Docenti, o in «Cattedre e ore»."
+              : "Mensa e Laboratorio non entrano nella proposta; il docente si indica comunque nella sua scheda, in Docenti."
+          }
         />
+        {missingOpen && <MissingTeachersDialog items={blocking} onClose={() => setMissingOpen(false)} />}
         <p className="mt-2 text-[13px] text-muted-foreground">
           {mode === "scratch"
             ? "Genera un nuovo orario e poi mette le ore a disposizione nelle ore buche. Nella ricerca le ore buche colmabili con ore a disposizione non vengono conteggiate, ma al massimo una al giorno."

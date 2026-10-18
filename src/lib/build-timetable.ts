@@ -316,6 +316,11 @@ export function missingTeachers(data: PersistedData): MissingTeacher[] {
   return out;
 }
 
+/** Le materie che servono alla proposta: senza Mensa, Laboratorio e righe in classi a tempo normale. */
+export function blockingMissing(items: MissingTeacher[]): MissingTeacher[] {
+  return items.filter((i) => !i.tn && !isRientro(i.subject));
+}
+
 /** «1ª A Religione 1 h», «1ª A Laboratorio 2 h (tempo normale)». */
 export function missingText(m: MissingTeacher): string {
   return `${m.className} ${m.subject} ${m.hours} h${m.tn ? " (tempo normale)" : ""}`;

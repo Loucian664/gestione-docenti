@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  blockingMissing,
   cattedreOfTeacher,
   lessonsOfRemovedRows,
   missingTeachers,
@@ -36,6 +37,8 @@ describe("materie senza docente", () => {
     const missing = timetableDemand(after).unassigned;
     for (const c of mine) assert.ok(missing.some((u) => u.classId === c.classId && u.subject === c.subject));
     assert.ok(!resolveCattedre(after).some((r) => mine.some((c) => c.classId === r.classId && c.subject === r.subject && r.teacherId)));
+    // «Proponi» si ferma: sono materie della proposta
+    assert.equal(blockingMissing(missingTeachers(after)).length, missing.length);
     st().resetDemo();
   });
 
@@ -74,8 +77,9 @@ describe("materie senza docente", () => {
     assert.equal(mensa?.tn, false);
     assert.equal(missingText(lab!), `${tn.name} Laboratorio 2 h (tempo normale)`);
     assert.equal(missingText(mensa!), `${tp.name} Mensa 1 h`);
-    // non entrano tra le materie che Costruisci lascia fuori
+    // non entrano tra le materie che Costruisci lascia fuori e non fermano «Proponi»
     assert.equal(timetableDemand(snapshot(st())).unassigned.length, 0);
+    assert.equal(blockingMissing(missing).length, 0);
     st().resetDemo();
   });
 });
