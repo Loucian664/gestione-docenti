@@ -194,7 +194,8 @@ export function resolveCattedre(data: PersistedData): Cattedra[] {
     for (const row of rows) {
       if (!row.subject) continue;
       const existing = custom.find((c) => c.subject === row.subject);
-      const teacherId = existing?.teacherId || inferTeacherId(data, cls.id, row.subject);
+      // una materia salvata senza docente resta così: il docente si indica a mano
+      const teacherId = existing ? existing.teacherId || "" : inferTeacherId(data, cls.id, row.subject);
       out.push({ classId: cls.id, subject: row.subject, hours: row.hours, teacherId });
     }
   }
@@ -229,6 +230,25 @@ export function applyTeacherCattedre(
     else next.push({ classId: row.classId, subject: row.subject, hours: row.hours, teacherId });
   }
   return next;
+}
+
+/**
+ * Le lezioni del docente nell'orario delle classi tolte dalla sua scheda (righe `before` → `now`): quelle della
+ * materia tolta o, se la classe non c'è più, tutte quelle della classe.
+ */
+export function lessonsOfRemovedRows(
+  data: PersistedData,
+  teacherId: string,
+  before: { classId: string; subject: string }[],
+  now: { classId: string; subject: string }[],
+): TimetableSlot[] {
+  const kept = now.filter((r) => r.classId);
+  const gone = before.filter((r) => !kept.some((n) => n.classId === r.classId && n.subject === r.subject));
+  return data.slots.filter(
+    (s) =>
+      s.teacherId === teacherId &&
+      gone.some((g) => g.classId === s.classId && (g.subject === s.subject || !kept.some((n) => n.classId === s.classId))),
+  );
 }
 
 export function timetableDemand(data: PersistedData): DemandResult {
