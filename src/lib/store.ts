@@ -18,6 +18,7 @@ import { isTimetableTeacher, applyTeacherCattedre } from "./build-timetable";
 import { isTpPeriodId } from "./periods";
 import { OFFICIAL_NAME, activeSlotOf, slotPart, timetableKey, withPart, type TimetablePart } from "./saved-timetables";
 import { todayIso } from "./dates";
+import { isTeacherAbsent } from "./coverage";
 import {
   createDurableStorage,
   noteUserMutation,
@@ -258,8 +259,15 @@ export const useAppStore = create<AppStore>()(
           return id;
         },
 
-        updateAbsence: (id, patch) =>
-          save({ absences: get().absences.map((a) => (a.id === id ? { ...a, ...patch } : a)) }),
+        updateAbsence: (id, patch) => {
+          const before = snapshot(get());
+          const after = { ...before, absences: before.absences.map((a) => (a.id === id ? { ...a, ...patch } : a)) };
+          // accorciando l’assenza (o cambiando docente o ore) le coperture rimaste fuori non contano più nei conteggi
+          const dropped = (s: Substitution) =>
+            isTeacherAbsent(before, s.absentTeacherId, s.date, s.periodId) &&
+            !isTeacherAbsent(after, s.absentTeacherId, s.date, s.periodId);
+          save({ absences: after.absences, substitutions: before.substitutions.filter((s) => !dropped(s)) });
+        },
 
         removeAbsence: (id) => {
           const absences = get().absences;

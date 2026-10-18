@@ -66,4 +66,23 @@ describe("cancellare, importare, tornare all'esempio", () => {
     assert.ok(!cattedreOfTeacher(after, t.id).some((r) => r.classId === gone));
     st().resetDemo();
   });
+
+  it("accorciando un'assenza le coperture dei giorni tolti spariscono, le altre restano", () => {
+    st().resetDemo();
+    const p = st().settings.periods.filter((x) => !x.id.includes("mensa"));
+    st().addAbsence({ teacherId: "t-ing-1", dateFrom: "2026-11-02", dateTo: "2026-11-04", reason: "malattia", notes: "", allDay: true, periodIds: [] });
+    const abs = st().absences.at(-1)!;
+    const base = { periodId: p[0]!.id, classId: st().classes[0]!.id, absentTeacherId: "t-ing-1", substituteId: "t-ing-2", type: "disposizione" as const, activity: "", notes: "", subject: "" };
+    st().saveSubstitution({ ...base, date: "2026-11-02" });
+    st().saveSubstitution({ ...base, date: "2026-11-04" });
+    const count = st().substitutions.length;
+    st().updateAbsence(abs.id, { dateTo: "2026-11-03" });
+    assert.equal(st().substitutions.length, count - 1);
+    assert.ok(st().substitutions.some((s) => s.absentTeacherId === "t-ing-1" && s.date === "2026-11-02"));
+    assert.ok(!st().substitutions.some((s) => s.absentTeacherId === "t-ing-1" && s.date === "2026-11-04"));
+    // cambiare solo il motivo non tocca le coperture
+    st().updateAbsence(abs.id, { reason: "altro" });
+    assert.equal(st().substitutions.length, count - 1);
+    st().resetDemo();
+  });
 });
