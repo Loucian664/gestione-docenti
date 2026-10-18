@@ -40,4 +40,15 @@ describe("cancellare, importare, tornare all'esempio", () => {
     assert.equal(st().slots.length, file.slots.length);
     st().resetDemo();
   });
+
+  it("eliminando un docente le ore che copriva tornano da coprire", () => {
+    st().resetDemo();
+    const sub = st().substitutions.find((s) => s.substituteId);
+    assert.ok(sub);
+    const others = st().substitutions.filter((s) => s.substituteId !== sub.substituteId).length;
+    st().removeTeacher(sub.substituteId!);
+    assert.ok(!st().substitutions.some((s) => s.substituteId === sub.substituteId));
+    assert.equal(st().substitutions.length, others);
+    st().resetDemo();
+  });
 });

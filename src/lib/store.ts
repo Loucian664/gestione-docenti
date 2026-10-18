@@ -210,6 +210,8 @@ export const useAppStore = create<AppStore>()(
             teachers: get().teachers.filter((t) => t.id !== id),
             slots: get().slots.filter((s) => s.teacherId !== id),
             absences: get().absences.filter((a) => a.teacherId !== id),
+            // le ore che copriva tornano da coprire, invece di restare «coperte» senza nessuno
+            substitutions: get().substitutions.filter((s) => s.substituteId !== id),
             cattedre: (get().cattedre ?? []).map((x) =>
               x.teacherId === id ? { ...x, teacherId: "" } : x,
             ),
