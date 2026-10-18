@@ -228,11 +228,11 @@ async function paintExcelGrid(opts: {
   ctx.textBaseline = "alphabetic";
   ctx.fillText(opts.who, pageW / 2, padY + 66);
 
-  function stroke(x: number, y: number, w: number, h: number) {
+  const stroke = (x: number, y: number, w: number, h: number) => {
     ctx.strokeStyle = "#111";
     ctx.lineWidth = 0.7;
     ctx.strokeRect(x, y, w, h);
-  }
+  };
 
   ctx.fillStyle = "#eee8dc";
   ctx.fillRect(x0, headY, tableW, headH);
@@ -632,11 +632,11 @@ export async function orarioWeekJpeg(data: PersistedData): Promise<Blob> {
 
   drawSheetHeading(ctx, data, pageW, padY, "ORARIO SETTIMANALE DELLE LEZIONI");
 
-  function stroke(x: number, y: number, w: number, h: number, width = 0.7) {
+  const stroke = (x: number, y: number, w: number, h: number, width = 0.7) => {
     ctx.strokeStyle = "#111";
     ctx.lineWidth = width;
     ctx.strokeRect(x, y, w, h);
-  }
+  };
 
   ctx.fillStyle = "#eee8dc";
   ctx.fillRect(x0, headY, tableW, headH);
@@ -912,11 +912,11 @@ export async function orarioScuolaJpeg(data: PersistedData, withTeachers: boolea
   let y = pad + titleH;
   const x0 = pad;
 
-  function strokeRect(x: number, yy: number, w: number, h: number) {
+  const strokeRect = (x: number, yy: number, w: number, h: number) => {
     ctx.strokeStyle = "#111";
     ctx.lineWidth = 0.8;
     ctx.strokeRect(x, yy, w, h);
-  }
+  };
 
   ctx.font = "700 10px 'Source Sans 3', system-ui, sans-serif";
   ctx.fillStyle = "#111";
