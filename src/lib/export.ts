@@ -1,4 +1,4 @@
-import { eachIsoInRange, formatDayMonth, formatDayName, formatItDate, formatItFileDate, formatLong, isWeekend, toSchoolDay } from "./dates";
+import { eachIsoInRange, formatDayMonth, formatDayName, formatItDate, formatItFileDate, formatLong, isWeekend, toSchoolDay, todayIso } from "./dates";
 import { coverageNeeds, isCovered, isShiftType, classShifts, eccedenteLines, teacherName, teacherSurname, absencesByReason, absencesOnDate, type CoverageNeed, type ClassShift } from "./coverage";
 import type { PersistedData, SubstitutionType } from "./types";
 import { ABSENCE_REASONS, SUBSTITUTION_TYPES } from "./types";
@@ -552,7 +552,15 @@ export function parseBackupJson(raw: string): PersistedData {
   if (!data.settings || !Array.isArray(data.teachers) || !Array.isArray(data.classes)) {
     throw new Error("file non valido");
   }
-  return data;
+  // i backup molto vecchi o scritti a mano possono non avere tutte le liste: senza, le pagine si fermerebbero
+  const list = <T,>(v: T[] | undefined) => (Array.isArray(v) ? v : []);
+  return {
+    ...data,
+    slots: list(data.slots),
+    absences: list(data.absences),
+    substitutions: list(data.substitutions),
+    selectedDate: data.selectedDate || todayIso(),
+  };
 }
 
 export async function docentiPdfZip(data: PersistedData): Promise<File> {
