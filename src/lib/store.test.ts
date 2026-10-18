@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { resolveCattedre } from "./build-timetable.ts";
+import { cattedreOfTeacher, resolveCattedre } from "./build-timetable.ts";
 import { buildSeed } from "./seed.ts";
 import { snapshot, useAppStore } from "./store.ts";
 
@@ -49,6 +49,21 @@ describe("cancellare, importare, tornare all'esempio", () => {
     st().removeTeacher(sub.substituteId!);
     assert.ok(!st().substitutions.some((s) => s.substituteId === sub.substituteId));
     assert.equal(st().substitutions.length, others);
+    st().resetDemo();
+  });
+
+  it("eliminando una classe spariscono anche le righe della scheda docente di quella classe", () => {
+    withWork();
+    const d = snapshot(st());
+    const t = d.teachers.find((x) => cattedreOfTeacher(d, x.id).length > 1)!;
+    const rows = cattedreOfTeacher(d, t.id);
+    const { id: _id, ...patch } = t;
+    st().saveTeacherCard(t.id, patch, rows);
+    const gone = rows[0]!.classId;
+    st().removeClass(gone);
+    const after = snapshot(st());
+    assert.ok(!after.teachers.find((x) => x.id === t.id)!.cardRows!.some((r) => r.classId === gone));
+    assert.ok(!cattedreOfTeacher(after, t.id).some((r) => r.classId === gone));
     st().resetDemo();
   });
 });
