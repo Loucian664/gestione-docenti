@@ -225,6 +225,11 @@ export const useAppStore = create<AppStore>()(
         removeClass: (id) =>
           save({
             classes: get().classes.filter((c) => c.id !== id),
+            teachers: get().teachers.map((t) =>
+              t.cardRows?.some((r) => r.classId === id)
+                ? { ...t, cardRows: t.cardRows.filter((r) => r.classId !== id) }
+                : t,
+            ),
             slots: get().slots.filter((s) => s.classId !== id),
             cattedre: (get().cattedre ?? []).filter((x) => x.classId !== id),
           }),
