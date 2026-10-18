@@ -9,13 +9,12 @@ import {
   absencesByReason,
   eccedenteLines,
   teacherDayWindow,
-  teacherName,
   teacherShort,
   teacherSurname,
   teacherSlotAt,
 } from "./coverage";
 import { formatItDate, formatLong } from "./dates";
-import { ABSENCE_REASONS, dayNameUpper, DAY_SHORT, SUBSTITUTION_TYPES, type DayOfWeek, type PersistedData } from "./types";
+import { ABSENCE_REASONS, dayNameUpper, SUBSTITUTION_TYPES, type DayOfWeek, type PersistedData } from "./types";
 import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePeriods } from "./periods";
 import { teacherSheetName } from "./teacher-print";
 import { classCellLesson, sideMark } from "./class-grid";

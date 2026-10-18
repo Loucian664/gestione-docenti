@@ -11,14 +11,12 @@ export const PERSIST_VERSION = 7;
 let writesEnabled = false;
 let userMutated = false;
 let mutationGen = 0;
-let hydrated = false;
 
 export function enablePersistWrites(): void {
   writesEnabled = true;
 }
 
 export function markHydrated(): void {
-  hydrated = true;
   writesEnabled = true;
 }
 
@@ -31,7 +29,6 @@ export function noteUserMutation(): void {
   userMutated = true;
   mutationGen += 1;
   writesEnabled = true;
-  hydrated = true;
 }
 
 export function didUserMutate(): boolean {
