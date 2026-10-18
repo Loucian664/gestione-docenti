@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { cattedreOfTeacher, resolveCattedre } from "./build-timetable.ts";
+import { parseBackupJson } from "./export.ts";
 import { buildSeed } from "./seed.ts";
 import { snapshot, useAppStore } from "./store.ts";
 
@@ -83,6 +84,14 @@ describe("cancellare, importare, tornare all'esempio", () => {
     // cambiare solo il motivo non tocca le coperture
     st().updateAbsence(abs.id, { reason: "altro" });
     assert.equal(st().substitutions.length, count - 1);
+    st().resetDemo();
+  });
+
+  it("un backup senza orario, assenze e coperture si apre con le liste vuote", () => {
+    const { slots: _s, absences: _a, substitutions: _u, selectedDate: _d, ...file } = buildSeed();
+    st().importData(parseBackupJson(JSON.stringify(file)), "a-mano.json");
+    assert.deepEqual([st().slots, st().absences, st().substitutions], [[], [], []]);
+    assert.match(st().selectedDate, /^\d{4}-\d{2}-\d{2}$/);
     st().resetDemo();
   });
 });
