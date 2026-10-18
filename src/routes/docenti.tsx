@@ -525,8 +525,9 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                 variant="outline"
                 onClick={() => {
                   store.removeTeacher(current.id);
-                  warnLeftWithout();
                   toast.message("Docente rimosso");
+                  // dopo, così l'avviso resta in primo piano
+                  warnLeftWithout();
                   onClose();
                 }}
               >
