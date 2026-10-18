@@ -210,6 +210,42 @@ describe("timetable-solver", () => {
     assert.ok(onLesson.score.hard > 0);
   });
 
+  it("obblighi non rispettati: «1 obbligo non rispettato», «2 obblighi non rispettati»", () => {
+    const data = buildSeed();
+    const res = solveTimetable(data, { timeMs: 1200, seed: 12 });
+    const applied = withSlots(data, res);
+    const morning = ["p1", "p2", "p3", "p4", "p5"];
+    // un docente con almeno 2 ore in una classe e 2 ore del mattino libere
+    const hit = res.slots.find((s) => res.slots.filter((x) => x.teacherId === s.teacherId && x.classId === s.classId).length >= 2);
+    assert.ok(hit, "un docente con 2 ore nella stessa classe");
+    const busy = new Set(applied.slots.filter((s) => s.teacherId === hit.teacherId).map((s) => `${s.day}|${s.periodId}`));
+    const free = applied.settings.days
+      .flatMap((day) => morning.map((periodId) => ({ day, periodId })))
+      .filter((c) => !busy.has(`${c.day}|${c.periodId}`))
+      .slice(0, 2);
+    assert.equal(free.length, 2);
+    const mark = (cells: typeof free): PersistedData => ({
+      ...applied,
+      teachers: applied.teachers.map((x) =>
+        x.id === hit.teacherId
+          ? {
+              ...x,
+              awaySlots: [],
+              avoidSlots: [],
+              rientroDays: [],
+              mustSlots: cells.map((c) => ({ ...c, classIds: [hit.classId], level: "obbligo" as const })),
+            }
+          : x,
+      ),
+    });
+    const one = evaluateCurrent(mark(free.slice(0, 1)));
+    assert.equal(one.hard.must.length, 1);
+    assert.match(one.hard.must[0]!.text, /: 1 obbligo non rispettato \(/);
+    const two = evaluateCurrent(mark(free));
+    assert.equal(two.hard.must.length, 1);
+    assert.match(two.hard.must[0]!.text, /: 2 obblighi non rispettati \(/);
+  });
+
   it("materie unite: si spostano insieme, ma nella proposta ogni ora ha la sua materia vera", () => {
     const data = buildSeed();
     const rows = timetableDemand(data).lessons;

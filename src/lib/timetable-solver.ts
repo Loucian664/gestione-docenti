@@ -2956,8 +2956,11 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
     };
     if (p.must[t]!.length) {
       const missing = missOf(p.must[t]!);
-      if (missing.length > p.mustOffset[t]!)
-        rep.hard.must.push({ text: `${info.name}: ${missing.length - p.mustOffset[t]!} obblighi non rispettati (${missing.join(", ")})` });
+      const n = missing.length - p.mustOffset[t]!;
+      if (n > 0)
+        rep.hard.must.push({
+          text: `${info.name}: ${n === 1 ? "1 obbligo non rispettato" : `${n} obblighi non rispettati`} (${missing.join(", ")})`,
+        });
     }
     if (p.cpref[t]!.length) {
       const missing = missOf(p.cpref[t]!);
