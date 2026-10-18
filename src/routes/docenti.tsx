@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAppStore, snapshot } from "@/lib/store";
 import { teacherName } from "@/lib/coverage";
-import { cattedreOfTeacher, lessonsOfRemovedRows, missingTeachers, missingText } from "@/lib/build-timetable";
+import { cattedreOfTeacher, isRientro, lessonsOfRemovedRows, missingTeachers, missingText } from "@/lib/build-timetable";
 import { MissingTeachersBox } from "@/components/missing-teachers";
 import { DAY_SHORT, ROLE_LABELS, ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole, type TimetableSlot } from "@/lib/types";
 import { Plus, Search, LayoutGrid } from "lucide-react";
@@ -241,11 +241,21 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
     setRows((all) => [
       ...all,
       {
-        classId: data.classes[0]?.id ?? "",
+        classId: isRientro(subject) ? tpClassFor(all) : (data.classes[0]?.id ?? ""),
         subject: subject ?? subjects.split(",")[0]?.trim() ?? "",
         hours: "1",
       },
     ]);
+  }
+
+  /**
+   * «+ Mensa» e «+ Laboratorio»: una classe a tempo prolungato, quella delle sue righe se c'è, altrimenti la prima;
+   * senza classi a tempo prolungato la classe resta da scegliere.
+   */
+  function tpClassFor(all: typeof rows): string {
+    const tp = data.classes.filter((c) => c.tempo === "TP").sort((a, b) => a.name.localeCompare(b.name, "it"));
+    const used = tp.find((c) => all.some((r) => r.classId === c.id));
+    return (used ?? tp[0])?.id ?? "";
   }
 
   /** Le sue lezioni nell'orario delle classi tolte dalla scheda: salvando escono dall'orario. */
@@ -397,7 +407,8 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             </p>
             <div className="mt-2 flex flex-col gap-2">
               {rows.map((row, i) => (
-                <div key={i} className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.15fr)_3.75rem_2rem] items-center gap-1.5">
+                <Fragment key={i}>
+                <div className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.15fr)_3.75rem_2rem] items-center gap-1.5">
                   <NativeSelect
                     value={row.classId}
                     onChange={(e) =>
@@ -462,6 +473,13 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                     ×
                   </button>
                 </div>
+                {isRientro(row.subject) && data.classes.find((c) => c.id === row.classId)?.tempo === "TN" && (
+                  <p className="-mt-1 text-[12px] text-warning">
+                    {data.classes.find((c) => c.id === row.classId)?.name} è a tempo normale: {row.subject} vale solo per
+                    le classi a tempo prolungato.
+                  </p>
+                )}
+                </Fragment>
               ))}
               {(() => {
                 const gone = lessonsGone();
