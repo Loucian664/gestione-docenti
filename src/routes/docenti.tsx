@@ -10,8 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAppStore, snapshot } from "@/lib/store";
 import { teacherName } from "@/lib/coverage";
-import { cattedreOfTeacher } from "@/lib/build-timetable";
-import { DAY_SHORT, ROLE_LABELS, ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole } from "@/lib/types";
+import { cattedreOfTeacher, lessonsOfRemovedRows } from "@/lib/build-timetable";
+import { DAY_SHORT, ROLE_LABELS, ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole, type TimetableSlot } from "@/lib/types";
 import { Plus, Search, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -218,7 +218,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
     current?.dispSlots ?? [],
   );
   const data = snapshot(store);
-  const [rows, setRows] = useState(() =>
+  const [initialRows] = useState(() =>
     current
       ? cattedreOfTeacher(data, current.id).map((c) => ({
           classId: c.classId,
@@ -227,6 +227,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
         }))
       : [] as { classId: string; subject: string; hours: string }[],
   );
+  const [rows, setRows] = useState(initialRows);
   const assignedHours = rows.reduce((n, r) => n + (Number(r.hours) || 0), 0);
 
   function addRow(subject?: string) {
@@ -238,6 +239,20 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
         hours: "1",
       },
     ]);
+  }
+
+  /** Le sue lezioni nell'orario delle classi tolte dalla scheda: salvando escono dall'orario. */
+  function lessonsGone(): TimetableSlot[] {
+    if (!current || role === "potenziamento") return [];
+    return lessonsOfRemovedRows(data, current.id, initialRows, rows);
+  }
+  function lessonsText(list: TimetableSlot[]): string {
+    const count = new Map<string, number>();
+    for (const s of list) {
+      const key = `${data.classes.find((c) => c.id === s.classId)?.name ?? "classe"} ${s.subject}`;
+      count.set(key, (count.get(key) ?? 0) + 1);
+    }
+    return [...count].map(([k, n]) => (n > 1 ? `${k} (${n} ore)` : k)).join(", ");
   }
 
   function save() {
@@ -269,13 +284,17 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             .map((r) => ({ classId: r.classId, subject: r.subject.trim(), hours: Number(r.hours) || 0 }))
             .filter((r) => r.classId && r.subject && r.hours > 0);
     payload.subjects = [...new Set([...payload.subjects, ...parsed.map((r) => r.subject)])];
-    store.saveTeacherCard(isNew ? null : current!.id, payload, parsed);
+    const drop = lessonsGone().map((s) => s.id);
+    store.saveTeacherCard(isNew ? null : current!.id, payload, parsed, drop);
     toast.success(
       payload.role === "potenziamento"
         ? "Docente salvato. Nelle ore in sede è disponibile per le sostituzioni."
         : payload.role === "sostegno"
           ? "Docente salvato. Ora inserisci le sue ore in Orario → Docente."
           : "Docente salvato",
+      drop.length
+        ? { description: `${drop.length === 1 ? "Tolta 1 lezione" : `Tolte ${drop.length} lezioni`} dall’orario.` }
+        : undefined,
     );
     onClose();
   }
@@ -425,6 +444,16 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
                   </button>
                 </div>
               ))}
+              {(() => {
+                const gone = lessonsGone();
+                if (!gone.length) return null;
+                return (
+                  <p className="rounded-md bg-warning-soft px-2.5 py-2 text-[12px] leading-snug">
+                    Nell’orario restano {gone.length === 1 ? "1 sua lezione" : `${gone.length} sue lezioni`} delle classi
+                    tolte: {lessonsText(gone)}. Salvando escono dall’orario.
+                  </p>
+                );
+              })()}
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" onClick={() => addRow()}>
                   Aggiungi classe

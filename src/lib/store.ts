@@ -49,10 +49,12 @@ type Actions = {
   updateSettings: (patch: Partial<Settings>) => void;
   addTeacher: (t: Omit<Teacher, "id">) => string;
   updateTeacher: (id: string, patch: Partial<Teacher>) => void;
+  /** `drop`: lezioni del docente da togliere dall'orario (classi tolte dalla scheda). */
   saveTeacherCard: (
     id: string | null,
     patch: Omit<Teacher, "id">,
     rows: { classId: string; subject: string; hours: number }[],
+    drop?: string[],
   ) => string;
   removeTeacher: (id: string) => void;
   addClass: (c: Omit<SchoolClass, "id">) => void;
@@ -173,14 +175,17 @@ export const useAppStore = create<AppStore>()(
           id: string | null,
           patch: Omit<Teacher, "id">,
           rows: { classId: string; subject: string; hours: number }[],
+          drop?: string[],
         ) => {
           const teacherId = id ?? uid("t");
           const nextPatch = { ...patch, cardRows: rows };
           const teachers = id
             ? get().teachers.map((t) => (t.id === id ? { ...t, ...nextPatch } : t))
             : [...get().teachers, { ...nextPatch, id: teacherId }];
-          const cattedre = applyTeacherCattedre({ ...snapshot(get()), teachers }, teacherId, rows);
-          save({ teachers, cattedre });
+          const gone = new Set(drop ?? []);
+          const slots = gone.size ? get().slots.filter((s) => !gone.has(s.id)) : get().slots;
+          const cattedre = applyTeacherCattedre({ ...snapshot(get()), teachers, slots }, teacherId, rows);
+          save({ teachers, slots, cattedre });
           return teacherId;
         },
 
