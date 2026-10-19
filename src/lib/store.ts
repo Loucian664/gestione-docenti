@@ -58,6 +58,7 @@ type Actions = {
     rows: { classId: string; subject: string; hours: number }[],
     drop?: string[],
   ) => string;
+  /** Anche chi non è più in servizio: toglie le sue ore in orario, le sue assenze e le ore che ha coperto. */
   removeTeacher: (id: string) => void;
   /** Un'altra persona al posto del docente dal giorno indicato (vedi `replaceTeacher`). */
   replaceTeacher: (id: string, name: { lastName: string; firstName: string }, fromDate: string) => boolean;
@@ -214,6 +215,7 @@ export const useAppStore = create<AppStore>()(
         removeTeacher: (id) =>
           save({
             teachers: get().teachers.filter((t) => t.id !== id),
+            formerTeachers: (get().formerTeachers ?? []).filter((t) => t.id !== id),
             slots: get().slots.filter((s) => s.teacherId !== id),
             absences: get().absences.filter((a) => a.teacherId !== id),
             // le ore che copriva tornano da coprire, invece di restare «coperte» senza nessuno

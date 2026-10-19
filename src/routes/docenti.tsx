@@ -13,12 +13,12 @@ import { teacherName } from "@/lib/coverage";
 import { cattedreOfTeacher, isRientro, lessonsOfRemovedRows, missingTeachers, missingText } from "@/lib/build-timetable";
 import { MissingTeachersBox } from "@/components/missing-teachers";
 import { DAY_SHORT, ROLE_LABELS, ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole, type TimetableSlot } from "@/lib/types";
-import { Plus, Search, LayoutGrid, UserRoundPen } from "lucide-react";
+import { Plus, Search, LayoutGrid, Trash2, UserRoundPen } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { corePeriods } from "@/lib/periods";
 import { formatItDate, isoDate } from "@/lib/dates";
-import { teacherHistory } from "@/lib/replace-teacher";
+import { removalImpact, teacherHistory } from "@/lib/replace-teacher";
 import {
   TEACHER_PALETTE,
   TONE_NAMES,
@@ -178,6 +178,7 @@ function DocentiPage() {
 
 /** Chi non è più in servizio: resta per le assenze e le sostituzioni già segnate e per il report. */
 function FormerTeachers({ data }: { data: ReturnType<typeof snapshot> }) {
+  const [removing, setRemoving] = useState<Teacher | null>(null);
   const list = (data.formerTeachers ?? []).slice().sort((a, b) => a.lastName.localeCompare(b.lastName, "it"));
   if (!list.length) return null;
   return (
@@ -187,12 +188,18 @@ function FormerTeachers({ data }: { data: ReturnType<typeof snapshot> }) {
         {list.map((t) => {
           const next = data.teachers.find((x) => x.id === t.replacedBy);
           return (
-            <li key={t.id} className="px-4 py-2.5">
-              <span className="font-medium">{teacherName(t)}</span>
-              <span className="block text-[13px] text-muted-foreground">
-                {t.leftOn ? `Non più in servizio dal ${formatItDate(t.leftOn)}` : "Non più in servizio"}
-                {next ? ` · al suo posto ${teacherName(next)}` : ""}
-              </span>
+            <li key={t.id} className="flex items-center gap-2 py-2.5 pr-2 pl-4">
+              <div className="min-w-0 flex-1">
+                <span className="font-medium">{teacherName(t)}</span>
+                <span className="block text-[13px] text-muted-foreground">
+                  {t.leftOn ? `Non più in servizio dal ${formatItDate(t.leftOn)}` : "Non più in servizio"}
+                  {next ? ` · al suo posto ${teacherName(next)}` : ""}
+                </span>
+              </div>
+              <Button size="sm" variant="ghost" className="shrink-0" onClick={() => setRemoving(t)}>
+                <Trash2 />
+                Elimina
+              </Button>
             </li>
           );
         })}
@@ -201,7 +208,98 @@ function FormerTeachers({ data }: { data: ReturnType<typeof snapshot> }) {
         Restano qui per le assenze e le sostituzioni già segnate e per il report. Non compaiono in Oggi, in Costruisci né
         tra i sostituti.
       </p>
+      {removing && (
+        <RemoveTeacherDialog
+          teacher={removing}
+          onCancel={() => setRemoving(null)}
+          onRemoved={() => setRemoving(null)}
+        />
+      )}
     </details>
+  );
+}
+
+/** «Elimina»: prima di cancellare dice cosa si perde, voce per voce. */
+function RemoveTeacherDialog({
+  teacher,
+  onCancel,
+  onRemoved,
+}: {
+  teacher: Teacher;
+  onCancel: () => void;
+  onRemoved: () => void;
+}) {
+  const store = useAppStore();
+  const name = teacherName(teacher);
+  const inService = store.teachers.some((t) => t.id === teacher.id);
+  const n = removalImpact(snapshot(store), teacher.id);
+  const items = [
+    n.lessons === 1
+      ? "La sua ora in orario esce dall’orario: la classe resta senza docente in quell’ora."
+      : n.lessons > 1
+        ? `Le sue ${n.lessons} ore in orario escono dall’orario: le classi restano senza docente in quelle ore.`
+        : "",
+    n.absences === 1
+      ? "Si cancella la sua assenza: non compare più in Assenze né nel report."
+      : n.absences > 1
+        ? `Si cancellano le sue ${n.absences} assenze: non compaiono più in Assenze né nel report.`
+        : "",
+    n.coveredByThem === 1
+      ? "L’ora che ha coperto per un collega torna «da coprire» nel giorno in cui l’ha fatta e non conta più nel report."
+      : n.coveredByThem > 1
+        ? `Le ${n.coveredByThem} ore che ha coperto per i colleghi tornano «da coprire» nei giorni in cui le ha fatte e non contano più nel report.`
+        : "",
+    n.coveredForThem === 1
+      ? "L’ora che un collega ha coperto durante una sua assenza resta nel report di chi l’ha coperta."
+      : n.coveredForThem > 1
+        ? `Le ${n.coveredForThem} ore che i colleghi hanno coperto durante le sue assenze restano nel report di chi le ha coperte.`
+        : "",
+  ].filter(Boolean);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Eliminare {name}?</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 text-sm">
+          <p>
+            {name} esce {inService ? "dall’elenco dei docenti" : "dall’elenco «Non più in servizio»"}.
+            {items.length ? " Inoltre:" : " Non ha ore in orario, assenze né sostituzioni segnate."}
+          </p>
+          {items.length > 0 && (
+            <ul className="grid list-disc gap-1.5 pl-5">
+              {items.map((x) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ul>
+          )}
+          {inService && n.absences + n.coveredByThem + n.coveredForThem > 0 && (
+            <p className="rounded-md bg-muted px-2.5 py-2 text-[12px] leading-snug">
+              Se al suo posto arriva un’altra persona, usa invece «Sostituisci docente»: assenze e sostituzioni già
+              segnate restano nel report.
+            </p>
+          )}
+          <p className="text-[12px] text-muted-foreground">
+            Non si può annullare. Per conservarne una copia, prima esporta il backup in Impostazioni.
+          </p>
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+            <Button variant="outline" onClick={onCancel}>
+              Annulla
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                store.removeTeacher(teacher.id);
+                toast.message("Docente eliminato");
+                onRemoved();
+              }}
+            >
+              Elimina
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -277,8 +375,9 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
       : [] as { classId: string; subject: string; hours: string }[],
   );
   const [rows, setRows] = useState(initialRows);
-  // «card» la scheda; «rename» l'avviso sul nome cambiato; «replace» arriva un'altra persona al suo posto
-  const [step, setStep] = useState<"card" | "rename" | "replace">("card");
+  // «card» la scheda; «rename» l'avviso sul nome cambiato; «replace» arriva un'altra persona al suo posto;
+  // «remove» l'avviso prima di eliminare
+  const [step, setStep] = useState<"card" | "rename" | "replace" | "remove">("card");
   const [newName, setNewName] = useState({ lastName: "", firstName: "" });
   const [fromDate, setFromDate] = useState(() => isoDate(new Date()));
   const history = current ? teacherHistory(data, current.id) : { absences: 0, substitutions: 0 };
@@ -411,6 +510,20 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
     });
     warnLeftWithout();
     onClose();
+  }
+
+  if (current && step === "remove") {
+    return (
+      <RemoveTeacherDialog
+        teacher={current}
+        onCancel={() => setStep("card")}
+        onRemoved={() => {
+          // dopo, così l'avviso resta in primo piano
+          warnLeftWithout();
+          onClose();
+        }}
+      />
+    );
   }
 
   if (current && step === "rename") {
@@ -709,16 +822,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
           </p>
           <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-popover pt-3">
             {!isNew && current && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  store.removeTeacher(current.id);
-                  toast.message("Docente rimosso");
-                  // dopo, così l'avviso resta in primo piano
-                  warnLeftWithout();
-                  onClose();
-                }}
-              >
+              <Button variant="outline" onClick={() => setStep("remove")}>
                 Elimina
               </Button>
             )}
