@@ -113,9 +113,29 @@ describe("nuovo anno scolastico", () => {
     assert.deepEqual(after.cattedre, before.cattedre);
     assert.deepEqual(after.savedTimetables, before.savedTimetables);
     assert.equal(after.origin, "user");
-    // senza anno scritto resta quello di prima
+    // l'anno finito è in archivio, con le sue assenze e sostituzioni
+    assert.equal(after.archivedYears?.length, 1);
+    assert.equal(after.archivedYears![0]!.schoolYear, before.settings.schoolYear.trim());
+    assert.deepEqual(after.archivedYears![0]!.data.absences, before.absences);
+    assert.deepEqual(after.archivedYears![0]!.data.substitutions, before.substitutions);
+    // senza anno scritto resta quello di prima; senza assenze né sostituzioni non si archivia niente
     st().startNewSchoolYear("  ");
     assert.equal(st().settings.schoolYear, "2027/2028");
+    assert.equal(st().archivedYears?.length, 1);
+    st().resetDemo();
+    assert.equal(st().archivedYears?.length ?? 0, 0);
+  });
+
+  it("un anno in archivio si elimina senza toccare l'anno in corso; il backup lo porta con sé", () => {
+    withWork();
+    st().startNewSchoolYear("2027/2028");
+    const id = st().archivedYears![0]!.id;
+    const file = parseBackupJson(JSON.stringify(snapshot(st())));
+    st().removeArchivedYear(id);
+    assert.equal(st().archivedYears?.length, 0);
+    assert.equal(st().settings.schoolYear, "2027/2028");
+    st().importData(file, "backup.json");
+    assert.equal(st().archivedYears?.[0]?.id, id);
     st().resetDemo();
   });
 });

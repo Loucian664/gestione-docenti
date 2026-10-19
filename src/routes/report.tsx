@@ -4,11 +4,13 @@ import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { useAppStore, snapshot } from "@/lib/store";
 import { officialData } from "@/lib/saved-timetables";
 import { withFormerTeachers } from "@/lib/replace-teacher";
 import { loadByTeacher, absencesByReason, eccedenteLines, teacherShort } from "@/lib/coverage";
-import { formatItDate, monthRange, schoolYearRange } from "@/lib/dates";
+import { formatItDate, isoDate, monthRange, schoolYearRange } from "@/lib/dates";
+import { archivedYearData, archivedYearLabels } from "@/lib/school-years";
 import { reportXlsx, eccedenteXlsx, eccedentePdf, schoolFileTag } from "@/lib/export";
 import { shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
@@ -21,11 +23,24 @@ export const Route = createFileRoute("/report")({ component: ReportPage });
 
 function ReportPage() {
   const store = useAppStore();
+  const archived = store.archivedYears ?? [];
+  const yearLabels = archivedYearLabels(archived);
+  // "" = l'anno in corso; altrimenti un anno in archivio, così com'era (solo da consultare)
+  const [yearId, setYearId] = useState("");
+  const year = archived.find((y) => y.id === yearId);
   // le sostituzioni fatte riguardano l'orario in vigore (slot 0); nei conteggi anche chi non è più in servizio
-  const data = withFormerTeachers(officialData(snapshot(store)));
+  const data = year ? archivedYearData(year) : withFormerTeachers(officialData(snapshot(store)));
   const initial = monthRange(data.selectedDate);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
+
+  function chooseYear(id: string) {
+    const next = archived.find((y) => y.id === id);
+    const range = next ? schoolYearRange(next.schoolYear, archivedYearData(next).selectedDate) : monthRange(store.selectedDate);
+    setYearId(next ? id : "");
+    setFrom(range.from);
+    setTo(range.to);
+  }
 
   const loads = useMemo(() => loadByTeacher(data, from, to), [data, from, to]);
   const absenceRows = useMemo(
@@ -147,6 +162,19 @@ function ReportPage() {
       />
 
       <div className="mb-5 flex min-w-0 flex-wrap items-end gap-3">
+        {archived.length > 0 && (
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <Label htmlFor="year">Anno scolastico</Label>
+            <NativeSelect id="year" className="w-48" value={yearId} onChange={(e) => chooseYear(e.target.value)}>
+              <option value="">{store.settings.schoolYear} (in corso)</option>
+              {[...archived].reverse().map((y) => (
+                <option key={y.id} value={y.id}>
+                  {yearLabels.get(y.id)}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+        )}
         <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="from">Dal</Label>
           <Input id="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -156,6 +184,13 @@ function ReportPage() {
           <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
       </div>
+
+      {year && (
+        <p className="mb-5 rounded-md bg-muted px-3 py-2 text-[13px] leading-snug">
+          Anno in archivio dal {formatItDate(isoDate(new Date(year.archivedAt)))}: docenti, classi e orario sono quelli di
+          allora. Si consulta e si esporta, non si modifica.
+        </p>
+      )}
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MiniStat label="Ore coperte" value={totals.total} />

@@ -20,6 +20,7 @@ import { OFFICIAL_NAME, activeSlotOf, slotPart, timetableKey, withPart, type Tim
 import { todayIso } from "./dates";
 import { isTeacherAbsent } from "./coverage";
 import { replaceTeacher } from "./replace-teacher";
+import { startNewSchoolYear } from "./school-years";
 import {
   createDurableStorage,
   noteUserMutation,
@@ -96,10 +97,11 @@ type Actions = {
   setCattedre: (cattedre: Cattedra[]) => void;
   importData: (data: PersistedData, fileName?: string) => void;
   /**
-   * Nuovo anno scolastico: via assenze, sostituzioni e chi non è più in servizio; restano docenti, classi,
-   * orario (anche gli slot) e impostazioni, con l’anno scolastico nuovo.
+   * Nuovo anno scolastico: l’anno in corso va in archivio; assenze, sostituzioni e chi non è più in servizio
+   * ripartono da zero; restano docenti, classi, orario (anche gli slot) e impostazioni, con l’anno nuovo.
    */
   startNewSchoolYear: (schoolYear: string) => void;
+  removeArchivedYear: (id: string) => void;
   resetDemo: () => void;
   clearAll: () => void;
 };
@@ -125,6 +127,7 @@ export function snapshot(state: AppStore): PersistedData {
     savedAt: state.savedAt,
     origin: state.origin,
     importedBackupName: state.importedBackupName,
+    archivedYears: state.archivedYears,
   };
 }
 
@@ -161,6 +164,7 @@ function wholeData(data: PersistedData): PersistedData {
     savedTimetables: data.savedTimetables ?? [],
     activeSlot: data.activeSlot ?? 0,
     officialBackup: data.officialBackup,
+    archivedYears: data.archivedYears ?? [],
   };
 }
 
@@ -482,14 +486,10 @@ export const useAppStore = create<AppStore>()(
           writePersistSync(snapshot(get()), { force: true });
         },
 
-        startNewSchoolYear: (schoolYear) => {
-          save({
-            absences: [],
-            substitutions: [],
-            formerTeachers: [],
-            settings: { ...get().settings, schoolYear: schoolYear.trim() || get().settings.schoolYear },
-          });
-        },
+        startNewSchoolYear: (schoolYear) => save(startNewSchoolYear(snapshot(get()), schoolYear)),
+
+        removeArchivedYear: (id) =>
+          save({ archivedYears: (get().archivedYears ?? []).filter((y) => y.id !== id) }),
 
         resetDemo: () => {
           noteUserMutation();
@@ -541,6 +541,7 @@ export const useAppStore = create<AppStore>()(
         savedAt: state.savedAt,
         origin: state.origin,
         importedBackupName: state.importedBackupName,
+        archivedYears: state.archivedYears,
       }),
     },
   ),

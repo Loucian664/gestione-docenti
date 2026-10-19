@@ -324,6 +324,16 @@ export function mergeSlices(a: PersistSlice, b: PersistSlice): PersistSlice {
     else classMap.set(c.id, preferB ? c : prev);
   }
 
+  // assenze, sostituzioni e docenti non più in servizio già messi in archivio con «Nuovo anno scolastico» non
+  // tornano nell'anno in corso
+  const archivedYears = byId(a.archivedYears, b.archivedYears, preferB).sort((x, y) => x.archivedAt - y.archivedAt);
+  const archivedIds = new Set(
+    archivedYears.flatMap((y) =>
+      [...y.data.absences, ...y.data.substitutions, ...(y.data.formerTeachers ?? [])].map((x) => x.id),
+    ),
+  );
+  const current = <T extends { id: string }>(list: T[]) => list.filter((x) => !archivedIds.has(x.id));
+
   return {
     settings: {
       ...(preferB ? b.settings : a.settings),
@@ -335,10 +345,11 @@ export function mergeSlices(a: PersistSlice, b: PersistSlice): PersistSlice {
     teachers: byId(a.teachers, b.teachers, preferB),
     classes: [...classMap.values()],
     slots: byId(a.slots, b.slots, preferB),
-    absences: byId(a.absences, b.absences, preferB),
-    substitutions: byId(a.substitutions, b.substitutions, preferB),
+    absences: current(byId(a.absences, b.absences, preferB)),
+    substitutions: current(byId(a.substitutions, b.substitutions, preferB)),
     cattedre: byCattedra(a.cattedre, b.cattedre, preferB),
-    formerTeachers: byId(a.formerTeachers, b.formerTeachers, preferB),
+    formerTeachers: current(byId(a.formerTeachers, b.formerTeachers, preferB)),
+    archivedYears,
     cattedraBackup: preferB ? b.cattedraBackup ?? a.cattedraBackup : a.cattedraBackup ?? b.cattedraBackup,
     cattedraDispBackup: preferB
       ? b.cattedraDispBackup ?? a.cattedraDispBackup

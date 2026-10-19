@@ -180,6 +180,20 @@ export type SavedTimetable = {
   disp: Record<string, { day: DayOfWeek; periodId: string }[]>;
 };
 
+/**
+ * Un anno scolastico finito, messo da parte con «Nuovo anno scolastico» così com'era quel giorno: assenze,
+ * sostituzioni e i docenti, le classi e l'orario in vigore a cui si riferiscono. Si consulta in Report, non si modifica.
+ */
+export type ArchivedYear = {
+  id: string;
+  schoolYear: string;
+  archivedAt: number;
+  data: Pick<
+    PersistedData,
+    "settings" | "teachers" | "formerTeachers" | "classes" | "slots" | "absences" | "substitutions" | "cattedre"
+  >;
+};
+
 export type PersistedData = {
   settings: Settings;
   teachers: Teacher[];
@@ -206,6 +220,8 @@ export type PersistedData = {
   origin?: "seed" | "user";
   /** Last imported backup filename, if any. */
   importedBackupName?: string;
+  /** Anni scolastici finiti, dal più vecchio. */
+  archivedYears?: ArchivedYear[];
 };
 
 export const ABSENCE_REASONS: { value: AbsenceReason; label: string }[] = [
