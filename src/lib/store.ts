@@ -95,6 +95,11 @@ type Actions = {
   undoMakeOfficial: () => void;
   setCattedre: (cattedre: Cattedra[]) => void;
   importData: (data: PersistedData, fileName?: string) => void;
+  /**
+   * Nuovo anno scolastico: via assenze, sostituzioni e chi non è più in servizio; restano docenti, classi,
+   * orario (anche gli slot) e impostazioni, con l’anno scolastico nuovo.
+   */
+  startNewSchoolYear: (schoolYear: string) => void;
   resetDemo: () => void;
   clearAll: () => void;
 };
@@ -475,6 +480,15 @@ export const useAppStore = create<AppStore>()(
             importedBackupName,
           });
           writePersistSync(snapshot(get()), { force: true });
+        },
+
+        startNewSchoolYear: (schoolYear) => {
+          save({
+            absences: [],
+            substitutions: [],
+            formerTeachers: [],
+            settings: { ...get().settings, schoolYear: schoolYear.trim() || get().settings.schoolYear },
+          });
         },
 
         resetDemo: () => {
