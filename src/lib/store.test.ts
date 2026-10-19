@@ -95,3 +95,27 @@ describe("cancellare, importare, tornare all'esempio", () => {
     st().resetDemo();
   });
 });
+
+describe("nuovo anno scolastico", () => {
+  it("via assenze, sostituzioni e chi non è più in servizio; docenti, classi, orario e slot restano", () => {
+    withWork();
+    const t = st().teachers[0]!;
+    st().replaceTeacher(t.id, { lastName: "Nuova", firstName: "Persona" }, st().selectedDate);
+    const before = snapshot(st());
+    assert.ok(before.absences.length && before.substitutions.length && before.formerTeachers?.length);
+    st().startNewSchoolYear(" 2027/2028 ");
+    const after = snapshot(st());
+    assert.deepEqual([after.absences, after.substitutions, after.formerTeachers], [[], [], []]);
+    assert.equal(after.settings.schoolYear, "2027/2028");
+    assert.deepEqual(after.teachers, before.teachers);
+    assert.deepEqual(after.classes, before.classes);
+    assert.deepEqual(after.slots, before.slots);
+    assert.deepEqual(after.cattedre, before.cattedre);
+    assert.deepEqual(after.savedTimetables, before.savedTimetables);
+    assert.equal(after.origin, "user");
+    // senza anno scritto resta quello di prima
+    st().startNewSchoolYear("  ");
+    assert.equal(st().settings.schoolYear, "2027/2028");
+    st().resetDemo();
+  });
+});
