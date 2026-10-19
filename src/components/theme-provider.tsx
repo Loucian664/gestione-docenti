@@ -4,7 +4,6 @@ import {
   DEFAULT_SCHEDULE,
   readThemePreference,
   readThemeSchedule,
-  resolveTheme,
   writeThemePreference,
   writeThemeSchedule,
   msUntilNextBoundary,
@@ -25,26 +24,29 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>(() =>
-    typeof window === "undefined" ? "system" : readThemePreference(),
-  );
-  const [schedule, setScheduleState] = useState<ThemeSchedule>(() =>
-    typeof window === "undefined" ? DEFAULT_SCHEDULE : readThemeSchedule(),
-  );
-  const [resolved, setResolved] = useState<ResolvedTheme>(() =>
-    typeof window === "undefined"
-      ? "light"
-      : resolveTheme(readThemePreference(), readThemeSchedule()),
-  );
+  // Al primo disegno gli stessi valori della pagina preparata in anticipo (che non conosce le scelte salvate),
+  // poi subito quelle del dispositivo: altrimenti il tasto dell'aspetto può restare con la descrizione sbagliata.
+  // I colori giusti li mette già THEME_BOOT_SCRIPT prima che la pagina compaia.
+  const [ready, setReady] = useState(false);
+  const [preference, setPreferenceState] = useState<ThemePreference>("system");
+  const [schedule, setScheduleState] = useState<ThemeSchedule>(DEFAULT_SCHEDULE);
+  const [resolved, setResolved] = useState<ResolvedTheme>("light");
 
   useLayoutEffect(() => {
+    setPreferenceState(readThemePreference());
+    setScheduleState(readThemeSchedule());
+    setReady(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!ready) return;
     setResolved(applyTheme(preference, schedule));
     writeThemePreference(preference);
     writeThemeSchedule(schedule);
-  }, [preference, schedule]);
+  }, [ready, preference, schedule]);
 
   useEffect(() => {
-    if (preference !== "system") return;
+    if (!ready || preference !== "system") return;
 
     let timer = 0;
     const arm = () => {
@@ -64,7 +66,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("pageshow", onWake);
       window.removeEventListener("focus", onWake);
     };
-  }, [preference, schedule]);
+  }, [ready, preference, schedule]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
