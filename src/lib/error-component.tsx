@@ -1,5 +1,6 @@
-import type { ErrorComponentProps } from "@tanstack/react-router";
-import { TriangleAlert } from "lucide-react";
+import { Link, type ErrorComponentProps } from "@tanstack/react-router";
+import { SearchX, TriangleAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export function AppErrorComponent({ error }: ErrorComponentProps) {
   return (
@@ -17,5 +18,21 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
         {(error instanceof Error && error.message) || "Errore imprevisto. Prova a ricaricare la pagina."}
       </p>
     </main>
+  );
+}
+
+/** Indirizzo che non corrisponde a nessuna pagina: resta il menu e si torna a Oggi. */
+export function AppNotFound() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+      <span className="text-muted-foreground" aria-hidden="true">
+        <SearchX className="size-10" strokeWidth={1.75} />
+      </span>
+      <h1 className="text-lg font-semibold">Pagina non trovata</h1>
+      <p className="max-w-md text-sm text-muted-foreground">L’indirizzo non corrisponde a nessuna pagina dell’app.</p>
+      <Button asChild>
+        <Link to="/">Torna a Oggi</Link>
+      </Button>
+    </div>
   );
 }

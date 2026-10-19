@@ -2,6 +2,7 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-r
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { AppLayout } from "@/components/layout";
+import { AppNotFound } from "@/lib/error-component";
 import { ThemeProvider, useTheme } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
@@ -38,6 +39,7 @@ export const Route = createRootRoute({
     };
   },
   component: RootComponent,
+  notFoundComponent: AppNotFound,
 });
 
 function ThemedToaster() {
