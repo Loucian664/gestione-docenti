@@ -19,6 +19,7 @@ import { isTpPeriodId } from "./periods";
 import { OFFICIAL_NAME, activeSlotOf, slotPart, timetableKey, withPart, type TimetablePart } from "./saved-timetables";
 import { todayIso } from "./dates";
 import { isTeacherAbsent } from "./coverage";
+import { replaceTeacher } from "./replace-teacher";
 import {
   createDurableStorage,
   noteUserMutation,
@@ -58,6 +59,8 @@ type Actions = {
     drop?: string[],
   ) => string;
   removeTeacher: (id: string) => void;
+  /** Un'altra persona al posto del docente dal giorno indicato (vedi `replaceTeacher`). */
+  replaceTeacher: (id: string, name: { lastName: string; firstName: string }, fromDate: string) => boolean;
   addClass: (c: Omit<SchoolClass, "id">) => void;
   updateClass: (id: string, patch: Partial<SchoolClass>) => void;
   removeClass: (id: string) => void;
@@ -107,6 +110,7 @@ export function snapshot(state: AppStore): PersistedData {
     substitutions: state.substitutions,
     selectedDate: state.selectedDate,
     cattedre: state.cattedre,
+    formerTeachers: state.formerTeachers,
     cattedraBackup: state.cattedraBackup,
     cattedraDispBackup: state.cattedraDispBackup,
     savedTimetables: state.savedTimetables,
@@ -145,6 +149,7 @@ function wholeData(data: PersistedData): PersistedData {
   return {
     ...data,
     cattedre: data.cattedre,
+    formerTeachers: data.formerTeachers ?? [],
     cattedraBackup: data.cattedraBackup,
     cattedraDispBackup: data.cattedraDispBackup,
     savedTimetables: data.savedTimetables ?? [],
@@ -217,6 +222,13 @@ export const useAppStore = create<AppStore>()(
               x.teacherId === id ? { ...x, teacherId: "" } : x,
             ),
           }),
+
+        replaceTeacher: (id, name, fromDate) => {
+          const next = replaceTeacher(snapshot(get()), id, name, fromDate);
+          if (!next) return false;
+          save(next);
+          return true;
+        },
 
         addClass: (c) => save({ classes: [...get().classes, { ...c, id: uid("c") }] }),
 
@@ -504,6 +516,7 @@ export const useAppStore = create<AppStore>()(
         substitutions: state.substitutions,
         selectedDate: state.selectedDate,
         cattedre: state.cattedre,
+        formerTeachers: state.formerTeachers,
         cattedraBackup: state.cattedraBackup,
         cattedraDispBackup: state.cattedraDispBackup,
         savedTimetables: state.savedTimetables,

@@ -13,10 +13,12 @@ import { teacherName } from "@/lib/coverage";
 import { cattedreOfTeacher, isRientro, lessonsOfRemovedRows, missingTeachers, missingText } from "@/lib/build-timetable";
 import { MissingTeachersBox } from "@/components/missing-teachers";
 import { DAY_SHORT, ROLE_LABELS, ACTIVITY_SUBJECTS, CURRICULAR_SUBJECTS, SUBJECTS, type DayOfWeek, type Teacher, type TeacherRole, type TimetableSlot } from "@/lib/types";
-import { Plus, Search, LayoutGrid } from "lucide-react";
+import { Plus, Search, LayoutGrid, UserRoundPen } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { corePeriods } from "@/lib/periods";
+import { formatItDate, isoDate } from "@/lib/dates";
+import { teacherHistory } from "@/lib/replace-teacher";
 import {
   TEACHER_PALETTE,
   TONE_NAMES,
@@ -162,6 +164,7 @@ function DocentiPage() {
           </tbody>
         </table>
       </div>
+      <FormerTeachers data={data} />
       {editing && (
         <TeacherDialog
           key={editing === "new" ? "new" : editing.id}
@@ -171,6 +174,45 @@ function DocentiPage() {
       )}
     </div>
   );
+}
+
+/** Chi non è più in servizio: resta per le assenze e le sostituzioni già segnate e per il report. */
+function FormerTeachers({ data }: { data: ReturnType<typeof snapshot> }) {
+  const list = (data.formerTeachers ?? []).slice().sort((a, b) => a.lastName.localeCompare(b.lastName, "it"));
+  if (!list.length) return null;
+  return (
+    <details className="paper-panel mt-4 rounded-xl">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Non più in servizio ({list.length})</summary>
+      <ul className="divide-y divide-border border-t border-border">
+        {list.map((t) => {
+          const next = data.teachers.find((x) => x.id === t.replacedBy);
+          return (
+            <li key={t.id} className="px-4 py-2.5">
+              <span className="font-medium">{teacherName(t)}</span>
+              <span className="block text-[13px] text-muted-foreground">
+                {t.leftOn ? `Non più in servizio dal ${formatItDate(t.leftOn)}` : "Non più in servizio"}
+                {next ? ` · al suo posto ${teacherName(next)}` : ""}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="border-t border-border px-4 py-2.5 text-[12px] text-muted-foreground">
+        Restano qui per le assenze e le sostituzioni già segnate e per il report. Non compaiono in Oggi, in Costruisci né
+        tra i sostituti.
+      </p>
+    </details>
+  );
+}
+
+/** «3 assenze e 5 ore di sostituzione (fatte o ricevute)», senza le voci a zero. */
+function historyText(h: { absences: number; substitutions: number }): string {
+  return [
+    h.absences ? (h.absences === 1 ? "1 assenza" : `${h.absences} assenze`) : "",
+    h.substitutions ? (h.substitutions === 1 ? "1 ora di sostituzione (fatta o ricevuta)" : `${h.substitutions} ore di sostituzione (fatte o ricevute)`) : "",
+  ]
+    .filter(Boolean)
+    .join(" e ");
 }
 
 /** Le ore di lezione e quelle a disposizione (il potenziamento ha solo ore a disposizione). */
@@ -235,6 +277,13 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
       : [] as { classId: string; subject: string; hours: string }[],
   );
   const [rows, setRows] = useState(initialRows);
+  // «card» la scheda; «rename» l'avviso sul nome cambiato; «replace» arriva un'altra persona al suo posto
+  const [step, setStep] = useState<"card" | "rename" | "replace">("card");
+  const [newName, setNewName] = useState({ lastName: "", firstName: "" });
+  const [fromDate, setFromDate] = useState(() => isoDate(new Date()));
+  const history = current ? teacherHistory(data, current.id) : { absences: 0, substitutions: 0 };
+  const hasHistory = history.absences + history.substitutions > 0;
+  const nameChanged = !!current && (lastName.trim() !== current.lastName || firstName.trim() !== current.firstName);
   const assignedHours = rows.reduce((n, r) => n + (Number(r.hours) || 0), 0);
 
   function addRow(subject?: string) {
@@ -283,7 +332,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
     });
   }
 
-  function save() {
+  function cardData() {
     const payload = {
       lastName: lastName.trim(),
       firstName: firstName.trim(),
@@ -304,7 +353,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
       preferSlots: current?.preferSlots ?? [],
       mustSlots: current?.mustSlots ?? [],
     };
-    if (!payload.lastName) return;
+    if (!payload.lastName) return null;
     const parsed =
       payload.role === "potenziamento"
         ? []
@@ -313,6 +362,18 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             .filter((r) => r.classId && r.subject && r.hours > 0);
     payload.subjects = [...new Set([...payload.subjects, ...parsed.map((r) => r.subject)])];
     const drop = lessonsGone().map((s) => s.id);
+    return { payload, parsed, drop };
+  }
+
+  /** `sameName`: il nome è solo corretto, anche se ha già assenze o sostituzioni segnate. */
+  function save(sameName = false) {
+    const card = cardData();
+    if (!card) return;
+    if (!sameName && nameChanged && hasHistory) {
+      setStep("rename");
+      return;
+    }
+    const { payload, parsed, drop } = card;
     store.saveTeacherCard(isNew ? null : current!.id, payload, parsed, drop);
     toast.success(
       payload.role === "potenziamento"
@@ -326,6 +387,124 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
     );
     warnLeftWithout();
     onClose();
+  }
+
+  function openReplace() {
+    // il nome già scritto nella scheda è quello di chi arriva
+    setNewName(nameChanged ? { lastName: lastName.trim(), firstName: firstName.trim() } : { lastName: "", firstName: "" });
+    setStep("replace");
+  }
+
+  function replace() {
+    const card = cardData();
+    if (!card || !current || !newName.lastName.trim() || !fromDate) return;
+    // le altre modifiche della scheda si salvano col nome di chi lascia, poi la scheda passa a chi arriva
+    store.saveTeacherCard(
+      current.id,
+      { ...card.payload, lastName: current.lastName, firstName: current.firstName },
+      card.parsed,
+      card.drop,
+    );
+    if (!store.replaceTeacher(current.id, newName, fromDate)) return;
+    toast.success(`${`${newName.lastName.trim()} ${newName.firstName.trim()}`.trim()} al posto di ${teacherName(current)}`, {
+      description: `Dal ${formatItDate(fromDate)}. Le assenze e le sostituzioni dei giorni prima restano a ${teacherName(current)}, in Docenti → Non più in servizio.`,
+    });
+    warnLeftWithout();
+    onClose();
+  }
+
+  if (current && step === "rename") {
+    return (
+      <Dialog open onOpenChange={(o) => !o && onClose()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nome cambiato</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 text-sm">
+            <p>
+              Con il nome <span className="font-medium">{teacherName(current)}</span> risultano già:{" "}
+              {historyText(history)}.
+            </p>
+            <p className="text-muted-foreground">
+              Se è la stessa persona e correggi solo il nome, il nome nuovo compare anche in quelle già segnate e nel
+              report. Se al suo posto arriva un’altra persona, la scheda passa a chi arriva e quelle già segnate restano
+              a {teacherName(current)}.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+              <Button variant="outline" onClick={() => setStep("card")}>
+                Indietro
+              </Button>
+              <Button variant="outline" className="ml-auto" onClick={() => save(true)}>
+                Correggi solo il nome
+              </Button>
+              <Button onClick={openReplace}>È un’altra persona</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  if (current && step === "replace") {
+    const later = {
+      absences: data.absences.filter((a) => a.teacherId === current.id && a.dateTo >= fromDate).length,
+      substitutions: data.substitutions.filter(
+        (s) => s.date >= fromDate && (s.absentTeacherId === current.id || s.substituteId === current.id),
+      ).length,
+    };
+    const ready = !!newName.lastName.trim() && !!fromDate;
+    return (
+      <Dialog open onOpenChange={(o) => !o && onClose()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sostituisci docente</DialogTitle>
+          </DialogHeader>
+          <form
+            className="grid gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              replace();
+            }}
+          >
+            <p className="text-sm text-muted-foreground">
+              Al posto di <span className="font-medium text-foreground">{teacherName(current)}</span> arriva un’altra
+              persona: la scheda (classi, ore, orario, disposizioni e preferenze) passa a lei.{" "}
+              {teacherName(current)} va tra i docenti «Non più in servizio» e conserva le assenze e le sostituzioni
+              segnate prima della data: il report resta giusto.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Cognome di chi arriva">
+                <Input
+                  value={newName.lastName}
+                  onChange={(e) => setNewName((n) => ({ ...n, lastName: e.target.value }))}
+                  required
+                />
+              </Field>
+              <Field label="Nome">
+                <Input value={newName.firstName} onChange={(e) => setNewName((n) => ({ ...n, firstName: e.target.value }))} />
+              </Field>
+            </div>
+            <Field label="In servizio dal">
+              <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} required />
+            </Field>
+            {later.absences + later.substitutions > 0 && fromDate && (
+              <p className="rounded-md bg-warning-soft px-2.5 py-2 text-[12px] leading-snug">
+                Dal {formatItDate(fromDate)} in poi risultano già: {historyText(later)}. Restano sulla scheda, cioè a chi
+                arriva.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+              <Button type="button" variant="outline" onClick={() => setStep("card")}>
+                Indietro
+              </Button>
+              <Button type="submit" className="ml-auto" disabled={!ready}>
+                Sostituisci
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    );
   }
 
   return (
@@ -344,6 +523,15 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
               <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
             </Field>
           </div>
+          {current && (
+            <div className="-mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <p className="text-[12px] text-muted-foreground">Al suo posto arriva un’altra persona?</p>
+              <Button type="button" size="sm" variant="outline" onClick={openReplace}>
+                <UserRoundPen />
+                Sostituisci docente
+              </Button>
+            </div>
+          )}
           <Field label="Materie (separate da virgola)">
             <Input value={subjects} onChange={(e) => setSubjects(e.target.value)} list="subjects-list" placeholder="Matematica, Mensa, Laboratorio" />
             <datalist id="subjects-list">
@@ -537,7 +725,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
             <Button variant="outline" className="ml-auto" onClick={onClose}>
               Annulla
             </Button>
-            <Button onClick={save}>Salva</Button>
+            <Button onClick={() => save()}>Salva</Button>
           </div>
         </div>
       </DialogContent>
