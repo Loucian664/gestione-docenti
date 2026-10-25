@@ -20,6 +20,7 @@ import { hourMark, isMensaLesson, isMensaPeriod, isRestrictedTpPeriod, visiblePe
 import { teacherSheetName } from "./teacher-print";
 import { classCellLesson, sideMark } from "./class-grid";
 import { trialLabel } from "./saved-timetables";
+import { teacherCellAt, teacherSheetPeriods } from "./docenti-fogli";
 import { mergedAbbr, mergedUpper } from "./subject-groups";
 
 
@@ -1484,6 +1485,155 @@ export async function eccedenteJpegs(
         });
       });
     }
+    out.push({ blob: await canvasToJpeg(canvas), w: canvas.width, h: canvas.height });
+  }
+  return out;
+}
+
+/** Scrive il testo al centro restringendo il carattere (poi con «…») se non sta nella larghezza. */
+function fillFitted(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  cx: number,
+  cy: number,
+  maxW: number,
+  weight: number,
+  size: number,
+  color = "#111",
+) {
+  let s = size;
+  let t = text;
+  ctx.font = `${weight} ${s}px 'Source Sans 3', system-ui, sans-serif`;
+  while (ctx.measureText(t).width > maxW && s > 7) {
+    s -= 0.5;
+    ctx.font = `${weight} ${s}px 'Source Sans 3', system-ui, sans-serif`;
+  }
+  while (ctx.measureText(t).width > maxW && t.length > 1) t = `${t.slice(0, -2).trimEnd()}…`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = color;
+  ctx.fillText(t, cx, cy + 0.6);
+}
+
+/**
+ * Un foglio A4 orizzontale per ogni docente in orario, nello stile di «Per classe»: stessa intestazione, caselle
+ * con la classe al centro e la materia sotto, riepilogo in fondo. Le ore segnate con la × (il docente è in un
+ * altro plesso) sono una casella grigia «Altro plesso», una per ogni ora. È lo stesso foglio di Orario Generale, che per chi insegna
+ * in più sedi aggiunge la sede e il suo colore.
+ */
+export async function orariDocentiJpegs(data: PersistedData): Promise<{ blob: Blob; w: number; h: number }[]> {
+  await document.fonts.ready.catch(() => undefined);
+  const days = data.settings.days;
+  const sheets = teachersOnTimetable(data).map((t) => ({ t, periods: teacherSheetPeriods(data, t) }));
+  const pageW = 842;
+  const pageH = 595;
+  const pad = 14;
+  const titleH = 92;
+  const headH = 22;
+  const lineH = 15;
+  const hourW = 28;
+  const tableW = pageW - pad * 2;
+  const colW = (tableW - hourW) / Math.max(1, days.length);
+  const dpr = SHEET_DPR;
+  const font = (weight: number, size: number) => `${weight} ${size}px 'Source Sans 3', system-ui, sans-serif`;
+  const out: { blob: Blob; w: number; h: number }[] = [];
+
+  for (const { t, periods } of sheets) {
+    // altezza di ogni ora: si stringe con le ore (mensa, 7ª, 8ª)
+    const footH = 16 + lineH + 8;
+    const rowH = Math.min(64, Math.floor((pageH - pad * 2 - titleH - headH - footH) / Math.max(1, periods.length)));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(pageW * dpr);
+    canvas.height = Math.round(pageH * dpr);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas");
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, pageW, pageH);
+
+    drawSheetHeading(ctx, data, pageW, pad, "ORARIO SETTIMANALE DELLE LEZIONI");
+    ctx.fillStyle = "#111";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = font(700, 14);
+    ctx.fillText(`${t.lastName} ${t.firstName}`.trim().toUpperCase(), pageW / 2, pad + 76);
+
+    const x0 = pad;
+    const headY = pad + titleH;
+    const box = (x: number, y: number, w: number, h: number) => {
+      ctx.strokeStyle = "#111";
+      ctx.lineWidth = 0.7;
+      ctx.strokeRect(x, y, w, h);
+    };
+
+    box(x0, headY, hourW, headH);
+    fillCentered(ctx, "H", x0 + hourW / 2, headY + headH / 2, font(700, 10));
+    days.forEach((d, i) => {
+      box(x0 + hourW + i * colW, headY, colW, headH);
+      fillCentered(ctx, dayNameUpper(d), x0 + hourW + (i + 0.5) * colW, headY + headH / 2, font(700, 10));
+    });
+
+    const cells = periods.map((p) => days.map((d) => teacherCellAt(data, t, d, p)));
+    let lessons = 0;
+    let disp = 0;
+    periods.forEach((p, ri) => {
+      const y = headY + headH + ri * rowH;
+      box(x0, y, hourW, rowH);
+      fillCentered(ctx, hourMark(p), x0 + hourW / 2, y + rowH / 2, font(700, 11));
+      days.forEach((_d, i) => {
+        const cell = cells[ri]![i]!;
+        const x = x0 + hourW + i * colW;
+        if (cell.kind === "away") {
+          ctx.fillStyle = "#e4e1da";
+          ctx.fillRect(x, y, colW, rowH);
+        }
+        box(x, y, colW, rowH);
+        const cx = x + colW / 2;
+        const cy = y + rowH / 2;
+        const maxW = colW - 12;
+        if (cell.kind === "away") {
+          fillFitted(ctx, "Altro plesso", cx, cy, maxW, 600, 10, "#4a4a4a");
+        } else if (cell.kind === "disp") {
+          disp += 1;
+          fillFitted(ctx, "A DISPOSIZIONE", cx, cy, maxW, 600, 10);
+        } else if (cell.kind === "mensa") {
+          fillFitted(ctx, "MENSA", cx, cy, maxW, 600, 10);
+        } else if (cell.kind === "lesson") {
+          lessons += 1;
+          fillFitted(ctx, cell.cls ?? "", cx, cy - 8, maxW, 700, 13);
+          fillFitted(ctx, schoolSubjectLabel(cell.subject ?? ""), cx, cy + 9, maxW, 600, 10);
+        }
+      });
+    });
+
+    const classNames = data.classes
+      .filter((c) => data.slots.some((s) => s.teacherId === t.id && s.classId === c.id))
+      .sort((a, b) => a.grade - b.grade || a.section.localeCompare(b.section))
+      .map(classHeader);
+    const fy = headY + headH + periods.length * rowH + 12;
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(x0, fy);
+    ctx.lineTo(x0 + tableW, fy);
+    ctx.stroke();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    let fx = x0;
+    const caption = (label: string, value: string) => {
+      ctx.fillStyle = "#111";
+      ctx.font = font(700, 10);
+      ctx.fillText(label, fx, fy + 16);
+      fx += ctx.measureText(label).width + 5;
+      ctx.fillStyle = "#444";
+      ctx.font = font(500, 10);
+      ctx.fillText(value, fx, fy + 16);
+      fx += ctx.measureText(value).width + 16;
+    };
+    caption("Ore di lezione", String(lessons));
+    if (disp > 0) caption("Ore a disposizione", String(disp));
+    if (classNames.length > 0) caption("Classi", classNames.join(" · "));
+
     out.push({ blob: await canvasToJpeg(canvas), w: canvas.width, h: canvas.height });
   }
   return out;
