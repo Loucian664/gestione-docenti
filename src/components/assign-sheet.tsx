@@ -88,7 +88,7 @@ const GROUPS: { bucket: SubstituteBucket | SubstituteBucket[]; title: string; hi
   {
     bucket: "altrove",
     title: "Altrove o in progetto",
-    hint: "In quest’ora è in un altro plesso o in un progetto: non si può chiamare.",
+    hint: "In quest’ora è in un altro plesso o in un progetto: sceglilo solo in casi eccezionali. Escluso dall’assegnazione automatica.",
   },
 ];
 
@@ -354,23 +354,20 @@ function TeacherPickRow({
     row.bucket === "impegnato" ||
     row.bucket === "non-in-sede" ||
     row.bucket === "sostegno" ||
-    row.bucket === "fuori-orario";
-  const blocked = row.bucket === "altrove";
+    row.bucket === "fuori-orario" ||
+    row.bucket === "altrove";
   const teachers = useAppStore((s) => s.teachers);
   return (
     <li>
       <button
         type="button"
         onClick={onPick}
-        disabled={blocked && !selected}
         className={
           selected
             ? "flex w-full items-start gap-3 rounded-lg bg-accent px-3 py-2.5 text-left"
-            : blocked
-              ? "flex w-full cursor-not-allowed items-start gap-3 rounded-lg px-3 py-2.5 text-left opacity-55"
-              : warning
-                ? "flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left opacity-80 hover:bg-muted"
-                : "flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted"
+            : warning
+              ? "flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left opacity-80 hover:bg-muted"
+              : "flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted"
         }
       >
         <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: teacherDotColor(row.teacher.color) }} />

@@ -617,6 +617,7 @@ function OrarioPage() {
                           className={cn(
                             "flex min-h-16 w-full flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted",
                             tc.className,
+                            away?.progetto && "bg-warning-soft ring-1 ring-inset ring-warning/60",
                           )}
                           style={
                             tc.style ??
@@ -634,7 +635,7 @@ function OrarioPage() {
                               )}
                             </>
                           ) : (
-                            <span className="text-[12px] text-ink-faint">
+                            <span className={cn("text-[12px]", away?.progetto ? "font-semibold text-warning" : "text-ink-faint")}>
                               {disp
                                 ? "A disposizione"
                                 : away
@@ -807,6 +808,8 @@ function TeacherHourEditor({
   const period = data.settings.periods.find((p) => p.id === editing.periodId);
   const mensa = isMensaPeriod(period);
   const dispOn = Boolean(teacher && isDispHour(teacher, editing.day, editing.periodId));
+  const sameCell = (a: { day: DayOfWeek; periodId: string }) => a.day === editing.day && a.periodId === editing.periodId;
+  const projectOn = Boolean(teacher?.awaySlots?.some((a) => a.progetto && sameCell(a)));
   const classChoices = isRestrictedTpPeriod(period)
     ? data.classes.filter((c) => c.tempo === "TP")
     : data.classes;
@@ -851,11 +854,11 @@ function TeacherHourEditor({
       teacherId: editing.teacherId,
       subject,
     });
-    if (teacher && dispOn) {
+    if (teacher && (dispOn || projectOn)) {
+      // una lezione non è più né a disposizione né di progetto
       store.updateTeacher(teacher.id, {
-        dispSlots: (teacher.dispSlots ?? []).filter(
-          (a) => !(a.day === editing.day && a.periodId === editing.periodId),
-        ),
+        dispSlots: (teacher.dispSlots ?? []).filter((a) => !sameCell(a)),
+        awaySlots: (teacher.awaySlots ?? []).filter((a) => !(a.progetto && sameCell(a))),
       });
     }
     toast.success(others.length ? "Ora inserita in compresenza" : "Ora inserita");
@@ -875,6 +878,21 @@ function TeacherHourEditor({
     );
     store.updateTeacher(teacher.id, { dispSlots: next, awaySlots: away });
     toast.success(dispOn ? "Disposizione tolta" : "Ora a disposizione");
+    onClose();
+  }
+
+  /** «Progetto»: ora fuori dalla scuola, mai chiamabile per le sostituzioni (come in Docenti e Costruisci). */
+  function toggleProject() {
+    if (!teacher) return;
+    if (!projectOn && existing) store.clearSlot(existing.id);
+    store.updateTeacher(teacher.id, {
+      dispSlots: projectOn ? teacher.dispSlots ?? [] : (teacher.dispSlots ?? []).filter((a) => !sameCell(a)),
+      awaySlots: [
+        ...(teacher.awaySlots ?? []).filter((a) => !sameCell(a)),
+        ...(projectOn ? [] : [{ day: editing.day, periodId: editing.periodId, progetto: true }]),
+      ],
+    });
+    toast.success(projectOn ? "Progetto tolto" : "Ora di progetto");
     onClose();
   }
 
@@ -931,6 +949,9 @@ function TeacherHourEditor({
             )}
             <Button variant="outline" onClick={toggleDisp}>
               {dispOn ? "Togli disposizione" : "A disposizione"}
+            </Button>
+            <Button variant="outline" onClick={toggleProject}>
+              {projectOn ? "Togli progetto" : "Progetto"}
             </Button>
             <Button onClick={save}>{classId ? "Salva lezione" : "Salva in sede"}</Button>
           </div>
