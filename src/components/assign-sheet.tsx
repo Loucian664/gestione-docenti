@@ -52,8 +52,8 @@ const GROUPS: { bucket: SubstituteBucket | SubstituteBucket[]; title: string; hi
   },
   {
     bucket: "potenziamento",
-    title: "Potenziamento",
-    hint: "Sempre disponibile per le sostituzioni, anche con un orario proprio.",
+    title: "Potenziamento in un’altra classe",
+    hint: "In servizio in un’ora di potenziamento: si può spostare in questa classe.",
   },
   {
     bucket: "in-sede",
@@ -79,6 +79,16 @@ const GROUPS: { bucket: SubstituteBucket | SubstituteBucket[]; title: string; hi
     bucket: "non-in-sede",
     title: "Non a scuola",
     hint: "Non in servizio in quest’ora. Solo se necessario.",
+  },
+  {
+    bucket: "fuori-orario",
+    title: "Potenziamento fuori orario",
+    hint: "Non è in servizio in quest’ora: se lo scegli, va avvisato di spostare l’orario. Escluso dall’assegnazione automatica.",
+  },
+  {
+    bucket: "altrove",
+    title: "Altrove o in progetto",
+    hint: "In quest’ora è in un altro plesso o in un progetto: non si può chiamare.",
   },
 ];
 
@@ -340,19 +350,27 @@ function TeacherPickRow({
   selected: boolean;
   onPick: () => void;
 }) {
-  const warning = row.bucket === "impegnato" || row.bucket === "non-in-sede" || row.bucket === "sostegno";
+  const warning =
+    row.bucket === "impegnato" ||
+    row.bucket === "non-in-sede" ||
+    row.bucket === "sostegno" ||
+    row.bucket === "fuori-orario";
+  const blocked = row.bucket === "altrove";
   const teachers = useAppStore((s) => s.teachers);
   return (
     <li>
       <button
         type="button"
         onClick={onPick}
+        disabled={blocked && !selected}
         className={
           selected
             ? "flex w-full items-start gap-3 rounded-lg bg-accent px-3 py-2.5 text-left"
-            : warning
-              ? "flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left opacity-80 hover:bg-muted"
-              : "flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted"
+            : blocked
+              ? "flex w-full cursor-not-allowed items-start gap-3 rounded-lg px-3 py-2.5 text-left opacity-55"
+              : warning
+                ? "flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left opacity-80 hover:bg-muted"
+                : "flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted"
         }
       >
         <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ background: teacherDotColor(row.teacher.color) }} />

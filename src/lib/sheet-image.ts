@@ -1578,7 +1578,7 @@ export async function orariDocentiJpegs(data: PersistedData): Promise<{ blob: Bl
       days.forEach((_d, i) => {
         const cell = cells[ri]![i]!;
         const x = x0 + hourW + i * colW;
-        if (cell.kind === "away") {
+        if (cell.kind === "away" || cell.kind === "project") {
           ctx.fillStyle = "#e4e1da";
           ctx.fillRect(x, y, colW, rowH);
         }
@@ -1586,8 +1586,8 @@ export async function orariDocentiJpegs(data: PersistedData): Promise<{ blob: Bl
         const cx = x + colW / 2;
         const cy = y + rowH / 2;
         const maxW = colW - 12;
-        if (cell.kind === "away") {
-          fillFitted(ctx, "Altro plesso", cx, cy, maxW, 600, 10, "#4a4a4a");
+        if (cell.kind === "away" || cell.kind === "project") {
+          fillFitted(ctx, cell.kind === "project" ? "Progetto" : "Altro plesso", cx, cy, maxW, 600, 10, "#4a4a4a");
         } else if (cell.kind === "disp") {
           disp += 1;
           fillFitted(ctx, "A DISPOSIZIONE", cx, cy, maxW, 600, 10);

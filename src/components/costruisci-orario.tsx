@@ -73,8 +73,8 @@ import { teacherCell } from "@/lib/teacher-palette";
 import { corePeriods, isTpPeriodId } from "@/lib/periods";
 
 type Cell = { day: DayOfWeek; periodId: string };
-type CellState = "empty" | "no" | "away" | "class";
-type Brush = "away" | "no" | "class" | "erase";
+type CellState = "empty" | "no" | "away" | "project" | "class";
+type Brush = "away" | "project" | "no" | "class" | "erase";
 type ClassPick = {
   teacherId: string;
   day: DayOfWeek;
@@ -87,6 +87,7 @@ type MorningPeriod = ReturnType<typeof corePeriods>[number];
 
 const BRUSHES: { value: Brush; label: string; hint: string }[] = [
   { value: "away", label: "Altrove", hint: "altro plesso o impegno" },
+  { value: "project", label: "Progetto", hint: "fuori dalla scuola, mai in sostituzione" },
   { value: "no", label: "No", hint: "mai a quell’ora" },
   { value: "class", label: "Classe", hint: "una o tutte le sue classi" },
   { value: "erase", label: "Cancella", hint: "decide l’app" },
@@ -94,8 +95,13 @@ const BRUSHES: { value: Brush; label: string; hint: string }[] = [
 
 const sameCell = (a: Cell, day: DayOfWeek, periodId: string) => a.day === day && a.periodId === periodId;
 
+/** Ora segnata «Progetto» (fuori dalla scuola, come «Altrove»). */
+const isProjectHour = (t: Teacher, day: DayOfWeek, periodId: string) =>
+  (t.awaySlots ?? []).some((a) => a.progetto && sameCell(a, day, periodId));
+
 function cellState(t: Teacher, day: DayOfWeek, periodId: string): CellState {
-  if ((t.awaySlots ?? []).some((a) => sameCell(a, day, periodId))) return "away";
+  const away = (t.awaySlots ?? []).find((a) => sameCell(a, day, periodId));
+  if (away) return away.progetto ? "project" : "away";
   if ((t.mustSlots ?? []).some((a) => sameCell(a, day, periodId))) return "class";
   if ((t.avoidSlots ?? []).some((a) => sameCell(a, day, periodId))) return "no";
   return "empty";
@@ -106,7 +112,11 @@ function withCells(t: Teacher, cells: Cell[], state: Exclude<CellState, "class">
   const hit = (a: Cell) => cells.some((c) => sameCell(a, c.day, c.periodId));
   const rest = <T extends Cell>(list: T[] | undefined) => (list ?? []).filter((a) => !hit(a));
   return {
-    awaySlots: [...rest(t.awaySlots), ...(state === "away" ? cells : [])],
+    awaySlots: [
+      ...rest(t.awaySlots),
+      ...(state === "away" ? cells : []),
+      ...(state === "project" ? cells.map((c) => ({ day: c.day, periodId: c.periodId, progetto: true })) : []),
+    ],
     avoidSlots: [...rest(t.avoidSlots), ...(state === "no" ? cells : [])],
     mustSlots: rest(t.mustSlots),
   };
@@ -116,6 +126,7 @@ function withCells(t: Teacher, cells: Cell[], state: Exclude<CellState, "class">
 const CELL_STYLE: Record<CellState, string> = {
   empty: "bg-muted text-muted-foreground hover:bg-secondary",
   away: "bg-primary text-primary-foreground",
+  project: "bg-warning-soft text-warning text-[12px] font-semibold ring-1 ring-inset ring-warning/60",
   no: "bg-destructive text-destructive-foreground text-[12px] font-semibold",
   class: "bg-class-mark/20 text-foreground text-[11px] font-semibold ring-1 ring-inset ring-class-mark/65",
 };
@@ -124,6 +135,7 @@ const HARD_CLASS_STYLE = "bg-class-mark text-class-mark-foreground text-[11px] f
 /** Il segno nella casella: la × è un’icona, così ha la stessa misura del resto. */
 function MarkGlyph({ state, label }: { state: CellState; label?: string }) {
   if (state === "away") return <X className="size-4" strokeWidth={2.5} aria-hidden />;
+  if (state === "project") return <>P</>;
   if (state === "no") return <>no</>;
   if (state === "class") return <>{label}</>;
   return null;
@@ -1816,6 +1828,7 @@ function Ritocchi({
                     );
                   }
                   const cellT = editor.teacherAt(teacherId, z);
+                  const projT = cellT.kind === "away" && Boolean(shownTeacher && isProjectHour(shownTeacher, d, p.id));
                   const isGap = cellT.kind !== "lesson" && Boolean(cellT.gap);
                   const isSel =
                     Boolean(sel && sel.z === z && cellT.kind === "lesson" && cellT.classId === sel.classId) ||
@@ -1836,7 +1849,9 @@ function Ritocchi({
                             : cellT.kind === "disp"
                               ? "a disposizione"
                               : cellT.kind === "away"
-                                ? "altrove"
+                                ? projT
+                                  ? "progetto"
+                                  : "altrove"
                                 : cellT.kind === "travel"
                                   ? "spostamento tra plessi"
                                   : `${cellT.kind === "no" ? "no" : "libera"}${cellT.gap ? ", ora buca" : ""}`
@@ -1857,7 +1872,11 @@ function Ritocchi({
                             </span>
                           </>
                         ) : cellT.kind === "away" ? (
-                          <X className="size-4 text-muted-foreground" aria-hidden />
+                          projT ? (
+                            <span className="text-[11px] font-semibold text-warning">P</span>
+                          ) : (
+                            <X className="size-4 text-muted-foreground" aria-hidden />
+                          )
                         ) : cellT.gap ? (
                           <span className="rounded bg-warning-soft px-1 text-[11px] font-medium text-warning">
                             {cellT.kind === "no" ? "no · buca" : "buca"}
@@ -2222,11 +2241,11 @@ function AvailabilityPanel({
       return;
     }
     const target =
-      brush === "erase" || brush === "away"
+      brush === "erase" || brush === "away" || brush === "project"
         ? cells
         : cells.filter((c) => {
             const s = cellState(t, c.day, c.periodId);
-            return s !== "away" && s !== "class";
+            return s !== "away" && s !== "project" && s !== "class";
           });
     if (!target.length) return;
     const allSet = brush !== "erase" && target.every((c) => cellState(t, c.day, c.periodId) === brush);
@@ -2240,7 +2259,7 @@ function AvailabilityPanel({
       </StepTitle>
 
       <div className="sticky top-0 z-20 -mx-5 mt-4 border-y border-border bg-card/95 px-5 py-2 backdrop-blur-sm">
-        <div role="radiogroup" aria-label="Segno da mettere" className="grid grid-cols-4 gap-1 sm:flex sm:flex-wrap">
+        <div role="radiogroup" aria-label="Segno da mettere" className="grid grid-cols-5 gap-1 sm:flex sm:flex-wrap">
           {BRUSHES.map((b) => (
             <button
               key={b.value}
@@ -2365,11 +2384,12 @@ function TeacherCard({
   const patText = pats.length === 0 ? "" : `${patternLabel(pats[0]!)}${pats.length > 1 ? ` +${pats.length - 1}` : ""}`;
   const subtitle = `${t.subjects.slice(0, 3).join(", ")} · ${t.weeklyHours} h${(t.dispHours ?? 0) > 0 ? ` · ${t.dispHours} disp.` : ""}`;
   // Riassunto dei segni per la scheda chiusa: quanti e di che tipo.
-  const marks = { away: 0, no: 0, hard: 0, soft: 0 };
+  const marks = { away: 0, project: 0, no: 0, hard: 0, soft: 0 };
   for (const d of days) {
     for (const p of morning) {
       const st = cellState(t, d, p.id);
       if (st === "away") marks.away++;
+      else if (st === "project") marks.project++;
       else if (st === "no") marks.no++;
       else if (st === "class") {
         const must = (t.mustSlots ?? []).find((a) => sameCell(a, d, p.id));
@@ -2378,7 +2398,7 @@ function TeacherCard({
       }
     }
   }
-  const markCount = marks.away + marks.no + marks.hard + marks.soft;
+  const markCount = marks.away + marks.project + marks.no + marks.hard + marks.soft;
   return (
     <li className={cn("rounded-lg border border-border bg-card px-3 py-3", !open && "self-start")}>
       <div className="flex items-start justify-between gap-2">
@@ -2399,6 +2419,9 @@ function TeacherCard({
               <span className="mt-0.5 flex items-center gap-1 text-[12px] text-muted-foreground">
                 {markCount === 0 ? "nessun segno" : `${markCount} ${markCount === 1 ? "segno" : "segni"}`}
                 {marks.away > 0 && <span className="size-2.5 rounded-[3px] bg-primary" aria-hidden />}
+                {marks.project > 0 && (
+                  <span className="size-2.5 rounded-[3px] bg-warning-soft ring-1 ring-inset ring-warning/60" aria-hidden />
+                )}
                 {marks.no > 0 && <span className="size-2.5 rounded-[3px] bg-destructive" aria-hidden />}
                 {marks.hard > 0 && <span className="size-2.5 rounded-[3px] bg-class-mark" aria-hidden />}
                 {marks.soft > 0 && (
@@ -2494,7 +2517,10 @@ function TeacherCard({
             <tr>
               <th className="w-9" />
               {days.map((d) => {
-                const away = morning.filter((p) => cellState(t, d, p.id) === "away").length;
+                const away = morning.filter((p) => {
+                  const st = cellState(t, d, p.id);
+                  return st === "away" || st === "project";
+                }).length;
                 return (
                   <th key={d} className="p-0.5 font-medium">
                     <button
@@ -2546,7 +2572,9 @@ function TeacherCard({
                   const what =
                     state === "away"
                       ? "altrove"
-                      : state === "no"
+                      : state === "project"
+                        ? "progetto"
+                        : state === "no"
                         ? "no"
                         : state === "class"
                           ? `classe ${must?.level === "obbligo" ? "obbligatoria" : "se possibile"}: ${must?.allClasses ? "tutte le sue classi" : tags.join(", ")}`
@@ -2973,7 +3001,13 @@ function TeacherWeekPreview({
                       return (
                         <div key={p.id} className="text-ink-faint">
                           {p.index}{" "}
-                          {has(tDisp, d, p.id) ? "disp." : has(t.awaySlots, d, p.id) ? "altrove" : " —"}
+                          {has(tDisp, d, p.id)
+                            ? "disp."
+                            : isProjectHour(t, d, p.id)
+                              ? "progetto"
+                              : has(t.awaySlots, d, p.id)
+                                ? "altrove"
+                                : " —"}
                         </div>
                       );
                     })}
@@ -3681,6 +3715,7 @@ function IssueWeekDialog({ issue, data, onClose }: { issue: Issue | null; data: 
     if (!teacher) return "—";
     if (has(teacher.dispSlots, day, periodId)) return "disp.";
     if (has(teacher.avoidSlots, day, periodId)) return "no";
+    if (isProjectHour(teacher, day, periodId)) return "progetto";
     if (has(teacher.awaySlots, day, periodId)) return "altrove";
     return "—";
   };

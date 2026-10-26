@@ -14,6 +14,7 @@ import {
   classCellSlots,
   defaultSubjectFor,
   isDispHour,
+  awayAt,
   teacherDayWindow,
   teacherName,
   teacherShort,
@@ -103,6 +104,7 @@ function OrarioPage() {
   const currentTeacher = data.teachers.find((t) => t.id === teacherId);
   const teacherHours = data.slots.filter((s) => s.teacherId === teacherId).length;
   const teacherDisp = currentTeacher?.dispSlots?.length ?? 0;
+  const teacherProject = (currentTeacher?.awaySlots ?? []).filter((a) => a.progetto).length;
   const teacherGaps =
     currentTeacher && isTimetableTeacher(currentTeacher)
       ? gapsOf(data, data.slots, teacherId, true)
@@ -354,6 +356,7 @@ function OrarioPage() {
                   ? " · 1 a disposizione"
                   : ` · ${teacherDisp} a disposizione`
                 : ""}
+              {teacherProject > 0 ? ` · ${teacherProject} di progetto` : ""}
               {currentTeacher && isTimetableTeacher(currentTeacher)
                 ? teacherGaps === 1
                   ? " · 1 buca"
@@ -604,6 +607,7 @@ function OrarioPage() {
                         p.index <= win.last,
                     );
                     const disp = Boolean(currentTeacher && !slot && isDispHour(currentTeacher, d, p.id));
+                    const away = currentTeacher && !slot && !disp ? awayAt(currentTeacher, d, p.id) : null;
                     const tc = teacherCell(slot ? currentTeacher?.color : undefined);
                     return (
                       <td key={d} className="p-1.5 align-top">
@@ -631,7 +635,15 @@ function OrarioPage() {
                             </>
                           ) : (
                             <span className="text-[12px] text-ink-faint">
-                              {disp ? "A disposizione" : inWindow ? "Buca · in sede" : "Aggiungi"}
+                              {disp
+                                ? "A disposizione"
+                                : away
+                                  ? away.progetto
+                                    ? "Progetto"
+                                    : "Altrove"
+                                  : inWindow
+                                    ? "Buca · in sede"
+                                    : "Aggiungi"}
                             </span>
                           )}
                         </button>
@@ -857,7 +869,11 @@ function TeacherHourEditor({
     const next = dispOn
       ? cur.filter((a) => !(a.day === editing.day && a.periodId === editing.periodId))
       : [...cur, { day: editing.day, periodId: editing.periodId }];
-    store.updateTeacher(teacher.id, { dispSlots: next });
+    // un'ora a disposizione non è più di progetto
+    const away = (teacher.awaySlots ?? []).filter(
+      (a) => dispOn || !(a.progetto && a.day === editing.day && a.periodId === editing.periodId),
+    );
+    store.updateTeacher(teacher.id, { dispSlots: next, awaySlots: away });
     toast.success(dispOn ? "Disposizione tolta" : "Ora a disposizione");
     onClose();
   }
