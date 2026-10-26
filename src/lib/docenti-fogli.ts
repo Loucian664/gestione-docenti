@@ -1,6 +1,7 @@
 /**
  * Il contenuto del foglio di un docente per il PDF «PDF docenti»: per ogni giorno e ora, una lezione, una
- * disposizione, la mensa o un'ora in un altro plesso (segnata con la × in Costruisci). Il disegno è in sheet-image.
+ * disposizione, la mensa, un'ora in un altro plesso (segnata con la × in Costruisci) o di progetto (con la sede).
+ * Il disegno è in sheet-image.
  */
 import { isDispHour, teacherSlotAt } from "./coverage";
 import { isMensaLesson, isMensaPeriod, visiblePeriods } from "./periods";
@@ -10,6 +11,8 @@ export type TeacherCell = {
   kind: "lesson" | "disp" | "mensa" | "away" | "project" | "empty";
   cls?: string;
   subject?: string;
+  /** la sede di un'ora di progetto, se scritta */
+  sede?: string;
 };
 
 export function teacherCellAt(data: PersistedData, t: Teacher, day: DayOfWeek, p: Period): TeacherCell {
@@ -22,7 +25,8 @@ export function teacherCellAt(data: PersistedData, t: Teacher, day: DayOfWeek, p
   }
   // ore segnate con la × in Costruisci (altro plesso) oppure «Progetto»
   const away = (t.awaySlots ?? []).find((a) => a.day === day && a.periodId === p.id);
-  if (away) return { kind: away.progetto ? "project" : "away" };
+  if (away?.progetto) return { kind: "project", ...(away.sede?.trim() && { sede: away.sede.trim() }) };
+  if (away) return { kind: "away" };
   return { kind: "empty" };
 }
 

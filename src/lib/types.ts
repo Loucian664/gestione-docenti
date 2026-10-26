@@ -26,8 +26,11 @@ export type Teacher = {
   assignedClassIds: string[];
   /** Insegna anche in un altro plesso: in Costruisci si segnano le ore altrove. */
   otherPlesso?: boolean;
-  /** Ore fuori dalla scuola: altro plesso (×) oppure progetto (`progetto`). In sostituzione non è chiamabile. */
-  awaySlots?: { day: DayOfWeek; periodId: string; progetto?: boolean }[];
+  /**
+   * Ore fuori dalla scuola: altro plesso (×) oppure progetto (`progetto`, con la `sede` scritta a mano se serve).
+   * In sostituzione non è chiamabile.
+   */
+  awaySlots?: { day: DayOfWeek; periodId: string; progetto?: boolean; sede?: string }[];
   /** Giorni di rientro T.P.: Costruisci mette 4ª–6ª (pomeriggio a mano). */
   rientroDays?: DayOfWeek[];
   /** Ore a disposizione su questo plesso. In Costruisci i buchi, se servono, vanno prima a loro (fino a questo numero). */
