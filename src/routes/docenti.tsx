@@ -314,12 +314,12 @@ function historyText(h: { absences: number; substitutions: number }): string {
     .join(" e ");
 }
 
-/** Le ore di lezione e quelle a disposizione (il potenziamento ha solo ore a disposizione). */
 /** Ore segnate «Progetto»: fuori dalla scuola, non chiamabili per le sostituzioni. */
 function projectHours(t: Teacher): number {
   return (t.awaySlots ?? []).filter((a) => a.progetto).length;
 }
 
+/** Le ore di lezione e quelle a disposizione (il potenziamento ha solo ore a disposizione). */
 function hoursLines(t: Teacher): string[] {
   if (t.role === "potenziamento") {
     const project = projectHours(t);
