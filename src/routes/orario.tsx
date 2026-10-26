@@ -634,17 +634,16 @@ function OrarioPage() {
                                 <span className={cn("text-[11px]", tc.text2)}>Compresenza</span>
                               )}
                             </>
+                          ) : away?.progetto ? (
+                            <>
+                              <span className="text-[12px] font-semibold text-warning">Progetto</span>
+                              {away.sede && (
+                                <span className="line-clamp-2 break-words text-[11px] text-foreground">{away.sede}</span>
+                              )}
+                            </>
                           ) : (
-                            <span className={cn("text-[12px]", away?.progetto ? "font-semibold text-warning" : "text-ink-faint")}>
-                              {disp
-                                ? "A disposizione"
-                                : away
-                                  ? away.progetto
-                                    ? "Progetto"
-                                    : "Altrove"
-                                  : inWindow
-                                    ? "Buca · in sede"
-                                    : "Aggiungi"}
+                            <span className="text-[12px] text-ink-faint">
+                              {disp ? "A disposizione" : away ? "Altrove" : inWindow ? "Buca · in sede" : "Aggiungi"}
                             </span>
                           )}
                         </button>
@@ -809,7 +808,16 @@ function TeacherHourEditor({
   const mensa = isMensaPeriod(period);
   const dispOn = Boolean(teacher && isDispHour(teacher, editing.day, editing.periodId));
   const sameCell = (a: { day: DayOfWeek; periodId: string }) => a.day === editing.day && a.periodId === editing.periodId;
-  const projectOn = Boolean(teacher?.awaySlots?.some((a) => a.progetto && sameCell(a)));
+  const projectEntry = teacher?.awaySlots?.find((a) => a.progetto && sameCell(a));
+  const projectOn = Boolean(projectEntry);
+  const savedSede = projectEntry?.sede?.trim() ?? "";
+  const [sede, setSede] = useState(savedSede);
+  /** Le sedi di progetto già scritte per qualcuno, da suggerire. */
+  const knownSedi = [
+    ...new Set(
+      data.teachers.flatMap((t) => (t.awaySlots ?? []).filter((a) => a.progetto && a.sede?.trim()).map((a) => a.sede!.trim())),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
   const classChoices = isRestrictedTpPeriod(period)
     ? data.classes.filter((c) => c.tempo === "TP")
     : data.classes;
@@ -881,18 +889,36 @@ function TeacherHourEditor({
     onClose();
   }
 
-  /** «Progetto»: ora fuori dalla scuola, mai chiamabile per le sostituzioni (come in Docenti e Costruisci). */
+  /** «Progetto»: ora fuori dalla scuola, mai chiamabile per le sostituzioni (come nella scheda docente). */
   function toggleProject() {
     if (!teacher) return;
     if (!projectOn && existing) store.clearSlot(existing.id);
+    const typed = sede.trim();
     store.updateTeacher(teacher.id, {
       dispSlots: projectOn ? teacher.dispSlots ?? [] : (teacher.dispSlots ?? []).filter((a) => !sameCell(a)),
       awaySlots: [
         ...(teacher.awaySlots ?? []).filter((a) => !sameCell(a)),
-        ...(projectOn ? [] : [{ day: editing.day, periodId: editing.periodId, progetto: true }]),
+        ...(projectOn
+          ? []
+          : [{ day: editing.day, periodId: editing.periodId, progetto: true, ...(typed && { sede: typed }) }]),
       ],
     });
     toast.success(projectOn ? "Progetto tolto" : "Ora di progetto");
+    onClose();
+  }
+
+  /** Cambia solo la sede di un’ora che è già di progetto. */
+  function saveSede() {
+    if (!teacher) return;
+    const typed = sede.trim();
+    store.updateTeacher(teacher.id, {
+      awaySlots: (teacher.awaySlots ?? []).map((a) => {
+        if (!(a.progetto && sameCell(a))) return a;
+        const { sede: _old, ...rest } = a;
+        return typed ? { ...rest, sede: typed } : rest;
+      }),
+    });
+    toast.success(typed ? `Sede del progetto: ${typed}` : "Sede del progetto tolta");
     onClose();
   }
 
@@ -941,6 +967,23 @@ function TeacherHourEditor({
             <SubjectSelect value={subject} onChange={setSubject} />
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="mt-1" placeholder="O scrivi un nome" />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="sede-progetto-ora">Sede del progetto (facoltativa)</Label>
+            <Input
+              id="sede-progetto-ora"
+              value={sede}
+              onChange={(e) => setSede(e.target.value)}
+              placeholder="Es. Nicotera, primaria di Rombiolo"
+              maxLength={60}
+              list="sedi-progetto-ora"
+            />
+            <datalist id="sedi-progetto-ora">
+              {knownSedi.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+            <p className="text-[12px] text-ink-faint">Vale solo se l’ora è di progetto.</p>
+          </div>
           <div className="flex flex-wrap justify-end gap-2 pt-2">
             {existing && (
               <Button variant="outline" onClick={remove}>
@@ -953,6 +996,11 @@ function TeacherHourEditor({
             <Button variant="outline" onClick={toggleProject}>
               {projectOn ? "Togli progetto" : "Progetto"}
             </Button>
+            {projectOn && sede.trim() !== savedSede && (
+              <Button variant="outline" onClick={saveSede}>
+                Salva sede
+              </Button>
+            )}
             <Button onClick={save}>{classId ? "Salva lezione" : "Salva in sede"}</Button>
           </div>
         </div>
