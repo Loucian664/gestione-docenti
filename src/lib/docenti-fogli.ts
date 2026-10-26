@@ -6,7 +6,11 @@ import { isDispHour, teacherSlotAt } from "./coverage";
 import { isMensaLesson, isMensaPeriod, visiblePeriods } from "./periods";
 import type { DayOfWeek, Period, PersistedData, Teacher } from "./types";
 
-export type TeacherCell = { kind: "lesson" | "disp" | "mensa" | "away" | "empty"; cls?: string; subject?: string };
+export type TeacherCell = {
+  kind: "lesson" | "disp" | "mensa" | "away" | "project" | "empty";
+  cls?: string;
+  subject?: string;
+};
 
 export function teacherCellAt(data: PersistedData, t: Teacher, day: DayOfWeek, p: Period): TeacherCell {
   if (isDispHour(t, day, p.id)) return { kind: "disp" };
@@ -16,8 +20,9 @@ export function teacherCellAt(data: PersistedData, t: Teacher, day: DayOfWeek, p
     const c = data.classes.find((x) => x.id === slot.classId);
     return { kind: "lesson", cls: c ? `${c.grade}${c.section}` : "", subject: slot.subject };
   }
-  // ore segnate con la × in Costruisci: il docente è in un altro plesso
-  if ((t.awaySlots ?? []).some((a) => a.day === day && a.periodId === p.id)) return { kind: "away" };
+  // ore segnate con la × in Costruisci (altro plesso) oppure «Progetto»
+  const away = (t.awaySlots ?? []).find((a) => a.day === day && a.periodId === p.id);
+  if (away) return { kind: away.progetto ? "project" : "away" };
   return { kind: "empty" };
 }
 
@@ -28,7 +33,7 @@ export function teacherSheetPeriods(data: PersistedData, t: Teacher): Period[] {
       !p.tpOnly ||
       data.settings.days.some((d) => {
         const kind = teacherCellAt(data, t, d, p).kind;
-        return kind !== "empty" && kind !== "away";
+        return kind !== "empty" && kind !== "away" && kind !== "project";
       }),
   );
 }
