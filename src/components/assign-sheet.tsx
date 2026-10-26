@@ -88,7 +88,7 @@ const GROUPS: { bucket: SubstituteBucket | SubstituteBucket[]; title: string; hi
   {
     bucket: "altrove",
     title: "Altrove o in progetto",
-    hint: "In quest’ora è in un altro plesso o in un progetto: sceglilo solo in casi eccezionali. Escluso dall’assegnazione automatica.",
+    hint: "In quest’ora è in un altro plesso o in un progetto. Escluso dall’assegnazione automatica.",
   },
 ];
 
