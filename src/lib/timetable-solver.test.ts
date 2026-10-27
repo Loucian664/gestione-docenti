@@ -712,6 +712,77 @@ describe("timetable-solver", () => {
     assert.ok(ed2.effects(c, 0).every((e) => e === null));
     assert.equal(ed2.effect(c, 3, 0), null);
   });
+
+  it("ritocchi: vietato anche quando sistema un vincolo e ne rompe un altro (il conto resta uguale)", () => {
+    const data = buildSeed();
+    const solved = withSlots(data, solveTimetable(data, { timeMs: 800, seed: 44 }));
+    const units = (r: TimetableReport) => new Map(Object.values(r.hard).flatMap((l) => l.flatMap((i) => i.units ?? [])));
+    const total = (r: TimetableReport) => [...units(r).values()].reduce((a, b) => a + b, 0);
+    const worse = (a: TimetableReport, b: TimetableReport) => [...units(b)].some(([k, n]) => n > (units(a).get(k) ?? 0));
+    // una lezione (classe c, casella A, docente T) che si scambia senza sovrapposizioni con quella della casella B:
+    // con × di T in A e in B, lo scambio sistema la × in A e ne rompe una in B
+    const ed0 = new TimetableEditor(solved);
+    const p = ed0.prep;
+    const where = (z: number) => ({ day: p.days[(z / p.M) | 0]!, periodId: p.periods[p.morningPos[z % p.M]!]!.id });
+    let found: { c: string; a: number; b: number; marked: PersistedData; before: TimetableReport } | null = null;
+    for (const cls of p.classes) {
+      for (let a = 0; a < p.DM && !found; a++) {
+        const la = ed0.lessonAt(cls.id, a);
+        const teacher = la && solved.teachers.find((x) => x.id === la.teacherId);
+        if (!la || !teacher || teacher.otherPlesso) continue;
+        for (let b = 0; b < p.DM && !found; b++) {
+          const lb = ed0.lessonAt(cls.id, b);
+          if (!lb || lb.teacherId === la.teacherId) continue;
+          if (ed0.teacherAt(la.teacherId, b).kind === "lesson" || ed0.teacherAt(lb.teacherId, a).kind === "lesson") continue;
+          const marked: PersistedData = {
+            ...solved,
+            teachers: solved.teachers.map((x) =>
+              x.id === teacher.id ? { ...x, awaySlots: [...(x.awaySlots ?? []), where(a), where(b)] } : x,
+            ),
+          };
+          const ed = new TimetableEditor(marked);
+          const before = ed.report(0);
+          ed.apply(cls.id, a, b);
+          const after = ed.report(0);
+          // vale solo se il conto resta uguale: un vincolo in meno e uno in più
+          if (after.score.hard === before.score.hard && worse(before, after)) found = { c: cls.id, a, b, marked, before };
+        }
+      }
+      if (found) break;
+    }
+    assert.ok(found, "c'è uno scambio che sistema un vincolo e ne rompe un altro");
+    const { c, a, b, marked, before } = found;
+    // i vincoli del resoconto contano come la ricerca
+    assert.equal(total(before), before.score.hard);
+    const ed = new TimetableEditor(marked);
+    const eff = ed.effect(c, a, b)!;
+    assert.equal(eff.verdict, "breaks");
+    assert.ok(eff.hard > 0);
+    const issues = ed.newHardIssues(c, a, b);
+    assert.equal(issues.length, 1);
+    assert.match(issues[0]!, /lezione in un'ora segnata altrove/);
+    // per ogni casella: vietato se e solo se dopo lo spostamento c'è un vincolo nuovo o peggiorato
+    ed.effects(c, a).forEach((e, z) => {
+      if (!e) return;
+      const fresh = new TimetableEditor(marked);
+      fresh.apply(c, a, z);
+      const after = fresh.report(0);
+      assert.equal(total(after), after.score.hard);
+      assert.equal(e.verdict === "breaks", worse(before, after), `${a} → ${z}: ${e.verdict}`);
+      if (e.verdict === "breaks") assert.ok(ed.newHardIssues(c, a, z).length > 0, `${a} → ${z}: cosa non rispetta`);
+    });
+    // «Trova» non propone mosse che rompono un vincolo, nemmeno se ne sistemano un altro
+    const it = new TimetableEditor(marked).findFixes({ kind: "lesson", classId: c, z: a });
+    let r = it.next();
+    while (!r.done) r = it.next();
+    for (const opt of r.value.options) {
+      const fresh = new TimetableEditor(marked);
+      for (const st of opt.steps) assert.ok(fresh.apply(st.classId, st.from, st.to));
+      assert.equal(worse(before, fresh.report(0)), false, "la proposta non rompe vincoli");
+      assert.notEqual(opt.effect.verdict, "breaks");
+    }
+  });
+
   it("«Trova»: ogni proposta toglie la buca (o sposta la lezione), senza vincoli in più e con l'effetto annunciato", () => {
     const seed = buildSeed();
     const solved = withSlots(seed, solveTimetable(seed, { timeMs: 800, seed: 44 }));

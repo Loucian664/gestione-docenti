@@ -2576,8 +2576,17 @@ export class TimetableSolver {
 /** Un docente o una classe. */
 export type Who = { kind: "teacher" | "class"; id: string; name: string };
 
-/** Una voce del resoconto; nei vincoli rigidi anche di chi è e in quali ore (per mostrarle nella sua settimana). */
-export type Issue = { text: string; who?: Who; cells?: { day: DayOfWeek; periodId: string }[] };
+/**
+ * Una voce del resoconto; nei vincoli rigidi anche di chi è e in quali ore (per mostrarle nella sua settimana)
+ * e `units`: quali vincoli sono (chi e dove, senza i numeri) e quanto valgono, come li conta la ricerca.
+ * Confrontandoli prima e dopo una mossa si vede se ne rompe uno, anche quando ne sistema un altro.
+ */
+export type Issue = {
+  text: string;
+  who?: Who;
+  cells?: { day: DayOfWeek; periodId: string }[];
+  units?: [key: string, n: number][];
+};
 
 /**
  * Una voce del confronto che riguarda un docente o una classe, in un giorno (`d`, `day`) o nella settimana
@@ -2810,6 +2819,7 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
               text: `${cname} · ${dayName(d)} ${hourLabel(p.morningPos[m]!)}: classe senza docente`,
               who: cwho,
               cells: [{ day: p.days[d]!, periodId: p.periods[p.morningPos[m]!]!.id }],
+              units: [[`holes|${cwho.id}|${d}|${m}`, 1]],
             });
       }
     }
@@ -2902,14 +2912,22 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
           if (lFirst < 0) lFirst = pos;
           lLast = pos;
           const where = `${info.name} · ${dayName(d)} ${hourLabel(pos)}`;
-          const at = (text: string): Issue => ({ text, who: twho, cells: [{ day: p.days[d]!, periodId: p.periods[pos]!.id }] });
-          if (n > 1) rep.hard.conflicts.push(at(`${where}: ${n} classi insieme`));
+          const at = (text: string, kind: string, k: number): Issue => ({
+            text,
+            who: twho,
+            cells: [{ day: p.days[d]!, periodId: p.periods[pos]!.id }],
+            units: [[`${kind}|${info.id}|${d}|${pos}`, k]],
+          });
+          if (n > 1) rep.hard.conflicts.push(at(`${where}: ${n} classi insieme`, "conflicts", n - 1));
           if (isM) {
-            if (p.unavail[base + pos] === 1) rep.hard.away.push(at(`${where}: lezione in un'ora segnata altrove`));
-            if (p.unavail[base + pos] === 2) rep.hard.travel.push(at(`${where}: senza ora di spostamento dall'altro plesso`));
-            if (p.unavail[base + pos] === 3) rep.hard.no.push(at(`${where}: lezione in un'ora «no»`));
-            if (p.unavail[base + pos] === 4 && !p.dispYield) rep.hard.away.push(at(`${where}: lezione in un'ora a disposizione`));
-            if (p.rientro[t * D + d] && p.pIndex[pos]! < 4) rep.hard.rientro.push(at(`${where}: giorno di rientro, prima della 4ª`));
+            if (p.unavail[base + pos] === 1) rep.hard.away.push(at(`${where}: lezione in un'ora segnata altrove`, "away", n));
+            if (p.unavail[base + pos] === 2)
+              rep.hard.travel.push(at(`${where}: senza ora di spostamento dall'altro plesso`, "travel", n));
+            if (p.unavail[base + pos] === 3) rep.hard.no.push(at(`${where}: lezione in un'ora «no»`, "no", n));
+            if (p.unavail[base + pos] === 4 && !p.dispYield)
+              rep.hard.away.push(at(`${where}: lezione in un'ora a disposizione`, "away", n));
+            if (p.rientro[t * D + d] && p.pIndex[pos]! < 4)
+              rep.hard.rientro.push(at(`${where}: giorno di rientro, prima della 4ª`, "rientro", n));
             lessonsM += 1;
           } else afternoon = true;
         }
@@ -2984,11 +3002,15 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       // al massimo un'ora libera tra le lezioni, buca o disposizione (salvo chi ne accetta 2);
       // dalla 1ª alla 6ª mai 2 ore senza lezione, anche se le riempie una disposizione;
       // chi non accetta ore buche non ne ha, nemmeno quelle dove andrebbe una disposizione
+      // (quanto conta per la ricerca: il peggiore dei tre)
+      const free = Math.max(span6 && rawGaps >= 2 ? rawGaps - 1 : 0, info.allow2 ? 0 : Math.max(0, middle - 1), info.noGaps ? rawGaps : 0);
+      const freeUnits: [string, number][] = [[`longGaps|${info.id}|${d}`, free]];
       if (info.noGaps && rawGaps > 0)
         rep.hard.longGaps.push({
           text: `${info.name} · ${dayName(d)}: ${rawGaps === 1 ? "1 ora buca" : `${rawGaps} ore buche`}, che il docente non accetta`,
           who: twho,
           cells: rawCells,
+          units: freeUnits,
         });
       else if (!info.allow2 && middle >= 2 && !(span6 && rawGaps > middle))
         rep.hard.longGaps.push({
@@ -2997,12 +3019,14 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
           }`,
           who: twho,
           cells: middleCells,
+          units: freeUnits,
         });
       else if (span6 && rawGaps >= 2)
         rep.hard.longGaps.push({
           text: `${info.name} · ${dayName(d)}: dalla 1ª alla 6ª con ${rawGaps} ore senza lezione in mezzo`,
           who: twho,
           cells: rawCells,
+          units: freeUnits,
         });
       if (duties === 1) {
         rep.docenti.single.push({ text: `${info.name} · ${dayName(d)}: una sola ora` });
@@ -3018,7 +3042,12 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
           const where = p.unavail[base + pos] === 1 ? "altrove" : n > 0 || (disp >>> pos) & 1 ? "qui" : "";
           if (where && seq[seq.length - 1] !== where) seq.push(where);
         }
-        rep.hard.shuttle.push({ text: `${info.name} · ${dayName(d)}: ${seq.join(" → ")}`, who: twho, cells });
+        rep.hard.shuttle.push({
+          text: `${info.name} · ${dayName(d)}: ${seq.join(" → ")}`,
+          who: twho,
+          cells,
+          units: [[`shuttle|${info.id}|${d}`, s.shuttleOf(t, d)]],
+        });
       }
       if (info.otherPlesso && p.dayHasAway[t * D + d] && mFirst >= 0) {
         rep.docenti.mixed.push({ text: `${info.name} · ${dayName(d)}: qui e nell'altro plesso` });
@@ -3037,7 +3066,11 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       if (excess === 0) rep.patterns.ok += 1;
       else {
         const now = perDay.map((n, d) => `${dayName(d)} ${n}`).join(", ");
-        rep.hard.pattern.push({ text: `${info.name}: ${now}; scelte ${patterns.map((x) => patternText(x)).join(" o ")}`, who: twho });
+        rep.hard.pattern.push({
+          text: `${info.name}: ${now}; scelte ${patterns.map((x) => patternText(x)).join(" o ")}`,
+          who: twho,
+          units: [[`pattern|${info.id}`, excess]],
+        });
         fact("patterns", twho, -1, "", excess, now);
       }
       rep.patterns.rows.push({ id: info.id, name: info.name, perDay, patterns, fits, excess, missing });
@@ -3046,9 +3079,9 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
       rep.gapsByTeacher.push({ id: info.id, name: info.name, gaps, where: gapWhere.join(", "), cells: gapCells, fill: fillCells });
     if (fillCells.length) rep.dispFill.push({ text: `${info.name}: ${fillWhere.join(", ")}` });
     if (info.lessons > 0) lastRows.push({ name: info.name, count: s.lastCount[t]! });
-    const missOf = (list: SlotWish[], cells?: { day: DayOfWeek; periodId: string }[]) => {
+    const missOf = (list: SlotWish[], cells?: { day: DayOfWeek; periodId: string }[], which?: number[]) => {
       const missing: string[] = [];
-      for (const a of list) {
+      for (const [i, a] of list.entries()) {
         const ok = a.classes.some((c) => {
           const u = s.grid[c * DM + a.d * M + a.m]!;
           return u >= 0 && p.unitTeacher[u] === t;
@@ -3056,18 +3089,22 @@ export function buildReport(s: TimetableSolver, expected: number): TimetableRepo
         if (ok) continue;
         missing.push(`${dayName(a.d)} ${hourLabel(p.morningPos[a.m]!)}`);
         cells?.push({ day: p.days[a.d]!, periodId: p.periods[p.morningPos[a.m]!]!.id });
+        which?.push(i);
       }
       return missing;
     };
     if (p.must[t]!.length) {
       const cells: { day: DayOfWeek; periodId: string }[] = [];
-      const missing = missOf(p.must[t]!, cells);
+      const which: number[] = [];
+      const missing = missOf(p.must[t]!, cells, which);
       const n = missing.length - p.mustOffset[t]!;
       if (n > 0)
         rep.hard.must.push({
           text: `${info.name}: ${n === 1 ? "1 obbligo non rispettato" : `${n} obblighi non rispettati`} (${missing.join(", ")})`,
           who: twho,
           cells,
+          // se tutti si possono rispettare conta ognuno; se no conta quanti (quali restano fuori è una scelta)
+          units: p.mustOffset[t] ? [[`must|${info.id}`, n]] : which.map((i): [string, number] => [`must|${info.id}|${i}`, 1]),
         });
     }
     if (p.cpref[t]!.length) {
@@ -3746,8 +3783,18 @@ function hardOf(peek: PeekResult): number {
   return peek.shuttle > 0 ? Math.max(peek.dh, peek.shuttle) : peek.dh;
 }
 
-function hardTexts(r: TimetableReport): string[] {
-  return Object.values(r.hard).flatMap((list) => list.map((i) => i.text));
+/** I vincoli rigidi non rispettati (chi e dove, senza i numeri) e quanto valgono. */
+function hardUnits(r: TimetableReport): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const list of Object.values(r.hard)) for (const i of list) for (const [k, n] of i.units ?? [[i.text, 1]]) out.set(k, n);
+  return out;
+}
+
+/** Le voci dei vincoli rigidi nuovi o peggiorati rispetto a `before` (testi del resoconto). */
+function worseIssues(before: Map<string, number>, r: TimetableReport): string[] {
+  return Object.values(r.hard).flatMap((list) =>
+    list.filter((i) => (i.units ?? [[i.text, 1]]).some(([k, n]) => n > (before.get(k) ?? 0))).map((i) => i.text),
+  );
 }
 
 /**
@@ -3763,6 +3810,8 @@ export class TimetableEditor {
   private totals: Record<HighRow, number>;
   /** le voci per docente e classe dell'orario di adesso (si rifanno dopo uno spostamento) */
   private facts0: Fact[] | null = null;
+  /** i vincoli rigidi non rispettati nell'orario di adesso (si rifanno dopo uno spostamento) */
+  private units0: Map<string, number> | null = null;
 
   constructor(data: PersistedData) {
     this.prep = prepare(data, "slots", { keepDisp: true, dispYield: true, floatDisp: true });
@@ -3785,15 +3834,15 @@ export class TimetableEditor {
     this.last0 = this.s.lastMax();
     this.pat0 = this.s.patternOkCount();
     this.facts0 = null;
+    this.units0 = null;
   }
 
   /**
-   * A chi cambia cosa con le mosse, fatte una dopo l'altra come in una proposta di «Trova», senza farle
-   * davvero; null se una mossa non si può fare.
+   * Fa le mosse una dopo l'altra, guarda com'è l'orario con `look` e le disfa; null se una mossa non si può
+   * fare.
    */
-  whoChanges(steps: { classId: string; from: number; to: number }[]): WhoChange[] | null {
+  private onSteps<T>(steps: { classId: string; from: number; to: number }[], look: () => T): T | null {
     const s = this.s;
-    this.facts0 ??= buildReport(s, 0).facts;
     const hard0 = s.hard;
     const done: { cls: number[]; x: number; y: number }[] = [];
     let ok = true;
@@ -3811,10 +3860,46 @@ export class TimetableEditor {
       }
       done.push({ cls, x: st.from, y: st.to });
     }
-    const after = ok ? buildReport(s, 0).facts : null;
+    const out = ok ? look() : null;
     for (let i = done.length - 1; i >= 0; i--) s.swapClasses(done[i]!.cls, done[i]!.x, done[i]!.y);
     if (s.hard !== hard0) s.recomputeAll();
-    return after && diffFacts(this.facts0, after);
+    return out;
+  }
+
+  /**
+   * A chi cambia cosa con le mosse, fatte una dopo l'altra come in una proposta di «Trova», senza farle
+   * davvero; null se una mossa non si può fare.
+   */
+  whoChanges(steps: { classId: string; from: number; to: number }[]): WhoChange[] | null {
+    const facts0 = (this.facts0 ??= buildReport(this.s, 0).facts);
+    const after = this.onSteps(steps, () => buildReport(this.s, 0).facts);
+    return after && diffFacts(facts0, after);
+  }
+
+  /**
+   * I vincoli rigidi che le mosse, fatte una dopo l'altra, non rispettano più o rispettano meno (testi del
+   * resoconto), senza farle davvero: anche quando ne sistemano altri e il conto resta uguale. null se una
+   * mossa non si può fare.
+   */
+  private brokenBy(steps: { classId: string; from: number; to: number }[]): string[] | null {
+    const units0 = (this.units0 ??= hardUnits(buildReport(this.s, 0)));
+    return this.onSteps(steps, () => worseIssues(units0, buildReport(this.s, 0)));
+  }
+
+  /**
+   * Lo scambio tra le caselle x e y delle classi tocca un docente o una giornata di classe che ha già un vincolo
+   * non rispettato (in `tw` e `cd`, di partenza: twHard e cdHard)? Solo così può sistemarne uno e romperne un
+   * altro senza che il conto cambi; se no un vincolo rotto si vede già dal conto.
+   */
+  private nearHard(cls: number[], x: number, y: number, tw: Int32Array, cd: Int32Array): boolean {
+    const p = this.prep;
+    for (const c of cls)
+      for (const z of [x, y]) {
+        if (cd[c * p.D + ((z / p.M) | 0)]! > 0) return true;
+        const u = this.s.grid[c * p.DM + z]!;
+        if (u >= 0 && tw[p.unitTeacher[u]!]! > 0) return true;
+      }
+    return false;
   }
 
   /** Casella del mattino (giorno, ora) → indice; -1 se non è un'ora del mattino. */
@@ -4007,13 +4092,27 @@ export class TimetableEditor {
     return { verdict, rows, worse, better, worseW, betterW };
   }
 
-  private describe(mv: EditMove): MoveEffect {
+  /** L'effetto dello spostamento della lezione della classe c dalla casella x alla y (mossa già pensata). */
+  private describe(c: number, x: number, y: number, mv: EditMove): MoveEffect {
     const p = this.prep;
-    const also = mv.classes.slice(1).map((c) => p.classes[c]!.name);
+    const s = this.s;
+    const also = mv.classes.slice(1).map((k) => p.classes[k]!.name);
     if (!mv.peek) return { verdict: "same", hard: 0, rows: [], also, dispLost: [], dispMoved: [] };
     const j = this.judge(mv.peek);
     const dt = this.dispTexts(mv.peek.disp);
-    return { verdict: j.verdict, hard: hardOf(mv.peek), rows: j.rows, also, dispLost: dt.lost, dispMoved: dt.moved };
+    let verdict = j.verdict;
+    let hard = hardOf(mv.peek);
+    // sistema un vincolo ma ne rompe un altro: il conto resta uguale, ma è vietato lo stesso
+    if (
+      verdict !== "breaks" &&
+      s.hard > 0 &&
+      this.nearHard(mv.classes, x, y, s.twHard, s.cdHard) &&
+      this.brokenBy([{ classId: p.classes[c]!.id, from: x, to: y }])?.length
+    ) {
+      verdict = "breaks";
+      hard = Math.max(1, hard);
+    }
+    return { verdict, hard, rows: j.rows, also, dispLost: dt.lost, dispMoved: dt.moved };
   }
 
   // ---------- «Trova»: le migliori combinazioni di una o due mosse ----------
@@ -4108,7 +4207,7 @@ export class TimetableEditor {
    * non peggiorano nulla, poi quanto peggiorano (con i pesi del motore: una giornata di 6 lezioni pesa più
    * di una di un'ora sola), poi meno mosse, poi quanto migliorano. La seconda mossa sposta una delle
    * lezioni toccate dalla prima e vale solo se rimette a posto qualcosa. Proposte che portano allo stesso
-   * orario contano una volta.
+   * orario contano una volta. Non propone mai mosse che sistemano un vincolo rompendone un altro.
    * Lavora a pezzi: restituisce di tanto in tanto quanto ha fatto (da 0 a 1); alla fine le 3 migliori.
    * Si ferma prima, tenendo il meglio trovato, se chi chiama passa `true` a `next()` o dopo `maxMs`.
    */
@@ -4164,23 +4263,26 @@ export class TimetableEditor {
         }
       return false;
     };
-    type Found = { steps: FixStep[]; peek: PeekResult; key: number[] };
+    // chi ha già un vincolo non rispettato, nell'orario di partenza: le mosse che lo toccano possono sistemarne
+    // uno e romperne un altro senza che il conto cambi (si controlla sul resoconto, solo per loro)
+    const tw0 = Int32Array.from(s.twHard);
+    const cd0 = Int32Array.from(s.cdHard);
+    const near = (cls: number[], x: number, y: number) => hard0 > 0 && this.nearHard(cls, x, y, tw0, cd0);
+    /** near: da controllare sul resoconto; ok: controllata, non rompe nessun vincolo */
+    type Found = { steps: FixStep[]; peek: PeekResult; key: number[]; near: boolean; ok?: boolean };
     const cmp = (a: Found, b: Found) => {
       for (let i = 0; i < a.key.length; i++) if (a.key[i] !== b.key[i]) return a.key[i]! - b.key[i]!;
       return 0;
     };
     let found: Found[] = [];
-    const keep = (steps: FixStep[], peek: PeekResult) => {
+    const keep = (steps: FixStep[], peek: PeekResult, near: boolean) => {
       const j = this.judge(peek);
-      found.push({ steps, peek, key: [peek.dh, j.worse > 0 ? 1 : 0, j.worseW, steps.length, -j.betterW, peek.ds] });
-      if (found.length > 600) {
-        found.sort(cmp);
-        found = found.slice(0, 120);
-      }
+      found.push({ steps, peek, key: [peek.dh, j.worse > 0 ? 1 : 0, j.worseW, steps.length, -j.betterW, peek.ds], near });
     };
     let partial = false;
+    let stop = false;
     for (let i = 0; i < cands.length; i++) {
-      if ((i % 2 === 0 && (yield i / cands.length)) || Date.now() - startedAt > maxMs) {
+      if (stop || (i % 2 === 0 && (yield i / cands.length)) || Date.now() - startedAt > maxMs) {
         partial = true;
         break;
       }
@@ -4194,7 +4296,8 @@ export class TimetableEditor {
         const peek1 = mv.peek;
         const ok1 = fewerGaps(peek1);
         const worse1 = this.judge(peek1).worse;
-        if (peek1.dh <= 0 && peek1.shuttle <= 0 && ok1) keep([step1], peek1);
+        const near1 = near(cls, x, y);
+        if (peek1.dh <= 0 && peek1.shuttle <= 0 && ok1) keep([step1], peek1, near1);
         // se la prima mossa lascia qualcosa di storto, una seconda può rimetterlo a posto
         if (peek1.dh > 0 || peek1.shuttle > 0 || worse1 > 0 || !ok1) {
           for (const [c2, x2, y2] of this.repairMoves(cls, x, y)) {
@@ -4215,12 +4318,26 @@ export class TimetableEditor {
               if (cls2) s.swapClasses(cls2, x2, y2);
               if (!ok) continue;
             }
-            keep([step1, step2], both);
+            keep([step1, step2], both, near1 || near(mv2.classes, x2, y2));
           }
         }
       }
       s.swapClasses(cls, x, y);
       if (s.hard !== hard0) s.recomputeAll();
+      if (found.length > 600) {
+        // le 120 migliori che non rompono vincoli (si controllano qui, sull'orario di partenza)
+        found.sort(cmp);
+        const top: Found[] = [];
+        for (const f of found) {
+          if (top.length >= 120) break;
+          if (f.near && f.ok === undefined && !stop) {
+            f.ok = this.brokenBy(f.steps)?.length === 0;
+            if (yield i / cands.length) stop = true;
+          }
+          if (!f.near || f.ok) top.push(f);
+        }
+        found = top;
+      }
     }
     yield 1;
     found.sort(cmp);
@@ -4234,6 +4351,12 @@ export class TimetableEditor {
       if (effects.has(sig)) continue;
       const k = this.endState(f.steps);
       if (!k || seen.has(k)) continue;
+      // sistema un vincolo ma ne rompe un altro: non si propone
+      if (f.near && f.ok === undefined && !stop) {
+        f.ok = this.brokenBy(f.steps)?.length === 0;
+        if (yield 1) stop = true;
+      }
+      if (f.near && !f.ok) continue;
       seen.add(k);
       effects.add(sig);
       out.push({
@@ -4252,13 +4375,14 @@ export class TimetableEditor {
       });
       if (out.length >= 3) break;
     }
-    return { options: out, partial };
+    return { options: out, partial: partial || stop };
   }
 
   /** Effetto dello spostamento della lezione della classe dalla casella `from` a `to`; null se non si può. */
   effect(classId: string, from: number, to: number): MoveEffect | null {
-    const mv = this.plan(this.classOf(classId), from, to);
-    return mv ? this.describe(mv) : null;
+    const c = this.classOf(classId);
+    const mv = this.plan(c, from, to);
+    return mv ? this.describe(c, from, to, mv) : null;
   }
 
   /** Effetto per ogni casella della classe (null: la casella stessa, ore bloccate, nessun cambiamento). */
@@ -4267,21 +4391,17 @@ export class TimetableEditor {
     const out: (MoveEffect | null)[] = [];
     for (let z = 0; z < this.prep.DM; z++) {
       const mv = z === from ? null : this.plan(c, from, z);
-      out.push(mv ? this.describe(mv) : null);
+      out.push(mv ? this.describe(c, from, z, mv) : null);
     }
     return out;
   }
 
-  /** I vincoli rigidi che lo spostamento non rispetterebbe (testi del resoconto), senza farlo. */
+  /**
+   * I vincoli rigidi che lo spostamento non rispetterebbe o rispetterebbe meno (testi del resoconto), anche
+   * se ne sistema altri, senza farlo.
+   */
   newHardIssues(classId: string, from: number, to: number): string[] {
-    const c = this.classOf(classId);
-    const mv = this.plan(c, from, to);
-    if (!mv || !mv.peek || (mv.peek.dh <= 0 && mv.peek.shuttle <= 0)) return [];
-    const before = new Set(hardTexts(buildReport(this.s, 0)));
-    this.s.applyMove(c, from, to, mv.kind === "kempe");
-    const after = hardTexts(buildReport(this.s, 0));
-    this.s.swapClasses(mv.classes, from, to);
-    return after.filter((x) => !before.has(x));
+    return this.brokenBy([{ classId, from, to }]) ?? [];
   }
 
   /**
