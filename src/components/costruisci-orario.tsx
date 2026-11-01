@@ -2504,7 +2504,7 @@ function EraseAllDialog({
           </DialogDescription>
         </DialogHeader>
         {rows.length > 0 && (
-          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+          <ul className="mb-3 divide-y divide-border overflow-hidden rounded-lg border border-border">
             {rows.map((r) => (
               <li key={r.kind}>
                 <label className="flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2 text-sm">
@@ -2528,7 +2528,7 @@ function EraseAllDialog({
             ))}
           </ul>
         )}
-        <p className="text-[12px] text-muted-foreground">Le ore di progetto e le ore a disposizione restano.</p>
+        <p className="mb-4 text-[12px] text-muted-foreground">Le ore di progetto e le ore a disposizione restano.</p>
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" className="min-h-11" onClick={onClose}>
             {rows.length ? "Annulla" : "Chiudi"}
