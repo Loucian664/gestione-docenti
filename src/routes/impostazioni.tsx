@@ -20,6 +20,7 @@ import type { DayOfWeek, PersistedData } from "@/lib/types";
 import { ensureTpPeriods } from "@/lib/periods";
 import { nextSchoolYear } from "@/lib/dates";
 import { archivedYearLabels } from "@/lib/school-years";
+import { activeSlotOf } from "@/lib/saved-timetables";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/impostazioni")({ component: ImpostazioniPage });
@@ -30,12 +31,43 @@ function ImpostazioniPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearStep, setClearStep] = useState<1 | 2>(1);
+  const [emptyOpen, setEmptyOpen] = useState(false);
+  const [emptyDisp, setEmptyDisp] = useState(false);
   const [pendingImport, setPendingImport] = useState<{ data: PersistedData; name: string } | null>(null);
   const [newYear, setNewYear] = useState<string | null>(null);
   const [removingYear, setRemovingYear] = useState<string | null>(null);
   const archived = store.archivedYears ?? [];
   const yearLabels = archivedYearLabels(archived);
   const sameYear = (newYear ?? "").trim() === store.settings.schoolYear.trim();
+
+  const inUse = activeSlotOf(store);
+  const inUseName =
+    inUse === 0
+      ? "orario in vigore"
+      : `orario dello slot ${inUse}${(() => {
+          const name = store.savedTimetables?.find((x) => x.n === inUse)?.name;
+          return name ? ` «${name}»` : "";
+        })()}`;
+  const dispCount = store.teachers.reduce((n, t) => n + (t.dispSlots?.length ?? 0), 0);
+
+  /** «Svuota orario»: via tutte le lezioni (e, se scelto, le ore a disposizione), con «Annulla». */
+  function emptyTimetable() {
+    const before = store.slots;
+    const beforeDisp = emptyDisp
+      ? Object.fromEntries(store.teachers.filter((t) => t.dispSlots?.length).map((t) => [t.id, t.dispSlots]))
+      : undefined;
+    const lessons = before.length;
+    store.setTimetable(
+      [],
+      beforeDisp && Object.fromEntries(Object.keys(beforeDisp).map((id) => [id, []])),
+    );
+    setEmptyOpen(false);
+    setEmptyDisp(false);
+    toast(`Orario svuotato: ${countText(lessons, "lezione tolta", "lezioni tolte")}.`, {
+      duration: 10000,
+      action: { label: "Annulla", onClick: () => store.setTimetable(before, beforeDisp) },
+    });
+  }
 
   function exportBackup() {
     void shareOrSave(
@@ -318,6 +350,64 @@ function ImpostazioniPage() {
           </Button>
         </div>
       </section>
+
+      <section className="paper-panel rounded-xl p-5">
+        <h2 className="font-display text-lg">Svuota orario</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Toglie tutte le lezioni dell’orario in uso. Restano docenti, classi, cattedre, segni di Costruisci, assenze,
+          sostituzioni e orari salvati negli slot.
+        </p>
+        <div className="mt-4">
+          <Button variant="outline" className="min-h-11" disabled={store.slots.length === 0} onClick={() => setEmptyOpen(true)}>
+            Svuota orario
+          </Button>
+        </div>
+      </section>
+
+      <Dialog
+        open={emptyOpen}
+        onOpenChange={(open) => {
+          setEmptyOpen(open);
+          if (!open) setEmptyDisp(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Svuotare l’orario?</DialogTitle>
+            <DialogDescription>
+              Si {store.slots.length === 1 ? "toglie" : "tolgono"} {countText(store.slots.length, "lezione", "lezioni")}{" "}
+              dall’{inUseName}. Restano docenti, classi, cattedre, segni
+              di Costruisci, assenze, sostituzioni e orari salvati negli slot.
+            </DialogDescription>
+          </DialogHeader>
+          {dispCount > 0 && (
+            <label className="flex min-h-10 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4 accent-primary"
+                checked={emptyDisp}
+                onChange={(e) => setEmptyDisp(e.target.checked)}
+              />
+              Togli anche le ore a disposizione ({dispCount})
+            </label>
+          )}
+          <p className="text-[12px] text-muted-foreground">
+            Subito dopo puoi tornare indietro con «Annulla». Per conservare una copia, esporta il backup o salva
+            l’orario in uno slot.
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" className="min-h-11" onClick={exportBackup}>
+              Esporta backup
+            </Button>
+            <Button variant="outline" className="min-h-11" onClick={() => setEmptyOpen(false)}>
+              Annulla
+            </Button>
+            <Button variant="destructive" className="min-h-11" onClick={emptyTimetable}>
+              Svuota orario
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <section className="paper-panel rounded-xl p-5">
         <h2 className="font-display text-lg">Cancella tutti i dati</h2>
