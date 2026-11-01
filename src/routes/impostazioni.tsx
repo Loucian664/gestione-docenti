@@ -50,20 +50,28 @@ function ImpostazioniPage() {
         })()}`;
   const dispCount = store.teachers.reduce((n, t) => n + (t.dispSlots?.length ?? 0), 0);
 
+  // orario già vuoto: «Svuota orario» serve a togliere le ore a disposizione rimaste
+  const onlyDisp = store.slots.length === 0;
+
   /** «Svuota orario»: via tutte le lezioni (e, se scelto, le ore a disposizione), con «Annulla». */
   function emptyTimetable() {
     const before = store.slots;
-    const beforeDisp = emptyDisp
+    const beforeDisp = emptyDisp || onlyDisp
       ? Object.fromEntries(store.teachers.filter((t) => t.dispSlots?.length).map((t) => [t.id, t.dispSlots]))
       : undefined;
     const lessons = before.length;
+    const disp = Object.values(beforeDisp ?? {}).reduce((n, list) => n + (list?.length ?? 0), 0);
     store.setTimetable(
       [],
       beforeDisp && Object.fromEntries(Object.keys(beforeDisp).map((id) => [id, []])),
     );
     setEmptyOpen(false);
     setEmptyDisp(false);
-    toast(`Orario svuotato: ${countText(lessons, "lezione tolta", "lezioni tolte")}.`, {
+    const what = [
+      lessons > 0 && countText(lessons, "lezione", "lezioni"),
+      disp > 0 && countText(disp, "ora a disposizione", "ore a disposizione"),
+    ].filter(Boolean);
+    toast(`${lessons > 0 ? "Orario svuotato: " : ""}${what.join(" e ")} ${lessons + disp === 1 ? "tolta" : "tolte"}.`, {
       duration: 10000,
       action: {
         label: "Annulla",
@@ -365,11 +373,16 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Svuota orario</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Toglie tutte le lezioni dell’orario in uso. Restano docenti, classi, cattedre, segni di Costruisci, assenze,
-          sostituzioni e orari salvati negli slot.
+          Toglie tutte le lezioni dell’orario in uso e, se vuoi, le ore a disposizione. Restano docenti, classi,
+          cattedre, segni di Costruisci, assenze, sostituzioni e orari salvati negli slot.
         </p>
         <div className="mt-4">
-          <Button variant="outline" className="min-h-11" disabled={store.slots.length === 0} onClick={() => setEmptyOpen(true)}>
+          <Button
+            variant="outline"
+            className="min-h-11"
+            disabled={store.slots.length === 0 && dispCount === 0}
+            onClick={() => setEmptyOpen(true)}
+          >
             Svuota orario
           </Button>
         </div>
@@ -386,8 +399,10 @@ function ImpostazioniPage() {
           <DialogHeader>
             <DialogTitle>Svuotare l’orario?</DialogTitle>
             <DialogDescription>
-              Si {store.slots.length === 1 ? "toglie" : "tolgono"} {countText(store.slots.length, "lezione", "lezioni")}{" "}
-              dall’{inUseName}. Restano docenti, classi, cattedre, segni
+              {onlyDisp
+                ? `L’${inUseName} non ha lezioni: si tolgono le ore a disposizione rimaste.`
+                : `Si ${store.slots.length === 1 ? "toglie" : "tolgono"} ${countText(store.slots.length, "lezione", "lezioni")} dall’${inUseName}.`}{" "}
+              Restano docenti, classi, cattedre, segni
               di Costruisci, assenze, sostituzioni e orari salvati negli slot.
             </DialogDescription>
           </DialogHeader>
@@ -396,7 +411,8 @@ function ImpostazioniPage() {
               <input
                 type="checkbox"
                 className="size-4 accent-primary"
-                checked={emptyDisp}
+                checked={emptyDisp || onlyDisp}
+                disabled={onlyDisp}
                 onChange={(e) => setEmptyDisp(e.target.checked)}
               />
               Togli anche le ore a disposizione ({dispCount})
@@ -414,7 +430,7 @@ function ImpostazioniPage() {
               Annulla
             </Button>
             <Button variant="destructive" className="min-h-11" onClick={emptyTimetable}>
-              Svuota orario
+              {onlyDisp ? "Togli le ore a disposizione" : "Svuota orario"}
             </Button>
           </div>
         </DialogContent>
