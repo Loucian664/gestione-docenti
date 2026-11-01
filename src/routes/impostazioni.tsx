@@ -24,6 +24,7 @@ import { activeSlotOf } from "@/lib/saved-timetables";
 import { isLockedLesson } from "@/lib/locks";
 import { previousFields } from "@/lib/clear-marks";
 import { frozenCattedre } from "@/lib/build-timetable";
+import { builtLessonTest, fixedKinds, fixedKindsNote, stayText } from "@/lib/svuota";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/impostazioni")({ component: ImpostazioniPage });
@@ -38,6 +39,8 @@ function ImpostazioniPage() {
   const [emptyDisp, setEmptyDisp] = useState(false);
   // «Svuota orario» toglie anche le lezioni bloccate e i loro blocchi
   const [emptyLocked, setEmptyLocked] = useState(false);
+  // «Svuota orario» toglie anche le lezioni che Costruisci non rimette (sostegno, pomeriggio…)
+  const [emptyFixed, setEmptyFixed] = useState(false);
   const [pendingImport, setPendingImport] = useState<{ data: PersistedData; name: string } | null>(null);
   const [newYear, setNewYear] = useState<string | null>(null);
   const [removingYear, setRemovingYear] = useState<string | null>(null);
@@ -58,8 +61,11 @@ function ImpostazioniPage() {
   const teacherById = new Map(store.teachers.map((t) => [t.id, t]));
   const isLocked = (x: (typeof store.slots)[number]) => isLockedLesson(teacherById.get(x.teacherId), x);
   const lockedCount = store.slots.filter(isLocked).length;
-  // lezioni che il pulsante toglie: le bloccate solo con la spunta
-  const removable = store.slots.length - (emptyLocked ? 0 : lockedCount);
+  const isBuilt = builtLessonTest(store);
+  const fixedSlots = store.slots.filter((x) => !isLocked(x) && !isBuilt(x));
+  const fixedCount = fixedSlots.length;
+  // lezioni che il pulsante toglie: le bloccate e quelle che Costruisci non rimette solo con la spunta
+  const removable = store.slots.length - (emptyLocked ? 0 : lockedCount) - (emptyFixed ? 0 : fixedCount);
   // nessuna lezione da togliere: «Svuota orario» serve a togliere le ore a disposizione rimaste
   const onlyDisp = removable === 0;
 
@@ -67,16 +73,18 @@ function ImpostazioniPage() {
     setEmptyOpen(false);
     setEmptyDisp(false);
     setEmptyLocked(false);
+    setEmptyFixed(false);
   }
 
   /**
-   * «Svuota orario»: via le lezioni (non le bloccate, se non è scelto) e, se scelto, le ore a disposizione; con
-   * «Annulla».
+   * «Svuota orario»: via le lezioni che Costruisci rimette (le altre e le bloccate solo se scelto) e, se scelto, le
+   * ore a disposizione; con «Annulla».
    */
   function emptyTimetable() {
     const before = store.slots;
     const withDisp = emptyDisp || onlyDisp;
-    const kept = emptyLocked ? [] : before.filter(isLocked);
+    const kept = before.filter((x) => (isLocked(x) ? !emptyLocked : !isBuilt(x) && !emptyFixed));
+    const keptLocked = kept.filter(isLocked).length;
     const patches: Record<string, Partial<Teacher>> = {};
     const back: Record<string, Partial<Teacher>> = {};
     let disp = 0;
@@ -104,10 +112,7 @@ function ImpostazioniPage() {
       lessons > 0 && countText(lessons, "lezione", "lezioni"),
       disp > 0 && countText(disp, "ora a disposizione", "ore a disposizione"),
     ].filter(Boolean);
-    const stay =
-      kept.length > 0
-        ? ` ${kept.length === 1 ? "Resta" : "Restano"} ${countText(kept.length, "ora bloccata", "ore bloccate")}.`
-        : "";
+    const stay = kept.length > 0 ? ` ${stayText(kept.length - keptLocked, keptLocked)}` : "";
     toast(`${lessons > 0 ? "Orario svuotato: " : ""}${what.join(" e ")} ${lessons + disp === 1 ? "tolta" : "tolte"}.${stay}`, {
       duration: 10000,
       action: {
@@ -410,9 +415,10 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Svuota orario</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Toglie le lezioni dell’orario in uso e, se vuoi, le ore a disposizione. Le ore bloccate restano, se non scegli
-          di togliere anche quelle. Restano docenti, classi, cattedre, segni di Costruisci, assenze, sostituzioni e
-          orari salvati negli slot.
+          Toglie le lezioni dell’orario in uso che Costruisci rimette, cioè quelle del mattino dei docenti di materia, e,
+          se vuoi, le ore a disposizione. Le ore bloccate e quelle che Costruisci non rimette (sostegno, pomeriggio…)
+          restano, se non scegli di togliere anche quelle. Restano docenti, classi, cattedre, segni di Costruisci,
+          assenze, sostituzioni e orari salvati negli slot.
         </p>
         <div className="mt-4">
           <Button
@@ -439,7 +445,8 @@ function ImpostazioniPage() {
                   ? `L’${inUseName} non ha lezioni da togliere: si tolgono le ore a disposizione rimaste.`
                   : `L’${inUseName} non ha lezioni da togliere.`
                 : `Si ${removable === 1 ? "toglie" : "tolgono"} ${countText(removable, "lezione", "lezioni")} dall’${inUseName}.`}
-              {!emptyLocked && lockedCount > 0 && ` ${lockedCount === 1 ? "Resta" : "Restano"} ${countText(lockedCount, "ora bloccata", "ore bloccate")}.`}{" "}
+              {stayText(emptyFixed ? 0 : fixedCount, emptyLocked ? 0 : lockedCount) &&
+                ` ${stayText(emptyFixed ? 0 : fixedCount, emptyLocked ? 0 : lockedCount)}`}{" "}
               Restano docenti, classi, cattedre, segni di Costruisci, assenze, sostituzioni e orari salvati negli slot.
             </DialogDescription>
           </DialogHeader>
@@ -452,6 +459,22 @@ function ImpostazioniPage() {
                 onChange={(e) => setEmptyLocked(e.target.checked)}
               />
               Togli anche le ore bloccate ({lockedCount})
+            </label>
+          )}
+          {fixedCount > 0 && (
+            <label className="mb-2 flex min-h-10 items-start gap-2 py-1 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 shrink-0 accent-primary"
+                checked={emptyFixed}
+                onChange={(e) => setEmptyFixed(e.target.checked)}
+              />
+              <span className="flex min-w-0 flex-col">
+                <span>Togli anche le ore che Costruisci non rimette ({fixedCount})</span>
+                <span className="text-[12px] text-muted-foreground">
+                  {fixedKindsNote(fixedKinds(store, fixedSlots))}
+                </span>
+              </span>
             </label>
           )}
           {dispCount > 0 && (
