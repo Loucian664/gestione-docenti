@@ -2,7 +2,7 @@
  * «Cancella tutto» in Costruisci: i segni dei docenti divisi per tipo, quanti sono e come toglierli.
  * Le ore di progetto (scheda docente o Orario) e le ore a disposizione non sono segni: restano.
  */
-import type { Teacher } from "./types";
+import type { Teacher, TimetableSlot } from "./types";
 
 export type MarkKind = "away" | "no" | "pref" | "must" | "lock" | "days" | "free";
 
@@ -18,8 +18,11 @@ export const MARK_KINDS: { kind: MarkKind; label: string }[] = [
 
 const isMust = (m: NonNullable<Teacher["mustSlots"]>[number]) => m.level === "obbligo";
 
-/** Quanti segni di quel tipo ha il docente (per ore al giorno e ore libere: 1 se ne ha). */
-export function markCount(t: Teacher, kind: MarkKind): number {
+/**
+ * Quanti segni di quel tipo ha il docente (per ore al giorno e ore libere: 1 se ne ha).
+ * `lessons`: l’orario; se c’è, contano solo i blocchi su lezioni che ci sono ancora (quelli che si vedono).
+ */
+export function markCount(t: Teacher, kind: MarkKind, lessons?: TimetableSlot[]): number {
   switch (kind) {
     case "away":
       return (t.awaySlots ?? []).filter((a) => !a.progetto).length;
@@ -30,7 +33,19 @@ export function markCount(t: Teacher, kind: MarkKind): number {
     case "must":
       return (t.mustSlots ?? []).filter(isMust).length;
     case "lock":
-      return (t.lockedSlots ?? []).length + (t.lockWeek ? 1 : 0);
+      return (
+        (t.lockedSlots ?? []).filter(
+          (a) =>
+            !lessons ||
+            lessons.some(
+              (s) =>
+                s.teacherId === t.id &&
+                s.day === a.day &&
+                s.periodId === a.periodId &&
+                s.classId === a.classId,
+            ),
+        ).length + (t.lockWeek ? 1 : 0)
+      );
     case "days":
       return (t.dayPatterns?.length || t.dayPattern?.length ? 1 : 0) + (t.rientroDays ?? []).length;
     case "free":
@@ -38,14 +53,20 @@ export function markCount(t: Teacher, kind: MarkKind): number {
   }
 }
 
-/** I campi che tolgono i segni dei tipi scelti; null se il docente non ne ha. */
-export function clearMarks(t: Teacher, kinds: ReadonlySet<MarkKind>): Partial<Teacher> | null {
-  const has = (k: MarkKind) => kinds.has(k) && markCount(t, k) > 0;
+/** I campi che tolgono i segni dei tipi scelti; null se il docente non ne ha. `lessons` come in `markCount`. */
+export function clearMarks(
+  t: Teacher,
+  kinds: ReadonlySet<MarkKind>,
+  lessons?: TimetableSlot[],
+): Partial<Teacher> | null {
+  const has = (k: MarkKind) => kinds.has(k) && markCount(t, k, lessons) > 0;
   const patch: Partial<Teacher> = {};
   if (has("away")) patch.awaySlots = (t.awaySlots ?? []).filter((a) => a.progetto);
   if (has("no")) patch.avoidSlots = [];
   if (has("pref") || has("must")) {
-    patch.mustSlots = (t.mustSlots ?? []).filter((m) => (isMust(m) ? !kinds.has("must") : !kinds.has("pref")));
+    patch.mustSlots = (t.mustSlots ?? []).filter((m) =>
+      isMust(m) ? !kinds.has("must") : !kinds.has("pref"),
+    );
     if (kinds.has("pref") && t.preferSlots?.length) patch.preferSlots = [];
   }
   if (has("lock")) {

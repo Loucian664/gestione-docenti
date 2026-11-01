@@ -582,6 +582,7 @@ export function CostruisciOrario({
         lockCount={lockCount}
         onUpdate={(id, patch) => store.updateTeacher(id, patch)}
         onUpdateMany={(patches) => store.updateTeachers(patches)}
+        lessons={data.slots}
         onClassPick={openClassPick}
         onPattern={(t) => setPatternFor(t.id)}
       />
@@ -2248,6 +2249,7 @@ function AvailabilityPanel({
   lockCount,
   onUpdate,
   onUpdateMany,
+  lessons,
   onClassPick,
   onPattern,
 }: {
@@ -2260,6 +2262,7 @@ function AvailabilityPanel({
   lockCount: Map<string, number>;
   onUpdate: (id: string, patch: Partial<Teacher>) => void;
   onUpdateMany: (patches: Record<string, Partial<Teacher>>) => void;
+  lessons: TimetableSlot[];
   onClassPick: (t: Teacher, day: DayOfWeek, periodId: string) => void;
   onPattern: (t: Teacher) => void;
 }) {
@@ -2423,7 +2426,13 @@ function AvailabilityPanel({
           Non entrano nell’orario: {skipped.map((t) => teacherName(t)).join(", ")}.
         </p>
       )}
-      <EraseAllDialog open={eraseAll} onClose={() => setEraseAll(false)} teachers={teachers} onUpdateMany={onUpdateMany} />
+      <EraseAllDialog
+        open={eraseAll}
+        onClose={() => setEraseAll(false)}
+        teachers={teachers}
+        lessons={lessons}
+        onUpdateMany={onUpdateMany}
+      />
     </section>
   );
 }
@@ -2435,11 +2444,13 @@ function EraseAllDialog({
   open,
   onClose,
   teachers,
+  lessons,
   onUpdateMany,
 }: {
   open: boolean;
   onClose: () => void;
   teachers: Teacher[];
+  lessons: TimetableSlot[];
   onUpdateMany: (patches: Record<string, Partial<Teacher>>) => void;
 }) {
   const [off, setOff] = useState<Set<MarkKind>>(() => new Set());
@@ -2449,10 +2460,10 @@ function EraseAllDialog({
   const rows = useMemo(
     () =>
       MARK_KINDS.map(({ kind, label }) => {
-        const per = teachers.map((t) => markCount(t, kind));
+        const per = teachers.map((t) => markCount(t, kind, lessons));
         return { kind, label, n: per.reduce((a, b) => a + b, 0), who: per.filter((x) => x > 0).length };
       }).filter((r) => r.n > 0),
-    [teachers],
+    [teachers, lessons],
   );
   const total = rows.filter((r) => !off.has(r.kind)).reduce((a, r) => a + r.n, 0);
 
@@ -2461,7 +2472,7 @@ function EraseAllDialog({
     const patches: Record<string, Partial<Teacher>> = {};
     const back: Record<string, Partial<Teacher>> = {};
     for (const t of teachers) {
-      const patch = clearMarks(t, kinds);
+      const patch = clearMarks(t, kinds, lessons);
       if (!patch) continue;
       patches[t.id] = patch;
       back[t.id] = previousFields(t, patch);
