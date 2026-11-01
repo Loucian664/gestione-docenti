@@ -407,7 +407,7 @@ function ImpostazioniPage() {
             </DialogDescription>
           </DialogHeader>
           {dispCount > 0 && (
-            <label className="flex min-h-10 items-center gap-2 text-sm">
+            <label className="mb-2 flex min-h-10 items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 className="size-4 accent-primary"
@@ -418,7 +418,7 @@ function ImpostazioniPage() {
               Togli anche le ore a disposizione ({dispCount})
             </label>
           )}
-          <p className="text-[12px] text-muted-foreground">
+          <p className="mb-4 text-[12px] text-muted-foreground">
             Subito dopo puoi tornare indietro con «Annulla». Per conservare una copia, esporta il backup o salva
             l’orario in uno slot.
           </p>
