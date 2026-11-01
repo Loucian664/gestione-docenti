@@ -30,6 +30,7 @@ import {
   cattedreOfTeacher,
   MONTE_ORE,
 } from "@/lib/build-timetable";
+import { builtLessonTest } from "@/lib/svuota";
 import {
   dayPatternOptions,
   dispIntoGaps,
@@ -152,6 +153,11 @@ export function CostruisciOrario({
   const data = snapshot(store);
   const previewRef = useRef<HTMLElement>(null);
   const [mode, setMode] = useState<SolveMode>("scratch");
+  // «Migliora l’attuale» solo se c’è un orario da migliorare: almeno una lezione che Costruisci sposta
+  const canImprove = data.slots.some(builtLessonTest(data));
+  useEffect(() => {
+    if (!canImprove && mode === "improve") setMode("scratch");
+  }, [canImprove, mode]);
   const [speed, setSpeed] = useState<"rapida" | "accurata">("rapida");
   const [running, setRunning] = useState<RunProgress | null>(null);
   const handleRef = useRef<RunHandle | null>(null);
@@ -611,7 +617,7 @@ export function CostruisciOrario({
             disabled={Boolean(running)}
             options={[
               { value: "scratch", label: "Da zero" },
-              { value: "improve", label: "Migliora l’attuale" },
+              { value: "improve", label: "Migliora l’attuale", disabled: !canImprove },
             ]}
           />
           <Segmented
@@ -625,6 +631,12 @@ export function CostruisciOrario({
             ]}
           />
         </div>
+        {!canImprove && (
+          <p className="mt-2 text-[13px] text-muted-foreground">
+            «Migliora l’attuale» si può scegliere quando nell’orario in uso c’è almeno una lezione del mattino di un
+            docente di materia.
+          </p>
+        )}
         <MissingTeachersBox
           className="mt-4"
           items={missing}
@@ -2197,7 +2209,7 @@ function Segmented<T extends string>({
 }: {
   label: string;
   value: T;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; disabled?: boolean }[];
   onChange: (v: T) => void;
   disabled?: boolean;
 }) {
@@ -2209,7 +2221,7 @@ function Segmented<T extends string>({
           type="button"
           role="radio"
           aria-checked={value === o.value}
-          disabled={disabled}
+          disabled={disabled || o.disabled}
           onClick={() => onChange(o.value)}
           className={cn(
             "min-h-9 rounded-md px-3 text-[13px] font-medium transition-colors disabled:opacity-60",
