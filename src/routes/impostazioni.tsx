@@ -351,7 +351,7 @@ function ImpostazioniPage() {
         </div>
       </section>
 
-      <section className="paper-panel rounded-xl p-5">
+      <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Svuota orario</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Toglie tutte le lezioni dell’orario in uso. Restano docenti, classi, cattedre, segni di Costruisci, assenze,
