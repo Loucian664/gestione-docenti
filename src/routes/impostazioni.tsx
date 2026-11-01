@@ -65,7 +65,18 @@ function ImpostazioniPage() {
     setEmptyDisp(false);
     toast(`Orario svuotato: ${countText(lessons, "lezione tolta", "lezioni tolte")}.`, {
       duration: 10000,
-      action: { label: "Annulla", onClick: () => store.setTimetable(before, beforeDisp) },
+      action: {
+        label: "Annulla",
+        onClick: () => {
+          const now = useAppStore.getState();
+          // nel frattempo è stato aperto un altro orario: l’orario di prima finirebbe nel posto sbagliato
+          if (activeSlotOf(now) !== inUse) {
+            toast.error("Non si può annullare: nel frattempo è stato aperto un altro orario.");
+            return;
+          }
+          now.setTimetable(before, beforeDisp);
+        },
+      },
     });
   }
 
