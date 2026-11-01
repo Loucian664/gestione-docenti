@@ -23,6 +23,7 @@ import { archivedYearLabels } from "@/lib/school-years";
 import { activeSlotOf } from "@/lib/saved-timetables";
 import { isLockedLesson } from "@/lib/locks";
 import { previousFields } from "@/lib/clear-marks";
+import { frozenCattedre } from "@/lib/build-timetable";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/impostazioni")({ component: ImpostazioniPage });
@@ -94,7 +95,10 @@ function ImpostazioniPage() {
       back[t.id] = previousFields(t, patch);
     }
     const lessons = before.length - kept.length;
-    store.setTimetable(kept, patches);
+    // le cattedre ricavate dall’orario restano, scritte, anche senza lezioni
+    const cattedreBefore = store.cattedre ?? [];
+    const frozen = lessons > 0 ? frozenCattedre(snapshot(store)) : null;
+    store.setTimetable(kept, patches, frozen ?? undefined);
     closeEmpty();
     const what = [
       lessons > 0 && countText(lessons, "lezione", "lezioni"),
@@ -115,7 +119,7 @@ function ImpostazioniPage() {
             toast.error("Non si può annullare: nel frattempo è stato aperto un altro orario.");
             return;
           }
-          now.setTimetable(before, back);
+          now.setTimetable(before, back, frozen ? cattedreBefore : undefined);
         },
       },
     });
