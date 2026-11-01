@@ -16,11 +16,13 @@ import {
 import { useAppStore, snapshot } from "@/lib/store";
 import { backupJson, parseBackupJson } from "@/lib/export";
 import { shareOrSave, toastSave } from "@/lib/share-file";
-import type { DayOfWeek, PersistedData } from "@/lib/types";
+import type { DayOfWeek, PersistedData, Teacher } from "@/lib/types";
 import { ensureTpPeriods } from "@/lib/periods";
 import { nextSchoolYear } from "@/lib/dates";
 import { archivedYearLabels } from "@/lib/school-years";
 import { activeSlotOf } from "@/lib/saved-timetables";
+import { isLockedLesson } from "@/lib/locks";
+import { previousFields } from "@/lib/clear-marks";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/impostazioni")({ component: ImpostazioniPage });
@@ -33,6 +35,8 @@ function ImpostazioniPage() {
   const [clearStep, setClearStep] = useState<1 | 2>(1);
   const [emptyOpen, setEmptyOpen] = useState(false);
   const [emptyDisp, setEmptyDisp] = useState(false);
+  // «Svuota orario» toglie anche le lezioni bloccate e i loro blocchi
+  const [emptyLocked, setEmptyLocked] = useState(false);
   const [pendingImport, setPendingImport] = useState<{ data: PersistedData; name: string } | null>(null);
   const [newYear, setNewYear] = useState<string | null>(null);
   const [removingYear, setRemovingYear] = useState<string | null>(null);
@@ -50,28 +54,57 @@ function ImpostazioniPage() {
         })()}`;
   const dispCount = store.teachers.reduce((n, t) => n + (t.dispSlots?.length ?? 0), 0);
 
-  // orario già vuoto: «Svuota orario» serve a togliere le ore a disposizione rimaste
-  const onlyDisp = store.slots.length === 0;
+  const teacherById = new Map(store.teachers.map((t) => [t.id, t]));
+  const isLocked = (x: (typeof store.slots)[number]) => isLockedLesson(teacherById.get(x.teacherId), x);
+  const lockedCount = store.slots.filter(isLocked).length;
+  // lezioni che il pulsante toglie: le bloccate solo con la spunta
+  const removable = store.slots.length - (emptyLocked ? 0 : lockedCount);
+  // nessuna lezione da togliere: «Svuota orario» serve a togliere le ore a disposizione rimaste
+  const onlyDisp = removable === 0;
 
-  /** «Svuota orario»: via tutte le lezioni (e, se scelto, le ore a disposizione), con «Annulla». */
-  function emptyTimetable() {
-    const before = store.slots;
-    const beforeDisp = emptyDisp || onlyDisp
-      ? Object.fromEntries(store.teachers.filter((t) => t.dispSlots?.length).map((t) => [t.id, t.dispSlots]))
-      : undefined;
-    const lessons = before.length;
-    const disp = Object.values(beforeDisp ?? {}).reduce((n, list) => n + (list?.length ?? 0), 0);
-    store.setTimetable(
-      [],
-      beforeDisp && Object.fromEntries(Object.keys(beforeDisp).map((id) => [id, []])),
-    );
+  function closeEmpty() {
     setEmptyOpen(false);
     setEmptyDisp(false);
+    setEmptyLocked(false);
+  }
+
+  /**
+   * «Svuota orario»: via le lezioni (non le bloccate, se non è scelto) e, se scelto, le ore a disposizione; con
+   * «Annulla».
+   */
+  function emptyTimetable() {
+    const before = store.slots;
+    const withDisp = emptyDisp || onlyDisp;
+    const kept = emptyLocked ? [] : before.filter(isLocked);
+    const patches: Record<string, Partial<Teacher>> = {};
+    const back: Record<string, Partial<Teacher>> = {};
+    let disp = 0;
+    for (const t of store.teachers) {
+      const patch: Partial<Teacher> = {};
+      if (withDisp && t.dispSlots?.length) {
+        patch.dispSlots = [];
+        disp += t.dispSlots.length;
+      }
+      if (emptyLocked && (t.lockedSlots?.length || t.lockWeek)) {
+        patch.lockedSlots = [];
+        patch.lockWeek = false;
+      }
+      if (Object.keys(patch).length === 0) continue;
+      patches[t.id] = patch;
+      back[t.id] = previousFields(t, patch);
+    }
+    const lessons = before.length - kept.length;
+    store.setTimetable(kept, patches);
+    closeEmpty();
     const what = [
       lessons > 0 && countText(lessons, "lezione", "lezioni"),
       disp > 0 && countText(disp, "ora a disposizione", "ore a disposizione"),
     ].filter(Boolean);
-    toast(`${lessons > 0 ? "Orario svuotato: " : ""}${what.join(" e ")} ${lessons + disp === 1 ? "tolta" : "tolte"}.`, {
+    const stay =
+      kept.length > 0
+        ? ` ${kept.length === 1 ? "Resta" : "Restano"} ${countText(kept.length, "ora bloccata", "ore bloccate")}.`
+        : "";
+    toast(`${lessons > 0 ? "Orario svuotato: " : ""}${what.join(" e ")} ${lessons + disp === 1 ? "tolta" : "tolte"}.${stay}`, {
       duration: 10000,
       action: {
         label: "Annulla",
@@ -82,7 +115,7 @@ function ImpostazioniPage() {
             toast.error("Non si può annullare: nel frattempo è stato aperto un altro orario.");
             return;
           }
-          now.setTimetable(before, beforeDisp);
+          now.setTimetable(before, back);
         },
       },
     });
@@ -373,8 +406,9 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Svuota orario</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Toglie tutte le lezioni dell’orario in uso e, se vuoi, le ore a disposizione. Restano docenti, classi,
-          cattedre, segni di Costruisci, assenze, sostituzioni e orari salvati negli slot.
+          Toglie le lezioni dell’orario in uso e, se vuoi, le ore a disposizione. Le ore bloccate restano, se non scegli
+          di togliere anche quelle. Restano docenti, classi, cattedre, segni di Costruisci, assenze, sostituzioni e
+          orari salvati negli slot.
         </p>
         <div className="mt-4">
           <Button
@@ -390,22 +424,32 @@ function ImpostazioniPage() {
 
       <Dialog
         open={emptyOpen}
-        onOpenChange={(open) => {
-          setEmptyOpen(open);
-          if (!open) setEmptyDisp(false);
-        }}
+        onOpenChange={(open) => (open ? setEmptyOpen(true) : closeEmpty())}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Svuotare l’orario?</DialogTitle>
             <DialogDescription>
               {onlyDisp
-                ? `L’${inUseName} non ha lezioni: si tolgono le ore a disposizione rimaste.`
-                : `Si ${store.slots.length === 1 ? "toglie" : "tolgono"} ${countText(store.slots.length, "lezione", "lezioni")} dall’${inUseName}.`}{" "}
-              Restano docenti, classi, cattedre, segni
-              di Costruisci, assenze, sostituzioni e orari salvati negli slot.
+                ? dispCount > 0
+                  ? `L’${inUseName} non ha lezioni da togliere: si tolgono le ore a disposizione rimaste.`
+                  : `L’${inUseName} non ha lezioni da togliere.`
+                : `Si ${removable === 1 ? "toglie" : "tolgono"} ${countText(removable, "lezione", "lezioni")} dall’${inUseName}.`}
+              {!emptyLocked && lockedCount > 0 && ` ${lockedCount === 1 ? "Resta" : "Restano"} ${countText(lockedCount, "ora bloccata", "ore bloccate")}.`}{" "}
+              Restano docenti, classi, cattedre, segni di Costruisci, assenze, sostituzioni e orari salvati negli slot.
             </DialogDescription>
           </DialogHeader>
+          {lockedCount > 0 && (
+            <label className="mb-2 flex min-h-10 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4 accent-primary"
+                checked={emptyLocked}
+                onChange={(e) => setEmptyLocked(e.target.checked)}
+              />
+              Togli anche le ore bloccate ({lockedCount})
+            </label>
+          )}
           {dispCount > 0 && (
             <label className="mb-2 flex min-h-10 items-center gap-2 text-sm">
               <input
@@ -426,10 +470,15 @@ function ImpostazioniPage() {
             <Button variant="outline" className="min-h-11" onClick={exportBackup}>
               Esporta backup
             </Button>
-            <Button variant="outline" className="min-h-11" onClick={() => setEmptyOpen(false)}>
+            <Button variant="outline" className="min-h-11" onClick={closeEmpty}>
               Annulla
             </Button>
-            <Button variant="destructive" className="min-h-11" onClick={emptyTimetable}>
+            <Button
+              variant="destructive"
+              className="min-h-11"
+              disabled={removable === 0 && dispCount === 0}
+              onClick={emptyTimetable}
+            >
               {onlyDisp ? "Togli le ore a disposizione" : "Svuota orario"}
             </Button>
           </div>
