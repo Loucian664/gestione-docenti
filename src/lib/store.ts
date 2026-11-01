@@ -21,6 +21,7 @@ import { todayIso } from "./dates";
 import { isTeacherAbsent } from "./coverage";
 import { replaceTeacher } from "./replace-teacher";
 import { startNewSchoolYear } from "./school-years";
+import { dropLocks } from "./locks";
 import {
   createDurableStorage,
   noteUserMutation,
@@ -234,8 +235,9 @@ export const useAppStore = create<AppStore>()(
             : [...get().teachers, { ...nextPatch, id: teacherId }];
           const gone = new Set(drop ?? []);
           const slots = gone.size ? get().slots.filter((s) => !gone.has(s.id)) : get().slots;
-          const cattedre = applyTeacherCattedre({ ...snapshot(get()), teachers, slots }, teacherId, rows);
-          save({ teachers, slots, cattedre });
+          const unlocked = dropLocks(teachers, get().slots.filter((s) => gone.has(s.id)));
+          const cattedre = applyTeacherCattedre({ ...snapshot(get()), teachers: unlocked, slots }, teacherId, rows);
+          save({ teachers: unlocked, slots, cattedre });
           return teacherId;
         },
 
@@ -292,7 +294,12 @@ export const useAppStore = create<AppStore>()(
           save({ slots: [...slots, next] });
         },
 
-        clearSlot: (id) => save({ slots: get().slots.filter((s) => s.id !== id) }),
+        clearSlot: (id) =>
+          save({
+            slots: get().slots.filter((s) => s.id !== id),
+            // via anche il blocco della lezione tolta
+            teachers: dropLocks(get().teachers, get().slots.filter((s) => s.id === id)),
+          }),
 
         addAbsence: (a) => {
           const id = uid("a");
