@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { clearMarks, markCount, previousFields } from "./clear-marks";
-import type { Teacher } from "./types";
+import type { Teacher, TimetableSlot } from "./types";
 
 const t: Teacher = {
   id: "t1",
@@ -58,6 +58,13 @@ describe("Cancella tutto in Costruisci", () => {
     const patch = clearMarks(t, new Set(["away", "days"]))!;
     const back = previousFields(t, patch);
     assert.deepEqual({ ...t, ...patch, ...back }, t);
+  });
+
+  it("con l’orario, contano solo i blocchi su lezioni che ci sono", () => {
+    const lesson = { id: "s1", day: 4, periodId: "p2", classId: "c1", teacherId: "t1", subject: "Italiano" } as TimetableSlot;
+    assert.equal(markCount(t, "lock", [lesson]), 1);
+    assert.equal(markCount(t, "lock", []), 0);
+    assert.equal(clearMarks(t, new Set(["lock"]), []), null);
   });
 
   it("niente da togliere: null", () => {
