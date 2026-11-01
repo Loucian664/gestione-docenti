@@ -70,8 +70,11 @@ type Actions = {
   removeClass: (id: string) => void;
   upsertSlot: (slot: Omit<TimetableSlot, "id"> & { id?: string }) => void;
   clearSlot: (id: string) => void;
-  /** «Svuota orario»: l'orario in uso al posto di quello di prima; `disp` le ore a disposizione dei docenti indicati. */
-  setTimetable: (slots: TimetableSlot[], disp?: Record<string, Teacher["dispSlots"]>) => void;
+  /**
+   * «Svuota orario»: l'orario in uso al posto di quello di prima; `patches` i campi dei docenti che cambiano con lui
+   * (ore a disposizione, blocchi).
+   */
+  setTimetable: (slots: TimetableSlot[], patches?: Record<string, Partial<Teacher>>) => void;
   addAbsence: (a: Omit<Absence, "id">) => string;
   updateAbsence: (id: string, patch: Partial<Absence>) => void;
   /** Restituisce cosa ha tolto, per poterlo rimettere con restoreAbsence. */
@@ -210,11 +213,11 @@ export const useAppStore = create<AppStore>()(
         updateTeachers: (patches) =>
           save({ teachers: get().teachers.map((t) => (patches[t.id] ? { ...t, ...patches[t.id] } : t)) }),
 
-        setTimetable: (slots, disp) =>
+        setTimetable: (slots, patches) =>
           save({
             slots,
-            ...(disp && {
-              teachers: get().teachers.map((t) => (t.id in disp ? { ...t, dispSlots: disp[t.id] } : t)),
+            ...(patches && {
+              teachers: get().teachers.map((t) => (patches[t.id] ? { ...t, ...patches[t.id] } : t)),
             }),
           }),
 
