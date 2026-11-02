@@ -191,7 +191,7 @@ function AssenzePage() {
               const tone =
                 summary.needs.length === 0
                   ? "idle"
-                  : summary.uncovered === 0
+                  : summary.uncovered === 0 && summary.doubled === 0
                     ? "ok"
                     : summary.covered === 0
                       ? "warn"
