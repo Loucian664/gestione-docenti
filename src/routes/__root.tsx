@@ -4,7 +4,8 @@ import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { AppLayout } from "@/components/layout";
 import { AppNotFound } from "@/lib/error-component";
 import { ThemeProvider, useTheme } from "@/components/theme-provider";
-import { Toaster } from "sonner";
+import { useEffect, useRef } from "react";
+import { Toaster, toast, useSonner } from "sonner";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import appCss from "../styles.css?url";
 
@@ -42,9 +43,50 @@ export const Route = createRootRoute({
   notFoundComponent: AppNotFound,
 });
 
+/** Quanto resta un messaggio, in millisecondi (quelli con «Annulla» hanno la loro durata). */
+const TOAST_MS = 4000;
+
+/**
+ * Chiude i messaggi anche se sonner li ha fermati: li ferma finché «ci si passa sopra» e su iPhone e iPad il tocco
+ * può lasciarli fermi, così restavano finché non si toccava la X. Questo timer non si ferma mai.
+ */
+function ToastAutoClose() {
+  const { toasts } = useSonner();
+  const timers = useRef(new Map<string | number, ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const live = new Set(toasts.map((t) => t.id));
+    for (const [id, timer] of timers.current) {
+      if (!live.has(id)) {
+        clearTimeout(timer);
+        timers.current.delete(id);
+      }
+    }
+    for (const t of toasts) {
+      const ms = t.duration ?? TOAST_MS;
+      if (timers.current.has(t.id) || t.type === "loading" || !Number.isFinite(ms)) continue;
+      timers.current.set(
+        t.id,
+        setTimeout(() => toast.dismiss(t.id), ms + 1000),
+      );
+    }
+  }, [toasts]);
+  useEffect(
+    () => () => {
+      for (const timer of timers.current.values()) clearTimeout(timer);
+    },
+    [],
+  );
+  return null;
+}
+
 function ThemedToaster() {
   const { resolved } = useTheme();
-  return <Toaster position="bottom-right" richColors closeButton theme={resolved} />;
+  return (
+    <>
+      <Toaster position="bottom-right" richColors closeButton duration={TOAST_MS} theme={resolved} />
+      <ToastAutoClose />
+    </>
+  );
 }
 
 function RootComponent() {
