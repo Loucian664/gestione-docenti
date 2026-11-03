@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
+import { DialogActions } from "@/components/dialog-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -173,7 +174,7 @@ function ClassDialog({ value, onClose }: { value: SchoolClass | "new"; onClose: 
               <option value="TP">Tempo prolungato</option>
             </NativeSelect>
           </div>
-          <div className="flex justify-between pt-2">
+          <DialogActions className="pt-2" primary={<Button onClick={save}>Salva</Button>}>
             {!isNew && current && (
               <Button
                 variant="outline"
@@ -186,10 +187,7 @@ function ClassDialog({ value, onClose }: { value: SchoolClass | "new"; onClose: 
                 Elimina
               </Button>
             )}
-            <Button className="ml-auto" onClick={save}>
-              Salva
-            </Button>
-          </div>
+          </DialogActions>
         </div>
       </DialogContent>
     </Dialog>
