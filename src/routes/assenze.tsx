@@ -27,7 +27,7 @@ import { ChevronLeft, ChevronRight, Plus, Download, FileText, Copy, Trash2 } fro
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import { cn, countOf } from "@/lib/utils";
 
 export const Route = createFileRoute("/assenze")({ component: AssenzePage });
 
@@ -287,7 +287,7 @@ function AssenzePage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline">{a.allDay ? "Giornata" : `${a.periodIds.length} ore`}</Badge>
+                      <Badge variant="outline">{a.allDay ? "Giornata" : countOf(a.periodIds.length, "ora", "ore")}</Badge>
                       <Badge variant="warning">{reason}</Badge>
                     </div>
                   </button>
