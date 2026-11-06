@@ -33,7 +33,7 @@ export function AbsenceDialog({
   const addAbsence = useAppStore((s) => s.addAbsence);
   const updateAbsence = useAppStore((s) => s.updateAbsence);
 
-  const [teacherId, setTeacherId] = useState(initial?.teacherId ?? teachers[0]?.id ?? "");
+  const [teacherId, setTeacherId] = useState(initial?.teacherId ?? "");
   const [dateFrom, setDateFrom] = useState(initial?.dateFrom ?? selectedDate);
   const [dateTo, setDateTo] = useState(initial?.dateTo ?? selectedDate);
   const [reason, setReason] = useState<AbsenceReason>(initial?.reason ?? "malattia");
@@ -41,11 +41,18 @@ export function AbsenceDialog({
   const [periodIds, setPeriodIds] = useState<string[]>(initial?.periodIds ?? []);
   const [notes, setNotes] = useState(initial?.notes ?? "");
 
+  // a ogni apertura il modulo riparte pulito, o dall'assenza da modificare: niente dati dell'assenza di prima
   useEffect(() => {
-    if (!open || initial) return;
-    setDateFrom(selectedDate);
-    setDateTo(selectedDate);
-  }, [open, initial, selectedDate]);
+    if (!open) return;
+    setTeacherId(initial?.teacherId ?? "");
+    setDateFrom(initial?.dateFrom ?? selectedDate);
+    setDateTo(initial?.dateTo ?? selectedDate);
+    setReason(initial?.reason ?? "malattia");
+    setAllDay(initial?.allDay ?? true);
+    setPeriodIds(initial?.periodIds ?? []);
+    setNotes(initial?.notes ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initial]);
 
   function togglePeriod(id: string) {
     setPeriodIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -86,6 +93,9 @@ export function AbsenceDialog({
           <div className="flex min-w-0 flex-col gap-1.5">
             <Label htmlFor="teacher">Docente</Label>
             <NativeSelect id="teacher" value={teacherId} onChange={(e) => setTeacherId(e.target.value)} required>
+              <option value="" disabled>
+                Scegli il docente…
+              </option>
               {teachers
                 .slice()
                 .sort((a, b) => a.lastName.localeCompare(b.lastName, "it"))
