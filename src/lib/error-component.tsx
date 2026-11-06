@@ -15,8 +15,15 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
       </span>
       <h1 className="text-lg font-semibold">Qualcosa non ha funzionato</h1>
       <p className="max-w-md text-sm break-words text-muted-foreground">
-        {(error instanceof Error && error.message) || "Errore imprevisto. Prova a ricaricare la pagina."}
+        I dati salvati non sono stati toccati. Ricarica la pagina; se il problema resta, esporta un backup da
+        Impostazioni.
       </p>
+      {error instanceof Error && error.message && (
+        <p className="max-w-md text-xs break-words text-ink-faint">Dettaglio: {error.message}</p>
+      )}
+      <Button variant="outline" onClick={() => window.location.reload()}>
+        Ricarica la pagina
+      </Button>
     </main>
   );
 }

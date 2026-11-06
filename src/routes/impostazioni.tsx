@@ -19,7 +19,7 @@ import { backupJson, parseBackupJson } from "@/lib/export";
 import { shareOrSave, toastSave } from "@/lib/share-file";
 import type { DayOfWeek, PersistedData, Teacher } from "@/lib/types";
 import { ensureTpPeriods } from "@/lib/periods";
-import { nextSchoolYear } from "@/lib/dates";
+import { dateOnLaunch, nextSchoolYear, todayIso } from "@/lib/dates";
 import { archivedYearLabels } from "@/lib/school-years";
 import { activeSlotOf } from "@/lib/saved-timetables";
 import { isLockedLesson } from "@/lib/locks";
@@ -133,14 +133,15 @@ function ImpostazioniPage() {
 
   function exportBackup() {
     void shareOrSave(
-      `gestione-docenti-backup-${store.selectedDate}.json`,
+      `gestione-docenti-backup-${todayIso()}.json`,
       backupJson(snapshot(store)),
       "application/json",
     ).then((outcome) => toastSave(outcome, "backup"));
   }
 
   function applyImport(parsed: PersistedData, name: string) {
-    store.importData(parsed, name);
+    // dopo l'importazione Oggi riparte da oggi, non dal giorno aperto quando il backup è stato fatto
+    store.importData({ ...parsed, selectedDate: dateOnLaunch() }, name);
     toast.success("Registro importato e salvato su questo dispositivo");
   }
 

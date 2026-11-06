@@ -49,7 +49,7 @@ import { bachecaJpeg } from "@/lib/sheet-image";
 import { formatDayMonth, formatMedium, isWeekend, shiftSchoolDay, weekDaysIso, toSchoolDay, todayIso } from "@/lib/dates";
 import { ABSENCE_REASONS, DAY_SHORT, SUBSTITUTION_TYPES } from "@/lib/types";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, countOf } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({ component: OggiPage });
 
@@ -274,8 +274,8 @@ function OggiPage() {
         </p>
       </div>
 
-      <div className="mb-5 grid grid-cols-5 gap-1.5" data-print-hide>
-        {weekDaysIso(date, 5).map((iso) => {
+      <div className={cn("mb-5 grid gap-1.5", data.settings.days.includes(6) ? "grid-cols-6" : "grid-cols-5")} data-print-hide>
+        {weekDaysIso(date, data.settings.days.includes(6) ? 6 : 5).map((iso) => {
           const summary = dayCoverage(data, iso);
           const active = iso === date;
           const day = Number(iso.slice(8, 10));
@@ -481,7 +481,7 @@ function OggiPage() {
                     <p className="font-medium">{t ? teacherName(t) : a.teacherId}</p>
                     <p className="text-[13px] text-muted-foreground">
                       {reason}
-                      {a.allDay ? " · giornata intera" : ` · ${a.periodIds.length} ore`}
+                      {a.allDay ? " · giornata intera" : ` · ${countOf(a.periodIds.length, "ora", "ore")}`}
                     </p>
                     {a.dateFrom !== a.dateTo && (
                       <p className="text-[13px] text-muted-foreground">fino a {formatMedium(a.dateTo)}</p>
