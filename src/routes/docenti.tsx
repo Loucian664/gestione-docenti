@@ -443,6 +443,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
     );
     if (!items.length) return;
     toast.warning(`Restano senza docente: ${items.map(missingText).join(", ")}.`, {
+      duration: 9000,
       description: "Il docente si indica nella sua scheda, in «Classi e materie».",
     });
   }
@@ -497,7 +498,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
           ? "Docente salvato. Ora inserisci le sue ore in Orario → Docente."
           : "Docente salvato",
       drop.length
-        ? { description: `${drop.length === 1 ? "Tolta 1 lezione" : `Tolte ${drop.length} lezioni`} dall’orario.` }
+        ? { duration: 8000, description: `${drop.length === 1 ? "Tolta 1 lezione" : `Tolte ${drop.length} lezioni`} dall’orario.` }
         : undefined,
     );
     warnLeftWithout();
@@ -522,6 +523,7 @@ function TeacherDialog({ value, onClose }: { value: Teacher | "new"; onClose: ()
     );
     if (!store.replaceTeacher(current.id, newName, fromDate)) return;
     toast.success(`${`${newName.lastName.trim()} ${newName.firstName.trim()}`.trim()} al posto di ${teacherName(current)}`, {
+      duration: 10000,
       description: `Dal ${formatItDate(fromDate)}. Le assenze e le sostituzioni dei giorni prima restano a ${teacherName(current)}, in Docenti → Non più in servizio.`,
     });
     warnLeftWithout();
