@@ -116,6 +116,16 @@ function ClassDialog({ value, onClose }: { value: SchoolClass | "new"; onClose: 
   const [section, setSection] = useState(current?.section ?? "A");
   const [students, setStudents] = useState(String(current?.students ?? 22));
   const [tempo, setTempo] = useState<Tempo>(current?.tempo ?? "TN");
+  const [askDelete, setAskDelete] = useState(false);
+  const lessonsLost = current ? store.slots.filter((s) => s.classId === current.id).length : 0;
+  const cattedreLost = current ? (store.cattedre ?? []).filter((x) => x.classId === current.id).length : 0;
+  const lostText = [
+    lessonsLost > 0 && `${lessonsLost} ${lessonsLost === 1 ? "lezione" : "lezioni"} dell’orario`,
+    cattedreLost > 0 && `${cattedreLost} ${cattedreLost === 1 ? "cattedra" : "cattedre"}`,
+  ]
+    .filter(Boolean)
+    .join(" e ");
+  const lostSentence = lostText ? `Si tolgono anche ${lostText}.` : "La classe non ha lezioni né cattedre.";
 
   function save() {
     const name = `${grade}ª ${section.trim().toUpperCase()}`;
@@ -138,6 +148,35 @@ function ClassDialog({ value, onClose }: { value: SchoolClass | "new"; onClose: 
         <DialogHeader>
           <DialogTitle>{isNew ? "Nuova classe" : "Modifica classe"}</DialogTitle>
         </DialogHeader>
+        {askDelete && current ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm">
+              Eliminare la classe <strong>{current.name}</strong>?
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {lostSentence} Non si può annullare. Per conservarne una copia, prima esporta il backup in Impostazioni.
+            </p>
+            <DialogActions
+              className="pt-2"
+              primary={
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    store.removeClass(current.id);
+                    toast.message("Classe eliminata");
+                    onClose();
+                  }}
+                >
+                  Sì, elimina
+                </Button>
+              }
+            >
+              <Button variant="outline" onClick={() => setAskDelete(false)}>
+                Annulla
+              </Button>
+            </DialogActions>
+          </div>
+        ) : (
         <div className="grid min-w-0 gap-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="flex min-w-0 flex-col gap-1.5">
@@ -176,19 +215,13 @@ function ClassDialog({ value, onClose }: { value: SchoolClass | "new"; onClose: 
           </div>
           <DialogActions className="pt-2" primary={<Button onClick={save}>Salva</Button>}>
             {!isNew && current && (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  store.removeClass(current.id);
-                  toast.message("Classe rimossa");
-                  onClose();
-                }}
-              >
+              <Button variant="outline" onClick={() => setAskDelete(true)}>
                 Elimina
               </Button>
             )}
           </DialogActions>
         </div>
+        )}
       </DialogContent>
     </Dialog>
   );
