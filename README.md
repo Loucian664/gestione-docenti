@@ -16,6 +16,7 @@ Si apre nel browser. Può essere aggiunta alla schermata home come applicazione.
 - Orario per classe, per docente e quadro settimanale
 - Esportazione in Excel, PDF e immagine
 - Proposta di orario a partire da cattedre, plessi e vincoli
+- Calcolo lungo dell’orario con un assistente di programmazione (istruzioni in `CALCOLO-LUNGO.md`)
 - Backup e ripristino in JSON
 
 I dati restano **locali al browser**. Il sito ospita solo il programma: ogni sessione è indipendente, salvo importazione di un backup.
@@ -38,5 +39,3 @@ Le modifiche pubblicate su `main` aggiornano automaticamente il sito (GitHub Pag
 ## Nota
 
 Uso interno scolastico. Non sostituisce il registro ufficiale.
-
-Fatto da Grok Build (beta)
