@@ -182,6 +182,8 @@ export type SavedTimetable = {
   lessons: TimetableSlot[];
   /** ore a disposizione del mattino, per docente */
   disp: Record<string, { day: DayOfWeek; periodId: string }[]>;
+  /** codice di controllo del calcolo lungo: c'è solo nelle versioni scritte dal programma (`longRunCheck`) */
+  calcoloLungo?: string;
 };
 
 /**

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAppStore, snapshot } from "@/lib/store";
 import { backupJson, parseBackupJson } from "@/lib/export";
+import { longRunImportNote } from "@/lib/calcolo-lungo";
 import { shareOrSave, toastSave } from "@/lib/share-file";
 import type { DayOfWeek, PersistedData, Teacher } from "@/lib/types";
 import { ensureTpPeriods } from "@/lib/periods";
@@ -142,7 +143,14 @@ function ImpostazioniPage() {
   function applyImport(parsed: PersistedData, name: string) {
     // dopo l'importazione Oggi riparte da oggi, non dal giorno aperto quando il backup è stato fatto
     store.importData({ ...parsed, selectedDate: dateOnLaunch() }, name);
-    toast.success("Registro importato e salvato su questo dispositivo");
+    // versioni del calcolo lungo nel backup: dice se sono proprio quelle calcolate dal programma
+    const longRun = longRunImportNote(parsed);
+    if (longRun?.warn) {
+      toast.success("Registro importato e salvato su questo dispositivo");
+      toast.warning(longRun.text, { duration: 15000 });
+    } else {
+      toast.success("Registro importato e salvato su questo dispositivo", longRun ? { description: longRun.text } : undefined);
+    }
   }
 
   function importFile(file: File) {
@@ -690,6 +698,7 @@ function ImpostazioniPage() {
               </div>
             </dl>
           )}
+          {pendingImport && <LongRunNote data={pendingImport.data} />}
           <DialogActions
             primary={
               <Button
@@ -715,6 +724,23 @@ function ImpostazioniPage() {
 
 function countText(n: number, one: string, many: string): string {
   return n === 1 ? `1 ${one}` : `${n} ${many}`;
+}
+
+/** Nel dialogo dell'importazione: le versioni del calcolo lungo nel file, e se vengono proprio dal programma. */
+function LongRunNote({ data }: { data: PersistedData }) {
+  const note = longRunImportNote(data);
+  if (!note) return null;
+  return (
+    <p
+      className={
+        note.warn
+          ? "mt-3 rounded-md border border-warning/60 bg-warning-soft px-3 py-2 text-sm"
+          : "mt-3 text-sm text-muted-foreground"
+      }
+    >
+      {note.text}
+    </p>
+  );
 }
 
 /** Cosa c'è in un registro, in una riga: serve a confrontare il file con i dati del dispositivo. */

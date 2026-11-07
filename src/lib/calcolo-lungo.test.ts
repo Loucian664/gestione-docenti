@@ -5,7 +5,9 @@ import {
   durationText,
   isComplete,
   lessonDistance,
+  longRunImportNote,
   longRunMessage,
+  longRunStatus,
   occupiedSlots,
   pickVersions,
   requestProblems,
@@ -14,6 +16,7 @@ import {
   type LongRunRequest,
 } from "./calcolo-lungo.ts";
 import { applyOrganicoFixes, buildSeed } from "./seed.ts";
+import { slotPart, withPart } from "./saved-timetables.ts";
 import { solveTimetable, type TimetableReport } from "./timetable-solver.ts";
 import type { PersistedData, SavedTimetable, TimetableSlot } from "./types.ts";
 
@@ -36,10 +39,12 @@ describe("calcolo lungo: la richiesta", () => {
     const data = seed({ savedTimetables: [saved(2, "Prova A")] });
     assert.deepEqual(requestProblems(data, req()), []);
     const text = longRunMessage(data, req({ slots: [4, 2], replace: [2] }), "Utente/app", "backup.json");
-    assert.match(text, /Repository: Utente\/app/);
-    assert.match(text, /Partenza: da zero/);
-    assert.match(text, /Slot da usare: 2 \(sostituisce «Prova A»\), 4\./);
-    assert.match(text, /Durata: 1 ora/);
+    assert.match(text, /^Calcolo lungo dell’orario/);
+    assert.match(text, /Repository: https:\/\/github\.com\/Utente\/app — istruzioni complete nel file CALCOLO-LUNGO\.md/);
+    assert.match(text, /Partenza: da zero\. Slot: 2 \(sostituisce «Prova A»\), 4; gli altri restano come sono\. Durata: 1 ora\./);
+    // il comando è già pronto: chi lo esegue mette solo il percorso del backup
+    assert.match(text, /\n   node scripts\/calcolo-lungo\.mjs --backup <percorso del backup> --modo da-zero --slot 2,4 --sostituisci 2 --minuti 60\n/);
+    assert.match(text, /Non scrivere mai un orario a mano\./);
   });
 
   it("si ferma su slot occupati non da sostituire, sullo slot in uso, sullo 0 e sugli slot inesistenti", () => {
@@ -62,7 +67,7 @@ describe("calcolo lungo: la richiesta", () => {
       "2 ore",
     ]);
     const text = longRunMessage(seed(), req({ slots: [1, 2, 3, 4, 5] }), "Utente/app", "backup.json");
-    assert.match(text, /Slot da usare: 1, 2, 3, 4, 5\.\n/);
+    assert.match(text, /Slot: 1, 2, 3, 4, 5\. Durata/);
   });
 
   it("«Migliora» senza un orario da migliorare non si può", () => {
@@ -111,5 +116,28 @@ describe("calcolo lungo: le versioni", () => {
     assert.equal(out.savedAt, 1001);
     assert.equal(out.slots, data.slots);
     assert.equal(out.absences, data.absences);
+  });
+
+  it("codice di controllo: vale anche riaperto nell'app; se l'orario cambia o manca, lo slot va controllato", () => {
+    const data = seed();
+    const c = candidateOf(data, "scratch", solveTimetable(data, { timeMs: 800, seed: 3, mode: "scratch" }));
+    const out = withVersions(data, [{ n: 2, name: "Calcolo lungo 1 di 1", part: c.part }], 5);
+    const entry = out.savedTimetables!.find((s) => s.n === 2)!;
+    assert.match(entry.calcoloLungo ?? "", /^cl1-[0-9a-f]{16}$/);
+    assert.equal(longRunStatus(entry, slotPart(out, 2)), "verificato");
+    // aperto e in uso nell'app: l'orario è ricostruito dai dati, il codice torna uguale
+    const opened = { ...out, ...withPart(out, entry), activeSlot: 2 };
+    assert.equal(longRunStatus(entry, slotPart(opened, 2)), "verificato");
+    const first = entry.lessons[0]!;
+    const moved = { ...entry, lessons: [{ ...first, day: first.day === 1 ? 2 : 1 } as typeof first, ...entry.lessons.slice(1)] };
+    assert.equal(longRunStatus(moved, moved), "cambiato");
+    assert.equal(longRunStatus({ name: "Calcolo lungo 3 di 3" }, entry), "senza-controllo");
+    assert.equal(longRunStatus({ name: "Prova A" }, entry), null);
+    assert.deepEqual(longRunImportNote(out), { text: "Slot 2: calcolato dal programma del calcolo lungo.", warn: false });
+    const faked = { ...out, savedTimetables: [...out.savedTimetables!, { n: 4, name: "Calcolo lungo 2 di 2", savedAt: 1, lessons: [], disp: {} }] };
+    const note = longRunImportNote(faked)!;
+    assert.equal(note.warn, true);
+    assert.match(note.text, /^Slot 2: calcolato .* Attenzione: lo slot 4 non risulta calcolato dal programma .* controllalo prima di usarlo\.$/);
+    assert.equal(longRunImportNote(seed({ savedTimetables: [saved(2, "Prova A")] })), null);
   });
 });
