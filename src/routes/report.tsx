@@ -8,14 +8,25 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { useAppStore, snapshot } from "@/lib/store";
 import { officialData } from "@/lib/saved-timetables";
 import { withFormerTeachers } from "@/lib/replace-teacher";
-import { loadByTeacher, absencesByReason, eccedenteLines, teacherShort } from "@/lib/coverage";
+import {
+  loadByTeacher,
+  absencesByReason,
+  eccedenteLines,
+  teacherShort,
+  hasAbsences,
+  reasonValue,
+  isHourReason,
+  formatHours,
+  HOUR_REASON_LIMITS,
+  type AbsenceReasonRow,
+} from "@/lib/coverage";
 import { formatItDate, isoDate, monthRange, schoolYearRange } from "@/lib/dates";
 import { archivedYearData, archivedYearLabels } from "@/lib/school-years";
 import { reportXlsx, eccedenteXlsx, eccedentePdf, schoolFileTag } from "@/lib/export";
 import { shareOrSaveFile, shareJpeg, toastSave, openPdfTab } from "@/lib/share-file";
 import { jpegBlobToPdf } from "@/lib/pdf";
 import { reportJpeg } from "@/lib/sheet-image";
-import { ABSENCE_REASONS } from "@/lib/types";
+import { ABSENCE_REASONS, type AbsenceReason } from "@/lib/types";
 import { Download, Images as ImageIcon, FileText } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,7 +55,7 @@ function ReportPage() {
 
   const loads = useMemo(() => loadByTeacher(data, from, to), [data, from, to]);
   const absenceRows = useMemo(
-    () => absencesByReason(data, from, to).filter((r) => r.total > 0),
+    () => absencesByReason(data, from, to).filter(hasAbsences),
     [data, from, to],
   );
   const withName = loads
@@ -76,7 +87,7 @@ function ReportPage() {
   const absenceTotals = absenceRows.reduce(
     (acc, r) => {
       acc.days += r.total;
-      acc.assemblea += r.byReason.assemblea_sindacale;
+      acc.assemblea += r.minutes.assemblea_sindacale;
       return acc;
     },
     { days: 0, assemblea: 0 },
@@ -86,7 +97,7 @@ function ReportPage() {
     [data.settings.schoolYear, data.selectedDate],
   );
   const yearAbsenceRows = useMemo(
-    () => absencesByReason(data, yearRange.from, yearRange.to).filter((r) => r.total > 0),
+    () => absencesByReason(data, yearRange.from, yearRange.to).filter(hasAbsences),
     [data, yearRange],
   );
   const yearLoads = useMemo(() => loadByTeacher(data, yearRange.from, yearRange.to), [data, yearRange]);
@@ -95,14 +106,20 @@ function ReportPage() {
     [data, yearRange],
   );
   const yearEccedenti = yearLoads.reduce((n, r) => n + r.eccedente, 0);
+  /** Ore di assemblea e permessi brevi usate nell'anno, per il confronto con il limite. */
+  const yearMinutes = (teacherId: string, reason: AbsenceReason) =>
+    yearAbsenceRows.find((r) => r.teacherId === teacherId)?.minutes[reason] ?? 0;
   const yearStatCards = [
     ...ABSENCE_REASONS.map((reason) => ({
       key: reason.value,
-      label: REASON_CARD[reason.value] ?? reason.label,
-      value: yearAbsenceRows.reduce((n, row) => n + (row.byReason[reason.value] ?? 0), 0),
+      label: isHourReason(reason.value) ? `${REASON_CARD[reason.value] ?? reason.label} (ore)` : REASON_CARD[reason.value] ?? reason.label,
+      n: yearAbsenceRows.reduce((n, row) => n + (reasonValue(row, reason.value) ?? 0), 0),
+      hours: isHourReason(reason.value),
     })),
-    { key: "eccedenti", label: "Ore eccedenti", value: yearEccedenti },
-  ].filter((card) => card.value > 0);
+    { key: "eccedenti", label: "Ore eccedenti", n: yearEccedenti, hours: false },
+  ]
+    .filter((card) => card.n > 0)
+    .map(({ hours, n, ...card }) => ({ ...card, value: hours ? formatHours(n) : n }));
 
   return (
     <div>
@@ -196,7 +213,7 @@ function ReportPage() {
         <MiniStat label="Ore coperte" value={totals.total} />
         <MiniStat label="A disposizione" value={totals.disposizione} />
         <MiniStat label="Eccedenti" value={totals.eccedente} />
-        <MiniStat label="Assemblee sindacali" value={absenceTotals.assemblea} />
+        <MiniStat label="Ore di assemblea sindacale" value={formatHours(absenceTotals.assemblea)} />
       </div>
 
       {chartData.length > 0 && (
@@ -263,7 +280,7 @@ function ReportPage() {
 
       <h2 className="mt-8 mb-3 font-display text-lg">Assenze per motivo</h2>
       <p className="mb-3 text-sm text-muted-foreground">
-        Valori in giorni di scuola; per i permessi brevi si contano i giorni, non le ore.
+        Valori in giorni di scuola; assemblea sindacale e permessi brevi in ore, secondo gli orari delle campanelle.
       </p>
       <div className="paper-panel overflow-x-auto rounded-xl">
         {absenceRows.length === 0 ? (
@@ -276,9 +293,10 @@ function ReportPage() {
                 {ABSENCE_REASONS.map((r) => (
                   <th key={r.value} className="px-3 py-2 font-medium">
                     {REASON_COL[r.value] ?? r.label}
+                    {isHourReason(r.value) ? " (ore)" : ""}
                   </th>
                 ))}
-                <th className="px-3 py-2 font-medium">Totale</th>
+                <th className="px-3 py-2 font-medium">Giorni</th>
               </tr>
             </thead>
             <tbody>
@@ -291,7 +309,7 @@ function ReportPage() {
                       {t.lastName} {t.firstName}
                     </td>
                     {ABSENCE_REASONS.map((r) => (
-                      <Cell key={r.value} n={row.byReason[r.value]} />
+                      <ReasonCell key={r.value} row={row} reason={r.value} />
                     ))}
                     <td className={row.total ? "px-3 py-2.5 tabular-nums font-semibold" : "px-3 py-2.5 tabular-nums text-muted-foreground/55"}>{row.total}</td>
                   </tr>
@@ -388,6 +406,10 @@ function ReportPage() {
           ))}
         </div>
       )}
+      <p className="mb-3 text-sm text-muted-foreground">
+        Assemblea sindacale: 10 ore per anno scolastico. Permessi brevi: fino all’orario settimanale del docente (18 ore
+        per una cattedra intera). Chi supera il limite è evidenziato.
+      </p>
       <div className="paper-panel overflow-x-auto rounded-xl">
         {yearAbsenceRows.length === 0 ? (
           <p className="px-4 py-6 text-sm text-muted-foreground">Nessuna assenza registrata in questo anno.</p>
@@ -399,9 +421,10 @@ function ReportPage() {
                 {ABSENCE_REASONS.map((r) => (
                   <th key={r.value} className="px-3 py-2 font-medium">
                     {REASON_COL[r.value] ?? r.label}
+                    {isHourReason(r.value) ? " (ore)" : ""}
                   </th>
                 ))}
-                <th className="px-3 py-2 font-medium">Totale</th>
+                <th className="px-3 py-2 font-medium">Giorni</th>
               </tr>
             </thead>
             <tbody>
@@ -414,7 +437,7 @@ function ReportPage() {
                       {t.lastName} {t.firstName}
                     </td>
                     {ABSENCE_REASONS.map((r) => (
-                      <Cell key={r.value} n={row.byReason[r.value]} />
+                      <ReasonCell key={r.value} row={row} reason={r.value} yearMinutes={yearMinutes} />
                     ))}
                     <td className={row.total ? "px-3 py-2.5 tabular-nums font-semibold" : "px-3 py-2.5 tabular-nums text-muted-foreground/55"}>{row.total}</td>
                   </tr>
@@ -467,7 +490,40 @@ function Cell({ n, warn }: { n: number; warn?: boolean }) {
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: number }) {
+/** Giorni, oppure ore per assemblea e permessi brevi; nel riepilogo dell'anno, le ore dell'assemblea su 10. */
+function ReasonCell({
+  row,
+  reason,
+  yearMinutes,
+}: {
+  row: AbsenceReasonRow;
+  reason: AbsenceReason;
+  /** riepilogo dell'anno: minuti usati dalla persona (in multisede, in tutte le sedi) */
+  yearMinutes?: (teacherId: string, reason: AbsenceReason) => number;
+}) {
+  if (!isHourReason(reason)) return <Cell n={row.byReason[reason]} />;
+  const here = row.minutes[reason];
+  const used = yearMinutes ? yearMinutes(row.teacherId, reason) : here;
+  const limit = HOUR_REASON_LIMITS[reason] ?? 0;
+  const over = Boolean(yearMinutes) && used > limit * 60;
+  const text = formatHours(yearMinutes ? used : here);
+  return (
+    <td
+      title={over ? `Oltre il limite annuo di ${limit} ore` : undefined}
+      className={
+        !here && !used
+          ? "px-3 py-2.5 tabular-nums text-muted-foreground/55"
+          : over
+            ? "px-3 py-2.5 tabular-nums font-semibold text-warning"
+            : "px-3 py-2.5 tabular-nums text-foreground"
+      }
+    >
+      {!here && !used ? "—" : yearMinutes && reason === "assemblea_sindacale" ? `${text} / ${limit}` : text}
+    </td>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="paper-panel rounded-xl px-4 py-3">
       <p className="text-[12px] text-muted-foreground">{label}</p>
