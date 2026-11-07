@@ -154,6 +154,8 @@ function keepActive(state: PersistedData): SavedTimetable[] {
     name: old?.name ?? (n === 0 ? OFFICIAL_NAME : `Slot ${n}`),
     savedAt: same ? old.savedAt : Date.now(),
     ...part,
+    // il codice del calcolo lungo resta: se l'orario è cambiato, lo slot risulta «cambiato dopo il calcolo»
+    ...(old?.calcoloLungo ? { calcoloLungo: old.calcoloLungo } : {}),
   };
   return [...list.filter((x) => x.n !== n), entry].sort((a, b) => a.n - b.n);
 }

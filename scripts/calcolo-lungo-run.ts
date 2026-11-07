@@ -4,7 +4,8 @@
  *
  * Ogni processo ripete il motore di Costruisci con semi diversi, una corsa dopo l'altra, finché il tempo non
  * finisce; il processo principale trasforma ogni soluzione nell'orario da slot (come «Salva nello slot…»),
- * tiene le migliori e alla fine sceglie le versioni, diverse tra loro, da mettere negli slot richiesti.
+ * tiene le migliori e sceglie le versioni, diverse tra loro, da mettere negli slot richiesti. Il file di uscita si
+ * scrive ogni 5 minuti e quando il programma viene fermato: se il calcolo si interrompe, restano le migliori trovate.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
@@ -62,6 +63,8 @@ type Args = {
   request: LongRunRequest;
   runSeconds: number;
   workers: number;
+  /** ogni quanti minuti si scrive il file di uscita con le versioni migliori trovate finora */
+  saveMinutes: number;
 };
 
 function numbers(v: string | undefined): number[] {
@@ -92,6 +95,7 @@ function parseArgs(argv: string[]): Args {
     },
     runSeconds: Number(get("corsa") ?? 120),
     workers: Number(get("processi") ?? Math.max(1, availableParallelism() - 1)),
+    saveMinutes: Number(get("salva-ogni") ?? 5),
   };
 }
 
@@ -123,11 +127,58 @@ export async function main(argv: string[], bundle: string): Promise<void> {
   const pool: Candidate[] = [];
   let runs = 0;
   let complete = 0;
+  let changed = false;
   const keep = (c: Candidate) => {
     pool.push(c);
     pool.sort((a, b) => compareReports(a.report, b.report));
     if (pool.length > 120) pool.length = 120;
+    changed = true;
   };
+
+  const ordered = [...slots].sort((a, b) => a - b);
+  /** Scrive le versioni migliori trovate finora; `null` se non ce n'è ancora nessuna completa. */
+  const writeVersions = () => {
+    const versions = pickVersions(pool, slots.length);
+    if (versions.length === 0) return null;
+    const placed = versions.map((v, i) => ({
+      n: ordered[i]!,
+      name: `Calcolo lungo ${i + 1} di ${versions.length}`,
+      part: v.part,
+    }));
+    const out = withVersions(data, placed);
+    // controllo: ogni slot scritto, con tutte le sue lezioni e il codice di controllo
+    for (const p of placed) {
+      const saved = out.savedTimetables?.find((s) => s.n === p.n);
+      if (!saved || saved.lessons.length !== p.part.lessons.length || !saved.calcoloLungo) {
+        throw new Error(`slot ${p.n} non scritto`);
+      }
+    }
+    writeFileSync(args.out, backupJson(out));
+    changed = false;
+    return { placed, versions };
+  };
+
+  const workers: Worker[] = [];
+  // fermato prima della fine (Ctrl+C, tempo massimo dell'assistente…): salva quello che c'è ed esce
+  const stop = (signal: string) => {
+    const done = pool.length ? writeVersions() : null;
+    console.log(
+      done
+        ? `\nFermato (${signal}) dopo ${runs} corse: ${done.placed.length} versioni scritte in ${args.out}.`
+        : `\nFermato (${signal}) dopo ${runs} corse: ancora nessuna versione completa, il backup non è stato scritto.`,
+    );
+    done?.placed.forEach((p, i) => console.log(`- slot ${p.n}: «${p.name}» (${reportLine(done.versions[i]!.report)})`));
+    for (const w of workers) void w.terminate();
+    process.exit(done ? 0 : 1);
+  };
+  process.once("SIGINT", () => stop("SIGINT"));
+  process.once("SIGTERM", () => stop("SIGTERM"));
+  process.once("SIGHUP", () => stop("SIGHUP"));
+  const every5 = setInterval(() => {
+    if (!changed) return;
+    const done = writeVersions();
+    if (done) console.log(`[${clock(Date.now() - start)}] salvate ${done.placed.length} versioni in ${args.out}`);
+  }, args.saveMinutes * 60_000);
 
   await new Promise<void>((resolve, reject) => {
     let open = args.workers;
@@ -142,6 +193,7 @@ export async function main(argv: string[], bundle: string): Promise<void> {
           seed: (seed0 + i * 104729) >>> 0,
         } satisfies WorkerIn,
       });
+      workers.push(w);
       w.on("message", (msg: WorkerOut) => {
         if (msg.type === "result") {
           runs += 1;
@@ -162,27 +214,15 @@ export async function main(argv: string[], bundle: string): Promise<void> {
         if (open === 0) resolve();
       });
     }
-  });
+  }).finally(() => clearInterval(every5));
 
-  const versions = pickVersions(pool, slots.length);
-  if (versions.length === 0) {
+  const done = writeVersions();
+  if (!done) {
     console.error("Nessuna versione completa: il backup non è stato scritto.");
     process.exitCode = 1;
     return;
   }
-  const ordered = [...slots].sort((a, b) => a - b);
-  const placed = versions.map((v, i) => ({
-    n: ordered[i]!,
-    name: `Calcolo lungo ${i + 1} di ${versions.length}`,
-    part: v.part,
-  }));
-  const out = withVersions(data, placed);
-  // controllo finale: ogni slot scritto, riaperto come lo apre l'app, dà lo stesso orario completo
-  for (const p of placed) {
-    const saved = out.savedTimetables?.find((s) => s.n === p.n);
-    if (!saved || saved.lessons.length !== p.part.lessons.length) throw new Error(`slot ${p.n} non scritto`);
-  }
-  writeFileSync(args.out, backupJson(out));
+  const { placed, versions } = done;
   console.log(`\nCorse: ${runs}. Versioni scritte in ${args.out}:`);
   placed.forEach((p, i) => console.log(`- slot ${p.n}: «${p.name}» (${reportLine(versions[i]!.report)})`));
   if (placed.length < slots.length) {
