@@ -1,6 +1,4 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
-import { AuthProvider } from "@/lib/auth/provider";
-import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { AppLayout } from "@/components/layout";
 import { AppNotFound } from "@/lib/error-component";
 import { ThemeProvider, useTheme } from "@/components/theme-provider";
@@ -97,14 +95,11 @@ function RootComponent() {
         <HeadContent />
       </head>
       <body>
-        <PreviewHostBridge />
         <ThemeProvider>
-          <AuthProvider>
-            <AppLayout>
-              <Outlet />
-            </AppLayout>
-            <ThemedToaster />
-          </AuthProvider>
+          <AppLayout>
+            <Outlet />
+          </AppLayout>
+          <ThemedToaster />
         </ThemeProvider>
         <Scripts />
       </body>

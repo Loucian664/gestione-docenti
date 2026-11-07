@@ -21,5 +21,5 @@ Se il messaggio dell'utente inizia con «Calcolo lungo dell’orario», segui `C
 - I backup JSON dell'utente e le sue schermate contengono nomi veri di colleghi: usali solo nella tua cartella di
   lavoro. Mai in commit, test, anteprime pubbliche o messaggi su GitHub.
 - Test: `npx tsx --test src/lib/*.test.ts`; controllo dei tipi: `npx tsc --noEmit -p .`.
-- `server/`, `migrations/`, `startup.sh` e `src/lib/auth` sono resti del modello iniziale (Grok Build): il sito non
-  usa server, database né login.
+- Il sito non usa server, database né login: i resti del modello iniziale (Grok Build) sono stati tolti, non
+  rimetterli.
