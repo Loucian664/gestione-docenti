@@ -72,7 +72,7 @@ function DocentiPage() {
       />
       <ul className="paper-panel divide-y divide-border rounded-xl md:hidden">
         {list.map((t) => (
-          <li key={t.id} className="flex items-start gap-2 py-3 pr-2 pl-4">
+          <li key={t.id} className="flex items-start gap-2 py-3 pr-1 pl-4">
             <button type="button" onClick={() => setEditing(t)} className="min-w-0 flex-1 text-left">
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="size-2.5 shrink-0 rounded-full" style={{ background: teacherDotColor(t.color) }} />
@@ -83,7 +83,8 @@ function DocentiPage() {
               <span className="block text-[13px] text-muted-foreground">{classLabels(data, t.id) || "—"}</span>
             </button>
             <div className="flex shrink-0 flex-col items-end gap-1">
-              <span className="pt-0.5 text-right text-[13px] whitespace-nowrap text-muted-foreground tabular-nums">
+              {/* a destra 4 + 12 px come il vuoto interno del tasto «Orario»: scritte e tasto finiscono sulla stessa riga */}
+              <span className="pt-0.5 pr-3 text-right text-[13px] whitespace-nowrap text-muted-foreground tabular-nums">
                 {hoursLines(t).map((line) => (
                   <span key={line} className="block">
                     {line}
@@ -189,7 +190,7 @@ function FormerTeachers({ data }: { data: ReturnType<typeof snapshot> }) {
         {list.map((t) => {
           const next = data.teachers.find((x) => x.id === t.replacedBy);
           return (
-            <li key={t.id} className="flex items-center gap-2 py-2.5 pr-2 pl-4">
+            <li key={t.id} className="flex items-center gap-2 py-2.5 pr-1 pl-4">
               <div className="min-w-0 flex-1">
                 <span className="font-medium">{teacherName(t)}</span>
                 <span className="block text-[13px] text-muted-foreground">
