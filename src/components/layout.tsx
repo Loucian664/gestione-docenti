@@ -195,7 +195,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header
           data-print-hide
-          className="flex items-center justify-between gap-3 border-b border-border bg-card/80 px-4 py-3 backdrop-blur md:hidden"
+          className="flex items-center justify-between gap-2 border-b border-border bg-card/80 px-4 py-3 backdrop-blur md:hidden"
         >
           <div>
             <p className="font-display text-lg leading-none">Gestione Docenti</p>
@@ -205,7 +205,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
           <div className="flex items-center gap-1">
             {persistReady && uncovered > 0 && (
-              <span className="mr-1 rounded-full bg-danger-soft px-2 py-1 text-[11px] font-semibold text-destructive tabular-nums">
+              <span className="mr-1 shrink-0 whitespace-nowrap rounded-full bg-danger-soft px-2 py-1 text-[11px] font-semibold text-destructive tabular-nums">
                 {uncovered === 1 ? "1 scoperta" : `${uncovered} scoperte`}
               </span>
             )}

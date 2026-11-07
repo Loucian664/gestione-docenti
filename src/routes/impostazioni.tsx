@@ -229,7 +229,7 @@ function ImpostazioniPage() {
           {store.settings.periods.filter((p) => !p.tpOnly).map((p) => {
             const i = store.settings.periods.findIndex((x) => x.id === p.id);
             return (
-            <li key={p.id} className="grid min-w-0 grid-cols-[1fr_5.5rem_5.5rem] gap-2">
+            <li key={p.id} className="grid min-w-0 grid-cols-[1fr_5.5rem_5.5rem] gap-2 max-[359px]:grid-cols-[1fr_5rem_5rem]">
               <Input
                 value={p.label}
                 onChange={(e) => {
@@ -283,7 +283,7 @@ function ImpostazioniPage() {
             {store.settings.periods.filter((p) => p.tpOnly).map((p) => {
               const i = store.settings.periods.findIndex((x) => x.id === p.id);
               return (
-                <li key={p.id} className="grid min-w-0 grid-cols-[1fr_5.5rem_5.5rem] gap-2">
+                <li key={p.id} className="grid min-w-0 grid-cols-[1fr_5.5rem_5.5rem] gap-2 max-[359px]:grid-cols-[1fr_5rem_5rem]">
                   <Input
                     value={p.label}
                     onChange={(e) => {
