@@ -14,6 +14,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { useAppStore, snapshot } from "@/lib/store";
 import { SaveSlots, SaveToSlotDialog } from "@/components/save-slots";
 import { MissingTeachersBox, MissingTeachersDialog } from "@/components/missing-teachers";
+import { CalcoloLungo } from "@/components/calcolo-lungo";
 import {
   OFFICIAL_COPY_NAME,
   activeSlotOf,
@@ -664,6 +665,8 @@ export function CostruisciOrario({
         </div>
         {running && <SearchProgress progress={running} onStop={() => handleRef.current?.stop()} />}
       </section>
+
+      <CalcoloLungo canImprove={canImprove} />
 
       {edit && (
         <Ritocchi
