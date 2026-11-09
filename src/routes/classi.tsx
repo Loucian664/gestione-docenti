@@ -12,6 +12,7 @@ import { missingTeachers } from "@/lib/build-timetable";
 import { TN_NOTE } from "@/components/missing-teachers";
 import type { SchoolClass, Tempo } from "@/lib/types";
 import { Plus } from "lucide-react";
+import { countOf } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/classi")({ component: ClassiPage });
@@ -26,6 +27,17 @@ function ClassiPage() {
   const [editing, setEditing] = useState<SchoolClass | null | "new">(null);
   const grouped = [1, 2, 3] as const;
   const missing = missingTeachers(data);
+  // alunni: in tutto, per tempo scuola e per anno; le classi senza numero si dicono a parte
+  const pupils = (list: SchoolClass[]) => list.reduce((n, c) => n + (c.students ?? 0), 0);
+  const total = pupils(data.classes);
+  const tn = pupils(data.classes.filter((c) => c.tempo === "TN"));
+  const tp = total - tn;
+  const noCount = data.classes
+    .filter((c) => !c.students)
+    .map((c) => c.name)
+    .sort((a, b) => a.localeCompare(b, "it"));
+  const listText = (names: string[]) =>
+    names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 
   function saveTempo(c: SchoolClass, tempo: Tempo) {
     if (c.tempo === tempo) return;
@@ -45,12 +57,30 @@ function ClassiPage() {
           </Button>
         }
       />
+      {data.classes.length > 0 && (
+        <p className="mb-4 text-sm text-muted-foreground">
+          {total > 0 && (
+            <>
+              Totale: <span className="font-medium text-foreground">{countOf(total, "alunno", "alunni")}</span> in{" "}
+              {countOf(data.classes.length, "classe", "classi")}
+              {tn > 0 && tp > 0 ? ` · ${tn} a tempo normale, ${tp} a tempo prolungato` : ""}.
+            </>
+          )}
+          {noCount.length > 0 && ` ${total > 0 ? "Manca" : "Manca ancora"} il numero di alunni di ${listText(noCount)}.`}
+        </p>
+      )}
       <div className="grid gap-4 md:grid-cols-3">
         {grouped.map((grade) => {
           const items = data.classes.filter((c) => c.grade === grade).sort((a, b) => a.section.localeCompare(b.section));
+          const sum = pupils(items);
           return (
             <section key={grade} className="paper-panel rounded-xl p-4">
-              <h2 className="font-display text-xl">{grade}ª</h2>
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="font-display text-xl">{grade}ª</h2>
+                {sum > 0 && (
+                  <span className="text-[13px] text-muted-foreground">{countOf(sum, "alunno", "alunni")}</span>
+                )}
+              </div>
               <ul className="mt-3 flex flex-col gap-1.5">
                 {items.map((c) => {
                   const without = missing.filter((m) => m.classId === c.id && !m.tn);
