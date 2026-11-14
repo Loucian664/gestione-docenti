@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/layout";
 import { ThemePicker } from "@/components/theme-toggle";
 import { SaveSlots } from "@/components/save-slots";
@@ -330,6 +330,9 @@ function ImpostazioniPage() {
           />
           Includi il sabato
         </label>
+        <div className="mt-4">
+          <GroupSubjectsField />
+        </div>
       </section>
 
       <section className="paper-panel mb-4 rounded-xl p-5">
@@ -771,6 +774,40 @@ function newYearText(year: string, absences: number, substitutions: number, form
         ? " Il docente non più in servizio esce dall’elenco e resta nell’anno in archivio."
         : ` I ${former} docenti non più in servizio escono dall’elenco e restano nell’anno in archivio.`;
   return `L’anno ${name} va in archivio con ${countText(absences, "assenza", "assenze")} e ${countText(substitutions, "sostituzione", "sostituzioni")}: lo ritrovi in Report, scegliendo l’anno, così com’è oggi.${left}`;
+}
+
+/** Materie per una parte della classe, separate da virgole: il testo resta com'è scritto mentre si digita. */
+function GroupSubjectsField() {
+  const saved = useAppStore((s) => s.settings.groupSubjects);
+  const updateSettings = useAppStore((s) => s.updateSettings);
+  const [text, setText] = useState(() => (saved ?? []).join(", "));
+  const parse = (value: string) =>
+    value
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+  // dati cambiati altrove (backup ripristinato, cancellazione): il campo li segue
+  useEffect(() => {
+    setText((current) => (parse(current).join("|") === (saved ?? []).join("|") ? current : (saved ?? []).join(", ")));
+  }, [saved]);
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <Label htmlFor="group-subjects">Materie solo per una parte della classe</Label>
+      <Input
+        id="group-subjects"
+        value={text}
+        placeholder="Es. Latino"
+        onChange={(e) => {
+          setText(e.target.value);
+          const list = parse(e.target.value);
+          updateSettings({ groupSubjects: list.length ? list : undefined });
+        }}
+      />
+      <p className="text-[12px] text-muted-foreground">
+        Se sono più di una, separale con una virgola. Nelle assemblee sindacali non trattengono la classe intera: la classe può entrare dopo o uscire prima e in «Oggi» un avviso ricorda gli alunni che la seguono.
+      </p>
+    </div>
+  );
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
