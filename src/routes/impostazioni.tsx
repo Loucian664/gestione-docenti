@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/layout";
 import { ThemePicker } from "@/components/theme-toggle";
 import { SaveSlots } from "@/components/save-slots";
@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { DialogActions } from "@/components/dialog-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SubjectPicker } from "@/components/subject-picker";
+import { groupSubjectChoices } from "@/lib/coverage";
 import {
   Dialog,
   DialogContent,
@@ -776,35 +778,21 @@ function newYearText(year: string, absences: number, substitutions: number, form
   return `L’anno ${name} va in archivio con ${countText(absences, "assenza", "assenze")} e ${countText(substitutions, "sostituzione", "sostituzioni")}: lo ritrovi in Report, scegliendo l’anno, così com’è oggi.${left}`;
 }
 
-/** Materie per una parte della classe, separate da virgole: il testo resta com'è scritto mentre si digita. */
+/** Materie per una parte della classe: si scelgono tra quelle dell'orario. */
 function GroupSubjectsField() {
-  const saved = useAppStore((s) => s.settings.groupSubjects);
-  const updateSettings = useAppStore((s) => s.updateSettings);
-  const [text, setText] = useState(() => (saved ?? []).join(", "));
-  const parse = (value: string) =>
-    value
-      .split(",")
-      .map((x) => x.trim())
-      .filter(Boolean);
-  // dati cambiati altrove (backup ripristinato, cancellazione): il campo li segue
-  useEffect(() => {
-    setText((current) => (parse(current).join("|") === (saved ?? []).join("|") ? current : (saved ?? []).join(", ")));
-  }, [saved]);
+  const store = useAppStore();
+  const options = useMemo(() => groupSubjectChoices(snapshot(store)), [store.slots, store.teachers]);
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <Label htmlFor="group-subjects">Materie solo per una parte della classe</Label>
-      <Input
+      <SubjectPicker
         id="group-subjects"
-        value={text}
-        placeholder="Es. Latino"
-        onChange={(e) => {
-          setText(e.target.value);
-          const list = parse(e.target.value);
-          updateSettings({ groupSubjects: list.length ? list : undefined });
-        }}
+        value={store.settings.groupSubjects ?? []}
+        options={options}
+        onChange={(list) => store.updateSettings({ groupSubjects: list.length ? list : undefined })}
       />
       <p className="text-[12px] text-muted-foreground">
-        Se sono più di una, separale con una virgola. Nelle assemblee sindacali non trattengono la classe intera: la classe può entrare dopo o uscire prima e in «Oggi» un avviso ricorda gli alunni che la seguono.
+        Nelle assemblee sindacali, se restano solo queste materie, la classe può uscire prima o entrare dopo.
       </p>
     </div>
   );
