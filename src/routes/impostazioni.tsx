@@ -28,7 +28,18 @@ import { activeSlotOf } from "@/lib/saved-timetables";
 import { isLockedLesson } from "@/lib/locks";
 import { previousFields } from "@/lib/clear-marks";
 import { frozenCattedre } from "@/lib/build-timetable";
-import { builtLessonTest, fixedKinds, fixedKindsNote, stayText } from "@/lib/svuota";
+import {
+  builtLessonTest,
+  emptyTeacherPatch,
+  fixedKinds,
+  fixedKindsNote,
+  keptText,
+  listText,
+  marksNote,
+  marksOf,
+  projectHoursOf,
+  stayText,
+} from "@/lib/svuota";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/impostazioni")({ component: ImpostazioniPage });
@@ -45,6 +56,9 @@ function ImpostazioniPage() {
   const [emptyLocked, setEmptyLocked] = useState(false);
   // «Svuota orario» toglie anche le lezioni che Costruisci non rimette (sostegno, pomeriggio…)
   const [emptyFixed, setEmptyFixed] = useState(false);
+  // «Svuota orario» toglie anche le ore di progetto e i segni di Costruisci
+  const [emptyProject, setEmptyProject] = useState(false);
+  const [emptyMarks, setEmptyMarks] = useState(false);
   const [pendingImport, setPendingImport] = useState<{ data: PersistedData; name: string; older: boolean } | null>(null);
   const [newYear, setNewYear] = useState<string | null>(null);
   const [removingYear, setRemovingYear] = useState<string | null>(null);
@@ -61,6 +75,8 @@ function ImpostazioniPage() {
           return name ? ` «${name}»` : "";
         })()}`;
   const dispCount = store.teachers.reduce((n, t) => n + (t.dispSlots?.length ?? 0), 0);
+  const projectCount = store.teachers.reduce((n, t) => n + projectHoursOf(t), 0);
+  const marksCount = store.teachers.reduce((n, t) => n + marksOf(t), 0);
 
   const teacherById = new Map(store.teachers.map((t) => [t.id, t]));
   const isLocked = (x: (typeof store.slots)[number]) => isLockedLesson(teacherById.get(x.teacherId), x);
@@ -70,39 +86,39 @@ function ImpostazioniPage() {
   const fixedCount = fixedSlots.length;
   // lezioni che il pulsante toglie: le bloccate e quelle che Costruisci non rimette solo con la spunta
   const removable = store.slots.length - (emptyLocked ? 0 : lockedCount) - (emptyFixed ? 0 : fixedCount);
-  // nessuna lezione da togliere: «Svuota orario» serve a togliere le ore a disposizione rimaste
-  const onlyDisp = removable === 0;
+  // altro da togliere, spuntato
+  const extra = (emptyDisp && dispCount > 0) || (emptyProject && projectCount > 0) || (emptyMarks && marksCount > 0);
+  const nothingToEmpty = store.slots.length === 0 && dispCount + projectCount + marksCount === 0;
 
   function closeEmpty() {
     setEmptyOpen(false);
     setEmptyDisp(false);
     setEmptyLocked(false);
     setEmptyFixed(false);
+    setEmptyProject(false);
+    setEmptyMarks(false);
   }
 
   /**
-   * «Svuota orario»: via le lezioni che Costruisci rimette (le altre e le bloccate solo se scelto) e, se scelto, le
-   * ore a disposizione; con «Annulla».
+   * «Svuota orario»: via le lezioni che Costruisci rimette (le altre e le bloccate solo se scelto) e, se scelti, ore
+   * a disposizione, ore di progetto e segni di Costruisci; con «Annulla».
    */
   function emptyTimetable() {
     const before = store.slots;
-    const withDisp = emptyDisp || onlyDisp;
     const kept = before.filter((x) => (isLocked(x) ? !emptyLocked : !isBuilt(x) && !emptyFixed));
     const keptLocked = kept.filter(isLocked).length;
+    const choice = { disp: emptyDisp, locked: emptyLocked, project: emptyProject, marks: emptyMarks };
     const patches: Record<string, Partial<Teacher>> = {};
     const back: Record<string, Partial<Teacher>> = {};
     let disp = 0;
+    let project = 0;
+    let marks = 0;
     for (const t of store.teachers) {
-      const patch: Partial<Teacher> = {};
-      if (withDisp && t.dispSlots?.length) {
-        patch.dispSlots = [];
-        disp += t.dispSlots.length;
-      }
-      if (emptyLocked && (t.lockedSlots?.length || t.lockWeek)) {
-        patch.lockedSlots = [];
-        patch.lockWeek = false;
-      }
-      if (Object.keys(patch).length === 0) continue;
+      const patch = emptyTeacherPatch(t, choice, kept);
+      if (!patch) continue;
+      if (patch.dispSlots) disp += t.dispSlots?.length ?? 0;
+      if (emptyProject) project += projectHoursOf(t);
+      if (emptyMarks) marks += marksOf(t);
       patches[t.id] = patch;
       back[t.id] = previousFields(t, patch);
     }
@@ -112,12 +128,8 @@ function ImpostazioniPage() {
     const frozen = lessons > 0 ? frozenCattedre(snapshot(store)) : null;
     store.setTimetable(kept, patches, frozen ?? undefined);
     closeEmpty();
-    const what = [
-      lessons > 0 && countText(lessons, "lezione", "lezioni"),
-      disp > 0 && countText(disp, "ora a disposizione", "ore a disposizione"),
-    ].filter(Boolean);
     const stay = kept.length > 0 ? ` ${stayText(kept.length - keptLocked, keptLocked)}` : "";
-    toast(`${lessons > 0 ? "Orario svuotato: " : ""}${what.join(" e ")} ${lessons + disp === 1 ? "tolta" : "tolte"}.${stay}`, {
+    toast(`${emptiedText(lessons, disp, project, marks)}${stay}`, {
       duration: 10000,
       action: {
         label: "Annulla",
@@ -391,8 +403,8 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Nuovo anno scolastico</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          L’anno finito va in archivio e si consulta in Report; assenze e sostituzioni ripartono da zero, docenti, classi
-          e orario restano. Poi in Docenti elimini chi non torna e aggiungi chi arriva.
+          L’anno finito va in archivio e si consulta in Report. Assenze, sostituzioni e orario ripartono da zero; restano
+          docenti, classi, cattedre e impostazioni. Poi in Docenti elimini chi non torna e aggiungi chi arriva.
         </p>
         {archived.length > 0 && (
           <>
@@ -430,16 +442,16 @@ function ImpostazioniPage() {
       <section className="paper-panel mb-4 rounded-xl p-5">
         <h2 className="font-display text-lg">Svuota orario</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Toglie le lezioni dell’orario in uso che Costruisci rimette, cioè quelle del mattino dei docenti di materia, e,
-          se vuoi, le ore a disposizione. Le ore bloccate e quelle che Costruisci non rimette (sostegno, pomeriggio…)
-          restano, se non scegli di togliere anche quelle. Restano docenti, classi, cattedre, segni di Costruisci,
-          assenze, sostituzioni e orari salvati negli slot.
+          Toglie le lezioni dell’orario in uso che Costruisci rimette, cioè quelle del mattino dei docenti di materia. Se
+          vuoi, toglie anche le ore bloccate, quelle che Costruisci non rimette (sostegno, pomeriggio…), le ore a
+          disposizione, le ore di progetto e i segni di Costruisci. Restano docenti, classi, cattedre, assenze,
+          sostituzioni e orari salvati negli slot.
         </p>
         <div className="mt-4">
           <Button
             variant="outline"
             className="min-h-11"
-            disabled={store.slots.length === 0 && dispCount === 0}
+            disabled={nothingToEmpty}
             onClick={() => setEmptyOpen(true)}
           >
             Svuota orario
@@ -455,14 +467,18 @@ function ImpostazioniPage() {
           <DialogHeader>
             <DialogTitle>Svuotare l’orario?</DialogTitle>
             <DialogDescription>
-              {onlyDisp
-                ? dispCount > 0
-                  ? `L’${inUseName} non ha lezioni da togliere: si tolgono le ore a disposizione rimaste.`
-                  : `L’${inUseName} non ha lezioni da togliere.`
-                : `Si ${removable === 1 ? "toglie" : "tolgono"} ${countText(removable, "lezione", "lezioni")} dall’${inUseName}.`}
+              {removable > 0
+                ? `Si ${removable === 1 ? "toglie" : "tolgono"} ${countText(removable, "lezione", "lezioni")} dall’${inUseName}.`
+                : store.slots.length === 0
+                  ? `L’${inUseName} non ha più lezioni da togliere: si tolgono solo le cose spuntate.`
+                  : `L’${inUseName} non ha lezioni che Costruisci rimette: si tolgono solo le cose spuntate.`}
               {stayText(emptyFixed ? 0 : fixedCount, emptyLocked ? 0 : lockedCount) &&
                 ` ${stayText(emptyFixed ? 0 : fixedCount, emptyLocked ? 0 : lockedCount)}`}{" "}
-              Restano docenti, classi, cattedre, segni di Costruisci, assenze, sostituzioni e orari salvati negli slot.
+              {keptText({
+                disp: dispCount > 0 && !emptyDisp,
+                project: projectCount > 0 && !emptyProject,
+                marks: marksCount > 0 && !emptyMarks,
+              })}
             </DialogDescription>
           </DialogHeader>
           {lockedCount > 0 && (
@@ -497,11 +513,35 @@ function ImpostazioniPage() {
               <input
                 type="checkbox"
                 className="size-4 accent-primary"
-                checked={emptyDisp || onlyDisp}
-                disabled={onlyDisp}
+                checked={emptyDisp}
                 onChange={(e) => setEmptyDisp(e.target.checked)}
               />
               Togli anche le ore a disposizione ({dispCount})
+            </label>
+          )}
+          {projectCount > 0 && (
+            <label className="mb-2 flex min-h-10 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4 accent-primary"
+                checked={emptyProject}
+                onChange={(e) => setEmptyProject(e.target.checked)}
+              />
+              Togli anche le ore di progetto ({projectCount})
+            </label>
+          )}
+          {marksCount > 0 && (
+            <label className="mb-2 flex min-h-10 items-start gap-2 py-1 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 shrink-0 accent-primary"
+                checked={emptyMarks}
+                onChange={(e) => setEmptyMarks(e.target.checked)}
+              />
+              <span className="flex min-w-0 flex-col">
+                <span>Togli anche i segni di Costruisci ({marksCount})</span>
+                <span className="text-[12px] text-muted-foreground">{marksNote(store.teachers)}</span>
+              </span>
             </label>
           )}
           <p className="mb-4 text-[12px] text-muted-foreground">
@@ -510,8 +550,8 @@ function ImpostazioniPage() {
           </p>
           <DialogActions
             primary={
-              <Button variant="destructive" disabled={removable === 0 && dispCount === 0} onClick={emptyTimetable}>
-                {onlyDisp ? "Togli le ore a disposizione" : "Svuota orario"}
+              <Button variant="destructive" disabled={removable === 0 && !extra} onClick={emptyTimetable}>
+                Svuota orario
               </Button>
             }
           >
@@ -610,16 +650,17 @@ function ImpostazioniPage() {
           </DialogHeader>
           <div className="grid gap-3 text-sm">
             <p>
-              Assenze e sostituzioni ripartono da zero. Restano docenti, classi, orario (anche gli orari salvati negli
-              slot) e impostazioni. Dopo, in Docenti, elimini chi non torna e aggiungi chi arriva: gli anni in archivio
-              non cambiano.
+              Si tolgono assenze, sostituzioni e tutto l’orario: le lezioni, anche quelle bloccate, di sostegno, di
+              potenziamento e del pomeriggio; le ore a disposizione e di progetto; i segni di Costruisci; gli orari
+              salvati negli slot. Restano docenti, classi, cattedre, campanella e impostazioni. Dopo, in Docenti, elimini
+              chi non torna e aggiungi chi arriva: gli anni in archivio non cambiano.
             </p>
             <Field label="Nuovo anno scolastico">
               <Input value={newYear ?? ""} onChange={(e) => setNewYear(e.target.value)} />
             </Field>
             {sameYear && <p className="text-[12px] text-destructive">Scrivi un anno diverso da quello in corso.</p>}
             <p className="text-[12px] text-muted-foreground">
-              Non si può annullare. Se vuoi anche una copia su file, prima esporta il backup.
+              Non si può annullare: per conservare l’orario dell’anno finito, prima esporta il backup.
             </p>
           </div>
           <DialogActions
@@ -758,6 +799,19 @@ function registerSummary(d: PersistedData): string {
   ].join(", ");
 }
 
+/** «Orario svuotato: 120 lezioni e 30 segni di Costruisci tolti.» (con un segno il participio va al maschile) */
+function emptiedText(lessons: number, disp: number, project: number, marks: number): string {
+  const what = [
+    lessons > 0 && countText(lessons, "lezione", "lezioni"),
+    disp > 0 && countText(disp, "ora a disposizione", "ore a disposizione"),
+    project > 0 && countText(project, "ora di progetto", "ore di progetto"),
+    marks > 0 && countText(marks, "segno di Costruisci", "segni di Costruisci"),
+  ].filter((x): x is string => Boolean(x));
+  const one = lessons + disp + project + marks === 1;
+  const done = marks > 0 ? (one ? "tolto" : "tolti") : one ? "tolta" : "tolte";
+  return `${lessons > 0 ? "Orario svuotato: " : ""}${listText(what)} ${done}.`;
+}
+
 function newYearText(year: string, absences: number, substitutions: number, former: number): string {
   const name = year.trim() || "in corso";
   if (absences + substitutions === 0) {
@@ -775,7 +829,7 @@ function newYearText(year: string, absences: number, substitutions: number, form
       : former === 1
         ? " Il docente non più in servizio esce dall’elenco e resta nell’anno in archivio."
         : ` I ${former} docenti non più in servizio escono dall’elenco e restano nell’anno in archivio.`;
-  return `L’anno ${name} va in archivio con ${countText(absences, "assenza", "assenze")} e ${countText(substitutions, "sostituzione", "sostituzioni")}: lo ritrovi in Report, scegliendo l’anno, così com’è oggi.${left}`;
+  return `L’anno ${name} va in archivio con ${listText([absences > 0 && countText(absences, "assenza", "assenze"), substitutions > 0 && countText(substitutions, "sostituzione", "sostituzioni")].filter((x): x is string => Boolean(x)))}: lo ritrovi in Report, scegliendo l’anno, così com’è oggi.${left}`;
 }
 
 /** Materie per una parte della classe: si scelgono tra quelle dell'orario. */

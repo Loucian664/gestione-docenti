@@ -97,7 +97,7 @@ describe("cancellare, importare, tornare all'esempio", () => {
 });
 
 describe("nuovo anno scolastico", () => {
-  it("via assenze, sostituzioni e chi non è più in servizio; docenti, classi, orario e slot restano", () => {
+  it("via assenze, sostituzioni, chi non è più in servizio e tutto l’orario; docenti, classi e cattedre restano", () => {
     withWork();
     const t = st().teachers[0]!;
     st().replaceTeacher(t.id, { lastName: "Nuova", firstName: "Persona" }, st().selectedDate);
@@ -107,11 +107,16 @@ describe("nuovo anno scolastico", () => {
     const after = snapshot(st());
     assert.deepEqual([after.absences, after.substitutions, after.formerTeachers], [[], [], []]);
     assert.equal(after.settings.schoolYear, "2027/2028");
-    assert.deepEqual(after.teachers, before.teachers);
+    assert.deepEqual(
+      after.teachers.map((x) => [x.id, x.lastName, x.firstName]),
+      before.teachers.map((x) => [x.id, x.lastName, x.firstName]),
+    );
     assert.deepEqual(after.classes, before.classes);
-    assert.deepEqual(after.slots, before.slots);
-    assert.deepEqual(after.cattedre, before.cattedre);
-    assert.deepEqual(after.savedTimetables, before.savedTimetables);
+    assert.ok(before.slots.length > 0);
+    assert.deepEqual([after.slots, after.savedTimetables, after.activeSlot], [[], [], 0]);
+    assert.ok(after.teachers.every((x) => !x.dispSlots?.length));
+    // le cattedre ricavate dall'orario restano, scritte
+    assert.ok((after.cattedre ?? []).length > 0);
     assert.equal(after.origin, "user");
     // l'anno finito è in archivio, con le sue assenze e sostituzioni
     assert.equal(after.archivedYears?.length, 1);

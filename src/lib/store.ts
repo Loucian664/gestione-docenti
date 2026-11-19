@@ -105,8 +105,8 @@ type Actions = {
   setCattedre: (cattedre: Cattedra[]) => void;
   importData: (data: PersistedData, fileName?: string) => void;
   /**
-   * Nuovo anno scolastico: l’anno in corso va in archivio; assenze, sostituzioni e chi non è più in servizio
-   * ripartono da zero; restano docenti, classi, orario (anche gli slot) e impostazioni, con l’anno nuovo.
+   * Nuovo anno scolastico: l’anno in corso va in archivio; assenze, sostituzioni, chi non è più in servizio e tutto
+   * l’orario (anche gli slot) ripartono da zero; restano docenti, classi, cattedre e impostazioni, con l’anno nuovo.
    */
   startNewSchoolYear: (schoolYear: string) => void;
   removeArchivedYear: (id: string) => void;

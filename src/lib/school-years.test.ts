@@ -54,6 +54,42 @@ describe("anni in archivio", () => {
     assert.equal(year.data.settings.schoolYear, "2026/2027");
   });
 
+  it("il nuovo anno toglie tutto l’orario; restano docenti, classi, cattedre e campanella", () => {
+    const base = finishedYear();
+    const [t] = base.teachers;
+    const marked = {
+      ...t!,
+      dispSlots: [{ day: 1 as const, periodId: "p1" }],
+      awaySlots: [{ day: 2 as const, periodId: "p2", progetto: true }, { day: 3 as const, periodId: "p3" }],
+      avoidSlots: [{ day: 4 as const, periodId: "p4" }],
+      lockWeek: true,
+      rientroDays: [2 as const],
+      noGaps: true,
+    };
+    const d: PersistedData = {
+      ...base,
+      teachers: [marked, ...base.teachers.slice(1)],
+      savedTimetables: [{ n: 1, name: "Prova", savedAt: 1, lessons: base.slots, disp: {} }],
+    };
+    const next = startNewSchoolYear(d, "2027/2028", JUNE);
+    assert.deepEqual(next.slots, []);
+    assert.deepEqual(next.savedTimetables, []);
+    assert.equal(next.activeSlot, 0);
+    assert.equal(next.teachers.length, d.teachers.length);
+    const after = next.teachers[0]!;
+    assert.equal(after.lastName, marked.lastName);
+    assert.deepEqual(
+      [after.dispSlots, after.awaySlots, after.avoidSlots, after.lockWeek, after.rientroDays, after.noGaps],
+      [[], [], [], false, [], false],
+    );
+    // le cattedre ricavate dall’orario restano scritte
+    assert.ok((next.cattedre ?? []).length > 0);
+    assert.deepEqual(next.settings.periods, d.settings.periods);
+    // l’anno in archivio resta com’era
+    assert.deepEqual(next.archivedYears![0]!.data.slots, d.slots);
+    assert.deepEqual(next.archivedYears![0]!.data.teachers[0], marked);
+  });
+
   it("per il Report: chi non è più in servizio c'è, la data cade nell'anno archiviato", () => {
     const d = finishedYear();
     const year = startNewSchoolYear(d, "2027/2028", JUNE).archivedYears![0]!;
